@@ -19,16 +19,25 @@ document.addEventListener('addon-runtime-ready', () => {
 });
 
 async function onAddonRuntimeReady() {
-  try {
-    await Effect.runPromise(reconnectClientSdk());
-    await Effect.runPromise(fetchAddonsWithConfigure());
-    await checkForAppUpdates();
-  } catch (error) {
-    console.error('Failed to refresh addon runtime for update checks:', error);
-  }
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      yield* reconnectClientSdk();
+      yield* fetchAddonsWithConfigure();
+      yield* checkForAppUpdates();
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() =>
+          console.error(
+            'Failed to refresh addon runtime for update checks:',
+            error
+          )
+        )
+      )
+    )
+  );
 }
 
-async function checkForAppUpdates() {
+function checkForAppUpdates() {
   const runId = ++updateCheckRunId;
   updatesManager.clearAppUpdates();
   console.log('checking for app updates');
@@ -94,6 +103,6 @@ async function checkForAppUpdates() {
     );
   });
 
-  await Effect.runPromise(workflow);
+  return workflow;
 }
 </script>

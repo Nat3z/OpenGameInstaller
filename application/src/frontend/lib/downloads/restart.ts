@@ -20,20 +20,21 @@ export interface PausedDownloadState {
   files?: unknown[];
 }
 
-const downloadPromise = <A>(
-  operation: () => Promise<A>,
+const downloadRpc = <A, E>(
+  operation: Effect.Effect<A, E>,
   download: DownloadStatusAndInfo,
   message: string
 ) =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) =>
-      new DownloadError({
-        message: `${message}: ${formatError(cause)}`,
-        downloadId: download.id,
-        cause,
-      }),
-  });
+  operation.pipe(
+    Effect.mapError(
+      (cause) =>
+        new DownloadError({
+          message: `${message}: ${formatError(cause)}`,
+          downloadId: download.id,
+          cause,
+        })
+    )
+  );
 
 function effectiveDownloadUrl(
   download: DownloadStatusAndInfo
@@ -101,8 +102,8 @@ function restartDirectDownload(download: DownloadStatusAndInfo) {
       );
     }
 
-    const handshake = yield* downloadPromise(
-      () => Effect.runPromise(electronRpc.ddl.download(files, download.part)),
+    const handshake = yield* downloadRpc(
+      electronRpc.ddl.download(files, download.part),
       download,
       'Failed to restart direct download'
     );
@@ -144,15 +145,9 @@ function restartTorrentDownload(download: DownloadStatusAndInfo) {
     const path = folderPath;
     const operation =
       download.downloadType === 'torrent'
-        ? () =>
-            Effect.runPromise(
-              electronRpc.torrent.downloadTorrent(effectiveUrl, path)
-            )
-        : () =>
-            Effect.runPromise(
-              electronRpc.torrent.downloadMagnet(effectiveUrl, path)
-            );
-    const handshake = yield* downloadPromise(
+        ? electronRpc.torrent.downloadTorrent(effectiveUrl, path)
+        : electronRpc.torrent.downloadMagnet(effectiveUrl, path);
+    const handshake = yield* downloadRpc(
       operation,
       download,
       'Failed to restart torrent download'

@@ -41,16 +41,20 @@ async function installAddon(marketplaceURL: string, addon: CommunityAddon) {
       electronRpc.installAddons([addonWithMarketplace])
     ),
   };
-  try {
-    await Effect.runPromise(reconnectClientSdk());
-  } catch (error) {
-    console.error('Failed to reconnect after installing addon:', error);
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: `Failed to finish installing ${addon.name}`,
-      type: 'error',
-    });
-  }
+  await Effect.runPromise(
+    reconnectClientSdk().pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error('Failed to reconnect after installing addon:', error);
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            message: `Failed to finish installing ${addon.name}`,
+            type: 'error',
+          });
+        })
+      )
+    )
+  );
 }
 
 function addonConfigMatchesSource(configAddon: string, addonSource: string) {
@@ -92,18 +96,25 @@ async function deleteAddon(addon: CommunityAddon) {
   currentAddons = JSON.parse(
     window.electronAPI.fs.read('./config/option/general.json')
   );
-  try {
-    await Effect.runPromise(reconnectClientSdk());
-  } catch (error) {
-    console.error('Failed to reconnect after deleting addon:', error);
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: `Deleted ${addon.name}, but failed to reconnect`,
-      type: 'error',
-    });
-  } finally {
-    deleteConfirmationModalAddon = null;
-  }
+  await Effect.runPromise(
+    reconnectClientSdk().pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error('Failed to reconnect after deleting addon:', error);
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            message: `Deleted ${addon.name}, but failed to reconnect`,
+            type: 'error',
+          });
+        })
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          deleteConfirmationModalAddon = null;
+        })
+      )
+    )
+  );
 }
 
 async function deleteAddonWarning(addon: CommunityAddon) {

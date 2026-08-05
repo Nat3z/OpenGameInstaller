@@ -48,32 +48,28 @@ function backendAction(
 ) {
   const operation =
     download.downloadType === 'direct' || download.usedDebridService
-      ? () =>
-          action === 'pause'
-            ? Effect.runPromise(electronRpc.ddl.pauseDownload(download.id))
-            : Effect.runPromise(electronRpc.ddl.resumeDownload(download.id))
+      ? action === 'pause'
+        ? electronRpc.ddl.pauseDownload(download.id)
+        : electronRpc.ddl.resumeDownload(download.id)
       : download.downloadType === 'torrent' ||
           download.downloadType === 'magnet'
-        ? () =>
-            action === 'pause'
-              ? Effect.runPromise(
-                  electronRpc.torrent.pauseDownload(download.id)
-                )
-              : Effect.runPromise(
-                  electronRpc.torrent.resumeDownload(download.id)
-                )
+        ? action === 'pause'
+          ? electronRpc.torrent.pauseDownload(download.id)
+          : electronRpc.torrent.resumeDownload(download.id)
         : undefined;
 
   return operation
-    ? Effect.tryPromise({
-        try: () => operation().then(() => undefined),
-        catch: (cause) =>
-          new DownloadError({
-            message: `Failed to ${action} download: ${formatError(cause)}`,
-            downloadId: download.id,
-            cause,
-          }),
-      }).pipe(Effect.as(true))
+    ? operation.pipe(
+        Effect.mapError(
+          (cause) =>
+            new DownloadError({
+              message: `Failed to ${action} download: ${formatError(cause)}`,
+              downloadId: download.id,
+              cause,
+            })
+        ),
+        Effect.as(true)
+      )
     : Effect.succeed(false);
 }
 
@@ -243,7 +239,16 @@ export function cancelPausedDownload(downloadId: string) {
     const pausedState = pausedDownloadStates.get(downloadId);
     const item = pausedState?.downloadInfo ?? getDownloadItem(downloadId);
     pausedDownloadStates.delete(downloadId);
-    Effect.runPromise(electronRpc.queue.cancel(downloadId));
+    yield* electronRpc.queue.cancel(downloadId).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DownloadError({
+            message: `Failed to cancel download: ${formatError(cause)}`,
+            downloadId,
+            cause,
+          })
+      )
+    );
     yield* deleteDownloadedItems(downloadId);
     deletePersistedDownload(downloadId);
     currentDownloads.update((downloads) =>

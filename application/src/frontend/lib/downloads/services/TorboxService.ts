@@ -22,15 +22,16 @@ type TorboxTorrentListResponse = {
   data: TorboxTorrent[];
 };
 
-const torboxPromise = <A>(operation: () => Promise<A>, message: string) =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) =>
-      new DebridError({
-        message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
-        service: 'torbox' as const,
-      }),
-  });
+const torboxRpc = <A, E>(operation: Effect.Effect<A, E>, message: string) =>
+  operation.pipe(
+    Effect.mapError(
+      (cause) =>
+        new DebridError({
+          message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          service: 'torbox' as const,
+        })
+    )
+  );
 
 export class TorboxService extends BaseService {
   readonly types = ['torbox-magnet', 'torbox-torrent'];
@@ -69,23 +70,19 @@ export class TorboxService extends BaseService {
       const formData = new FormData();
       let torrentHash = '';
       if (result.downloadType === 'torrent') {
-        const torrentData = yield* torboxPromise(
-          () =>
-            Effect.runPromise(
-              electronRpc.downloadTorrentInto(result.downloadURL!)
-            ),
+        const torrentData = yield* torboxRpc(
+          electronRpc.downloadTorrentInto(result.downloadURL!),
           'Failed to load torrent data'
         );
         formData.append('file', new Blob([torrentData.buffer as ArrayBuffer]));
-        torrentHash = yield* torboxPromise(
-          () => Effect.runPromise(electronRpc.getTorrentHash(torrentData)),
+        torrentHash = yield* torboxRpc(
+          electronRpc.getTorrentHash(torrentData),
           'Failed to hash torrent'
         );
       } else {
         formData.append('magnet', result.downloadURL!);
-        torrentHash = yield* torboxPromise(
-          () =>
-            Effect.runPromise(electronRpc.getTorrentHash(result.downloadURL!)),
+        torrentHash = yield* torboxRpc(
+          electronRpc.getTorrentHash(result.downloadURL!),
           'Failed to hash magnet'
         );
       }
@@ -93,26 +90,23 @@ export class TorboxService extends BaseService {
       formData.append('allow_zip', 'true');
       formData.append('as_queued', 'false');
 
-      const response = yield* torboxPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.app.axios<{
-              success: boolean;
-              error: string | null;
-              detail: string;
-              data:
-                | { hash: string; queued_id?: number; torrent_id?: number }
-                | { cooldown_until: number };
-            }>({
-              url: `${BASE_URL}/api/torrents/createtorrent`,
-              method: 'post',
-              data: Object.fromEntries(formData.entries()),
-              headers: {
-                'Content-Type': 'multipart/form-data',
-                Authorization: `Bearer ${torboxApiKey}`,
-              },
-            })
-          ),
+      const response = yield* torboxRpc(
+        electronRpc.app.axios<{
+          success: boolean;
+          error: string | null;
+          detail: string;
+          data:
+            | { hash: string; queued_id?: number; torrent_id?: number }
+            | { cooldown_until: number };
+        }>({
+          url: `${BASE_URL}/api/torrents/createtorrent`,
+          method: 'post',
+          data: Object.fromEntries(formData.entries()),
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: `Bearer ${torboxApiKey}`,
+          },
+        }),
         'Failed to create TorBox torrent'
       );
       if (response.status !== 200) {
@@ -154,16 +148,13 @@ export class TorboxService extends BaseService {
       }
 
       if (queued_id) {
-        const startResponse = yield* torboxPromise(
-          () =>
-            Effect.runPromise(
-              electronRpc.app.axios({
-                url: `${BASE_URL}/api/queued/controlqueued`,
-                method: 'post',
-                data: { queued_id, operation: 'start', all: false },
-                headers: { Authorization: `Bearer ${torboxApiKey}` },
-              })
-            ),
+        const startResponse = yield* torboxRpc(
+          electronRpc.app.axios({
+            url: `${BASE_URL}/api/queued/controlqueued`,
+            method: 'post',
+            data: { queued_id, operation: 'start', all: false },
+            headers: { Authorization: `Bearer ${torboxApiKey}` },
+          }),
           'Failed to start queued TorBox torrent'
         );
         if (startResponse.status !== 200) {
@@ -180,15 +171,12 @@ export class TorboxService extends BaseService {
       let finalTorrentId = torrent_id;
       if (!finalTorrentId) {
         for (let attempt = 0; attempt < 217; attempt++) {
-          const list = yield* torboxPromise(
-            () =>
-              Effect.runPromise(
-                electronRpc.app.axios<TorboxTorrentListResponse>({
-                  url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
-                  method: 'get',
-                  headers: { Authorization: `Bearer ${torboxApiKey}` },
-                })
-              ),
+          const list = yield* torboxRpc(
+            electronRpc.app.axios<TorboxTorrentListResponse>({
+              url: `${BASE_URL}/api/torrents/mylist?bypass_cache=true`,
+              method: 'get',
+              headers: { Authorization: `Bearer ${torboxApiKey}` },
+            }),
             'Failed to poll TorBox torrent'
           );
           const torrent = list.data.success
@@ -222,17 +210,14 @@ export class TorboxService extends BaseService {
         result.name,
         zipFilename
       );
-      const handshake = yield* torboxPromise(
-        () =>
-          Effect.runPromise(
-            electronRpc.ddl.download([
-              {
-                link: downloadUrl,
-                path: targetPath,
-                headers: { 'OGI-Parallel-Limit': '1' },
-              },
-            ])
-          ),
+      const handshake = yield* torboxRpc(
+        electronRpc.ddl.download([
+          {
+            link: downloadUrl,
+            path: targetPath,
+            headers: { 'OGI-Parallel-Limit': '1' },
+          },
+        ]),
         'Failed to start TorBox download'
       );
       if (handshake.status === 'error' || !handshake.id) {

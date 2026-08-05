@@ -149,38 +149,50 @@ async function removeFromList() {
 
 async function addToSteam(button: HTMLButtonElement) {
   button.disabled = true;
-  try {
-    const requiredReadd = getRequiredReadd(gameInfo.appID);
-    const result = await Effect.runPromise(
-      electronRpc.app.addToSteam(
+  const requiredReadd = getRequiredReadd(gameInfo.appID);
+  await Effect.runPromise(
+    electronRpc.app
+      .addToSteam(
         gameInfo.appID,
         requiredReadd?.steamAppId ?? gameInfo.umu?.steamShortcutReaddId
       )
-    );
-
-    if (result.status === 'success') {
-      completeRequiredReadd(gameInfo.appID);
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: result.warning ?? 'Game added to Steam',
-        type: result.warning ? 'warning' : 'success',
-      });
-    } else {
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: result.status === 'cancelled' ? result.message : result.error,
-        type: result.status === 'cancelled' ? 'warning' : 'error',
-      });
-    }
-  } catch (error) {
-    console.error(error);
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: 'Failed to add game to Steam',
-      type: 'error',
-    });
-  }
-  button.disabled = false;
+      .pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (result.status === 'success') {
+              completeRequiredReadd(gameInfo.appID);
+              createNotification({
+                id: Math.random().toString(36).substring(7),
+                message: result.warning ?? 'Game added to Steam',
+                type: result.warning ? 'warning' : 'success',
+              });
+              return;
+            }
+            createNotification({
+              id: Math.random().toString(36).substring(7),
+              message:
+                result.status === 'cancelled' ? result.message : result.error,
+              type: result.status === 'cancelled' ? 'warning' : 'error',
+            });
+          })
+        ),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error(error);
+            createNotification({
+              id: Math.random().toString(36).substring(7),
+              message: 'Failed to add game to Steam',
+              type: 'error',
+            });
+          })
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            button.disabled = false;
+          })
+        )
+      )
+  );
 }
 
 function getInputType(

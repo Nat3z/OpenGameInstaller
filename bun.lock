@@ -15,7 +15,7 @@
     },
     "application": {
       "name": "opengameinstaller-gui",
-      "version": "4.2.1",
+      "version": "4.2.2",
       "dependencies": {
         "@ctrl/qbittorrent": "^9.11.0",
         "@effect/platform": "0.97.0",
@@ -220,7 +220,7 @@
     },
     "updater": {
       "name": "ogi-updater",
-      "version": "2.1.1",
+      "version": "2.1.2",
       "dependencies": {
         "axios": "^1.13.4",
         "effect": "^3.22.0",

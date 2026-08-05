@@ -8,7 +8,7 @@ import {
 import axios from 'axios';
 import { Deferred, Effect, Fiber } from 'effect';
 import { BrowserWindow } from 'electron';
-import parseTorrent from 'parse-torrent';
+import { getTorrentInfoHash } from '@/electron/lib/torrent-hash.js';
 import { sendNotification } from '@/electron/main.js';
 import {
   getStoredValue,
@@ -33,19 +33,6 @@ import { ElectronRpc } from '@/lib/electron-rpc.js';
 function torrentError(message: string, cause?: unknown): TorrentError {
   if (cause instanceof TorrentError) return cause;
   return new TorrentError({ message, cause });
-}
-
-function getTorrentInfoHash(
-  input: string | Buffer | Uint8Array
-): Effect.Effect<string, TorrentError> {
-  return Effect.try({
-    try: () => {
-      const parsed = parseTorrent(input);
-      return (parsed as { infoHash: string }).infoHash;
-    },
-    catch: (cause) =>
-      torrentError(`Failed to parse torrent: ${formatError(cause)}`, cause),
-  });
 }
 
 function getErrorMessage(error: unknown): string {

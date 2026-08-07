@@ -5,7 +5,6 @@ import { Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import fs, { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { quote as shellQuote } from 'shell-quote';
 import { startAddons } from '@/electron/handlers/handler.addon.js';
 import {
   type ExecuteWrapperResult,
@@ -14,6 +13,14 @@ import {
 } from '@/electron/handlers/handler.library.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
+import {
+  createSingleInstanceData,
+  type LaunchForwardPayload,
+  parseGameIdArg,
+  parseLaunchHookArgs,
+  parseLaunchRequestFromArgv,
+  parseWrapperAfterSeparator,
+} from '@/electron/lib/single-instance-launch.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
@@ -47,106 +54,6 @@ import {
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
 // import steamworks from 'steamworks.js';
-
-type LaunchForwardPayload = {
-  gameId: number;
-  noLaunch: boolean;
-  runPre: boolean;
-  runPost: boolean;
-  wrapperCommand?: string | null;
-  originalArgv?: string[];
-  launchEnv?: Record<string, string>;
-};
-
-/**
- * Parse command line arguments for --game-id flag
- * This is used when launching from Steam shortcuts
- */
-function parseGameIdArg(argv: readonly string[] = process.argv): number | null {
-  const gameIdArg = argv.find((arg) => arg.startsWith('--game-id='));
-  if (gameIdArg) {
-    const gameId = parseInt(gameIdArg.split('=')[1], 10);
-    if (!isNaN(gameId)) {
-      return gameId;
-    }
-  }
-  return null;
-}
-
-/**
- * Parse command line arguments for launch hook flags
- * --no-launch: Don't actually launch the game
- * --pre: Run pre-launch hooks
- * --post: Run post-launch hooks
- */
-function parseLaunchHookArgs(argv: readonly string[] = process.argv): {
-  noLaunch: boolean;
-  runPre: boolean;
-  runPost: boolean;
-} {
-  return {
-    noLaunch: argv.includes('--no-launch'),
-    runPre: argv.includes('--pre'),
-    runPost: argv.includes('--post'),
-  };
-}
-
-/**
- * Parse wrapper command from args after a `--` separator.
- * Everything after `--` is treated as the wrapper command payload.
- * Each argument is shell-quoted so paths with spaces survive round-trip
- * when the string is later parsed in the library handler.
- */
-function parseWrapperAfterSeparator(
-  argv: readonly string[] = process.argv
-): string | null {
-  const separatorIndex = argv.indexOf('--');
-  if (separatorIndex === -1 || separatorIndex >= argv.length - 1) {
-    return null;
-  }
-
-  const args = argv.slice(separatorIndex + 1);
-  return args.map((arg) => shellQuote([arg])).join(' ');
-}
-
-function buildLaunchForwardPayload(
-  gameId: number,
-  hookArgs: ReturnType<typeof parseLaunchHookArgs>,
-  wrapperCommand: string | null,
-  argv: readonly string[] = process.argv
-): LaunchForwardPayload {
-  const launchEnv = Object.fromEntries(
-    Object.entries(process.env).filter(
-      (entry): entry is [string, string] => typeof entry[1] === 'string'
-    )
-  );
-
-  return {
-    gameId,
-    noLaunch: hookArgs.noLaunch,
-    runPre: hookArgs.runPre,
-    runPost: hookArgs.runPost,
-    wrapperCommand,
-    originalArgv: [...argv].slice(1),
-    launchEnv,
-  };
-}
-
-function parseLaunchRequestFromArgv(
-  argv: readonly string[]
-): LaunchForwardPayload | null {
-  const gameId = parseGameIdArg(argv);
-  if (gameId === null) {
-    return null;
-  }
-
-  return buildLaunchForwardPayload(
-    gameId,
-    parseLaunchHookArgs(argv),
-    parseWrapperAfterSeparator(argv),
-    argv
-  );
-}
 
 /**
  * Handle launch hooks (pre/post) for games
@@ -689,28 +596,30 @@ async function handleRemoteLaunchRequest(
       mainWindow.hide();
     }
 
-    let wrapperResult: ExecuteWrapperResult | null = null;
-    if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
-      wrapperResult = await runElectronEffect(
-        executeWrapperCommandForApp(
-          payload.gameId,
-          payload.wrapperCommand,
-          'steam-proton',
-          payload.launchEnv
-        )
-      );
-    } else {
-      wrapperResult = await runElectronEffect(
-        executeWrapperCommandForApp(
-          payload.gameId,
-          payload.wrapperCommand,
-          'unknown',
-          payload.launchEnv
-        )
-      );
+    let wrapperResult: ExecuteWrapperResult;
+    try {
+      if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
+        wrapperResult = await runElectronEffect(
+          executeWrapperCommandForApp(
+            payload.gameId,
+            payload.wrapperCommand,
+            'steam-proton',
+            payload.launchEnv
+          )
+        );
+      } else {
+        wrapperResult = await runElectronEffect(
+          executeWrapperCommandForApp(
+            payload.gameId,
+            payload.wrapperCommand,
+            'unknown',
+            payload.launchEnv
+          )
+        );
+      }
+    } finally {
+      focusMainWindow();
     }
-
-    focusMainWindow();
 
     if (!wrapperResult.success) {
       sendLaunchErrorToRenderer(payload.gameId);
@@ -749,25 +658,46 @@ async function handleRemoteLaunchRequest(
   return launchResult;
 }
 
-const gotTheLock = app.requestSingleInstanceLock();
+const gotTheLock = app.requestSingleInstanceLock(createSingleInstanceData());
 
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, commandLine) => {
-    logger.sync.info(
-      '[single-instance] Second instance detected:',
-      commandLine
-    );
+  app.on(
+    'second-instance',
+    (_event, commandLine, _workingDirectory, additionalData) => {
+      logger.sync.info(
+        '[single-instance] Second instance detected:',
+        commandLine
+      );
 
-    const launchPayload = parseLaunchRequestFromArgv(commandLine);
-    if (launchPayload) {
-      void handleRemoteLaunchRequest(launchPayload);
-      return;
+      const launchPayload = parseLaunchRequestFromArgv(
+        commandLine,
+        additionalData
+      );
+      if (launchPayload) {
+        void handleRemoteLaunchRequest(launchPayload)
+          .then((result) => {
+            if (!result.success) {
+              logger.sync.error(
+                `[single-instance] Launch failed for game ${launchPayload.gameId}: ${result.error ?? 'Unknown error'}`
+              );
+            }
+          })
+          .catch((error: unknown) => {
+            focusMainWindow();
+            sendLaunchErrorToRenderer(launchPayload.gameId);
+            logger.sync.error(
+              `[single-instance] Launch failed for game ${launchPayload.gameId}:`,
+              error
+            );
+          });
+        return;
+      }
+
+      focusMainWindow();
     }
-
-    focusMainWindow();
-  });
+  );
 }
 
 // This method will be called when Electron has finished

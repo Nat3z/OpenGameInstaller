@@ -104,7 +104,7 @@ function scanDlls() {
       const cwd = gameInfo.cwd;
 
       const files = yield* electronRpc.fs.getFilesInDir(cwd);
-      const dlls = files.filter((file) => file.endsWith('.dll'));
+      const dlls = files.filter((file) => /\.dll$/i.test(file));
 
       yield* logger.info(`Found ${dlls.length} DLLs`);
 

@@ -1,8 +1,14 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import { Effect } from 'effect';
 import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { runDetached } from '@/frontend/lib/core/runtime';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 type DllOverrideRow = {
   id: string;
@@ -13,12 +19,14 @@ type DllOverrideRow = {
 let {
   open = false,
   initialOverrides = [],
+  gameInfo,
   onSave,
   onClose,
 }: {
   open?: boolean;
   initialOverrides?: string[];
   onSave?: (overrides: string[]) => void;
+  gameInfo: LibraryInfo;
   onClose?: () => void;
 } = $props();
 
@@ -80,9 +88,36 @@ function serializeRows() {
     .filter(Boolean);
 }
 
+function removeDllSuffix(dll: string): string {
+  return dll.replace(/.dll$/g, '');
+}
+
 function handleSave() {
   onSave?.(serializeRows());
   onClose?.();
+}
+
+function scanDlls() {
+  void runDetached(
+    Effect.gen(function* () {
+      // read the directory the game is set in and scan for DLLs
+      const cwd = gameInfo.cwd;
+
+      const files = yield* electronRpc.fs.getFilesInDir(cwd);
+      const dlls = files.filter((file) => file.endsWith('.dll'));
+
+      yield* logger.info(`Found ${dlls.length} DLLs`);
+
+      // then remove duplicates that are already in this list
+      const uniqueDlls = dlls
+        .filter((dll) => !rows.some((row) => row.dll === removeDllSuffix(dll)))
+        .map((dll) => createRow(`${removeDllSuffix(dll)}=n,b`));
+      yield* logger.info(`Found ${uniqueDlls.length} unique DLLs`);
+
+      rows = [...rows, ...uniqueDlls];
+    }),
+    'Failed to scan DLLs'
+  );
 }
 </script>
 
@@ -155,7 +190,10 @@ function handleSave() {
     </div>
 
     <div class="mt-3 flex items-center justify-between gap-3">
-      <ButtonModal text="Add DLL" variant="secondary" onclick={addRow} />
+      <div class="flex flex-row gap-4">
+        <ButtonModal text="Add DLL" variant="primary" onclick={addRow} />
+        <ButtonModal text="Scan DLLs" variant="secondary" onclick={scanDlls} />
+      </div>
       <p class="hint-text">
         e.g. <code>dinput8=n,b</code>, <code>winmm=b</code>,
         <code>xinput1_3=n</code>
@@ -173,11 +211,11 @@ function handleSave() {
   @reference "../../app.css";
 
   .dll-table {
-    @apply w-full border border-border rounded-lg overflow-hidden max-h-64 overflow-y-visible;
+    @apply w-full max-h-64 overflow-y-auto overscroll-contain border border-border rounded-lg;
   }
 
   .dll-table-header {
-    @apply flex items-center gap-2 px-3 py-2 bg-accent-lighter text-text-secondary font-archivo text-sm font-semibold;
+    @apply sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-accent-lighter text-text-secondary font-archivo text-sm font-semibold;
   }
 
   .dll-table-row {

@@ -42,6 +42,7 @@ import {
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
+import { inferSpawnShell } from '@/electron/lib/spawn-shell.js';
 import { sendNotification } from '@/electron/main.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
@@ -188,10 +189,10 @@ export function launchGameFromLibrary(
       appInfo.cwd
     );
 
-    const needsShellOnWindows = /\.(bat|cmd)$/i.test(launchExecutable);
+    const launchShell = inferSpawnShell(launchExecutable, otherLaunchArguments);
     const spawnedItem = spawn(launchExecutable, otherLaunchArguments, {
       cwd: appInfo.cwd,
-      shell: process.platform === 'win32' ? needsShellOnWindows : true,
+      shell: launchShell,
       env: {
         ...process.env,
         ...(launchEnv ?? {}),

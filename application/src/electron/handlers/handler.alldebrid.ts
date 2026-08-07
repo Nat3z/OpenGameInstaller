@@ -13,7 +13,7 @@ import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
-const logger = createLogger(LOGGER_PREFIXES.electron);
+const logger = createLogger(LOGGER_PREFIXES.allDebrid);
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
 const ConfigSchema = Schema.Struct({

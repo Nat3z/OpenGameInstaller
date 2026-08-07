@@ -1,4 +1,5 @@
 import { AddonError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   ConfigurationFile,
   ConfigurationOptionWire,
@@ -15,13 +16,15 @@ import {
   queryConnectedAddons,
 } from '@/frontend/lib/core/ipc';
 
+const logger = createLogger(LOGGER_PREFIXES.frontend);
+
 export interface ConfigTemplateAndInfo extends AddonInfo {
   configTemplate: ConfigurationFile;
 }
 
 export function validateAddonId(id: string): string | null {
   if (!/^[A-Za-z0-9_-]+$/.test(id)) {
-    console.error(`Invalid addon id "${id}": rejected for path safety`);
+    logger.sync.error(`Invalid addon id "${id}": rejected for path safety`);
     return null;
   }
   return id;
@@ -156,7 +159,7 @@ export function fetchAddonsWithConfigure() {
     );
     for (const result of results) {
       if (result._tag === 'Left') {
-        console.error('Failed to configure addon:', result.left);
+        logger.sync.error('Failed to configure addon:', result.left);
       }
     }
     return addons;

@@ -1,11 +1,13 @@
 <script lang="ts">
 import { ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect, Either, Schema } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { preventDefault } from 'svelte/legacy';
 import { fade } from 'svelte/transition';
 import { communityAddonArraySchema } from '@/electron/lib/marketplace-schema';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   type CommunityAddon,
@@ -13,6 +15,8 @@ import {
   DEFAULT_MARKETPLACE_SOURCES,
   oobeLog,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let stage = $state(0);
 
@@ -104,7 +108,7 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
   try {
     const results = await Promise.allSettled(
       normalizedSources.map(async (marketplaceUrl) => {
-        const response = await Effect.runPromise(
+        const response = await runFrontendEffect(
           electronRpc.app.axios({
             method: 'GET',
             url: marketplaceCatalogUrl(marketplaceUrl),
@@ -118,12 +122,12 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
           response.data
         );
         if (Either.isLeft(parsed)) {
-          console.error(
+          logger.sync.error(
             'Invalid marketplace JSON for',
             marketplaceUrl,
             parsed.left
           );
-          return Effect.runPromise(
+          return runFrontendEffect(
             Effect.fail(
               new ValidationError({
                 message: 'Invalid marketplace JSON',
@@ -146,7 +150,7 @@ async function loadCommunityAddonsFromMarketplaces(sources: string[]) {
         listed.push(...result.value);
       } else {
         failedCount += 1;
-        console.error('Failed to load marketplace source:', result.reason);
+        logger.sync.error('Failed to load marketplace source:', result.reason);
       }
     }
 
@@ -213,7 +217,7 @@ async function resetMarketplaceSources() {
 }
 
 async function downloadTools() {
-  console.log('Downloading tools');
+  logger.sync.info('Downloading tools');
   // Activate OOBE logging
   oobeLog.update((currentLog) => ({
     ...currentLog,
@@ -221,7 +225,7 @@ async function downloadTools() {
     logs: [],
   }));
 
-  const result = await Effect.runPromise(electronRpc.oobe.downloadTools());
+  const result = await runFrontendEffect(electronRpc.oobe.downloadTools());
   if (!result[0]) {
     oobeLog.update((currentLog) => ({
       ...currentLog,
@@ -243,7 +247,7 @@ async function downloadTools() {
 
 function submitTorrenter() {
   if (selectedTorrenter === 'real-debrid') {
-    console.log('Submitting RD API Key');
+    logger.sync.info('Submitting RD API Key');
     // save a file with the api key
     const apiKey = document.querySelector(
       'input[data-rd-key]'
@@ -256,7 +260,7 @@ function submitTorrenter() {
 
     fulfilledRequirements = true;
   } else if (selectedTorrenter === 'qbittorrent') {
-    console.log('Submitting qBittorrent');
+    logger.sync.info('Submitting qBittorrent');
     const ip = document.querySelector('input[data-qb-ip]') as HTMLInputElement;
     const port = document.querySelector(
       'input[data-qb-port]'
@@ -269,7 +273,7 @@ function submitTorrenter() {
     ) as HTMLInputElement;
 
     if (!ip.value || !port.value || !username.value || !password.value) {
-      console.error('Missing qBittorrent fields');
+      logger.sync.error('Missing qBittorrent fields');
       return;
     }
 
@@ -286,7 +290,7 @@ function submitTorrenter() {
 
     fulfilledRequirements = true;
   } else if (selectedTorrenter === 'torbox') {
-    console.log('Submitting TorBox API Key');
+    logger.sync.info('Submitting TorBox API Key');
     // save a file with the api key
     const apiKey = document.querySelector(
       'input[data-torbox-key]'
@@ -298,7 +302,7 @@ function submitTorrenter() {
     );
     fulfilledRequirements = true;
   } else if (selectedTorrenter === 'premiumize') {
-    console.log('Submitting Premiumize API Key');
+    logger.sync.info('Submitting Premiumize API Key');
     // save a file with the api key
     const apiKey = document.querySelector(
       'input[data-premiumize-key]'
@@ -310,17 +314,17 @@ function submitTorrenter() {
     );
     fulfilledRequirements = true;
   } else if (selectedTorrenter === 'all-debrid') {
-    console.log('Submitting AllDebrid API Key');
+    logger.sync.info('Submitting AllDebrid API Key');
     const apiKey = document.querySelector(
       'input[data-alldebrid-key]'
     ) as HTMLInputElement | null;
     if (!apiKey) {
-      console.error('Missing AllDebrid API key input');
+      logger.sync.error('Missing AllDebrid API key input');
       return;
     }
     const key = apiKey.value.trim();
     if (!key) {
-      console.error('Missing AllDebrid API key');
+      logger.sync.error('Missing AllDebrid API key');
       return;
     }
     window.electronAPI.fs.mkdir('./config/option/');
@@ -346,7 +350,7 @@ function submitTorrenter() {
 let downloadLocation = '';
 
 async function updateDownloadLocation() {
-  const path = await Effect.runPromise(
+  const path = await runFrontendEffect(
     electronRpc.fs.dialog.showOpenDialog({ properties: ['openDirectory'] })
   );
   if (!path) return;
@@ -366,7 +370,7 @@ function sendDownloadLocation(event: MouseEvent) {
     downloadLocation === '' ||
     !window.electronAPI.fs.exists(downloadLocation)
   ) {
-    console.error('No download location selected');
+    logger.sync.error('No download location selected');
     const button = event.target as HTMLButtonElement;
     button.textContent = 'Invalid location';
     button.style.backgroundColor = '#f55045';
@@ -455,7 +459,7 @@ async function finishSetup() {
     './config/option/installed.json',
     JSON.stringify({ installed: true })
   );
-  await Effect.runPromise(electronRpc.installAddons(allAddons));
+  await runFrontendEffect(electronRpc.installAddons(allAddons));
   completedSetup = true;
 }
 
@@ -522,8 +526,8 @@ onMount(async () => {
 
   // Initialize previous log length
   previousLogLength = $oobeLog.logs.length;
-  currentOS = await Effect.runPromise(electronRpc.app.getOS());
-  isSteamDeck = await Effect.runPromise(electronRpc.app.isSteamDeck());
+  currentOS = await runFrontendEffect(electronRpc.app.getOS());
+  isSteamDeck = await runFrontendEffect(electronRpc.app.isSteamDeck());
 
   if (window.electronAPI.fs.exists('./config/option/installed.json')) {
     const installed = JSON.parse(
@@ -696,7 +700,7 @@ onDestroy(() => {
         setup process.
       </h2>
       <button
-        onclick={() => Effect.runPromise(electronRpc.app.close())}
+        onclick={() => runFrontendEffect(electronRpc.app.close())}
         class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Close</button
       >
@@ -1135,7 +1139,7 @@ onDestroy(() => {
       <button
         onclick={async () => {
           // check if the user is on windows or linux
-          const os = await Effect.runPromise(electronRpc.app.getOS());
+          const os = await runFrontendEffect(electronRpc.app.getOS());
           if (os === 'win32') {
             finishSetup();
             stage = 6;
@@ -1184,7 +1188,7 @@ onDestroy(() => {
           onclick={async () => {
             isSettingKey = true;
             await new Promise((resolve) => setTimeout(resolve, 1000));
-            const result = await Effect.runPromise(electronRpc.oobe.setSteamGridDBKey(
+            const result = await runFrontendEffect(electronRpc.oobe.setSteamGridDBKey(
               (
                 document.querySelector('[data-sgdb-key]') as HTMLInputElement
               ).value.trim()

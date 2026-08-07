@@ -1,4 +1,5 @@
 import { DownloadError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Deferred, Effect } from 'effect';
 import { get } from 'svelte/store';
 import { runDetached } from '@/frontend/lib/core/runtime';
@@ -22,6 +23,8 @@ import {
   type DownloadStatusAndInfo,
   redistributableInstalls,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const pausedDownloadStates = new Map<string, PausedDownloadState>();
 let hasBulkQueuedRestoredDownloads = false;
@@ -127,7 +130,7 @@ export function pauseDownload(downloadId: string) {
     const paused = yield* backendAction(download, 'pause').pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error(formatError(error));
+          logger.sync.error(formatError(error));
           return false;
         })
       )

@@ -1,10 +1,11 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import * as d3 from 'd3';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
 import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
-import { runDetached } from '@/frontend/lib/core/runtime';
+import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   createNotification,
@@ -22,6 +23,8 @@ import {
   resumeDownload,
   retryFailedSetup,
 } from '@/frontend/utils';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let chartContainer: HTMLDivElement | null = $state(null);
 let speedData: { time: Date; speed: number; downloadId: string }[] = $state([]);
@@ -149,11 +152,11 @@ async function runDownloadAction<A, E>(
   effect: Effect.Effect<A, E>,
   description: string
 ): Promise<A | undefined> {
-  return Effect.runPromise(
+  return runFrontendEffect(
     effect.pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error(`${description}:`, error);
+          logger.sync.error(`${description}:`, error);
           createNotification({
             id: Math.random().toString(36).substring(7),
             message: description,
@@ -765,7 +768,7 @@ onDestroy(() => {
               {:else if isQueued(download)}
                 <button
                   class="text-overlay-text border-none p-4 rounded-lg bg-accent hover:bg-accent-dark transition-colors"
-                  onclick={() => Effect.runPromise(electronRpc.queue.cancel(download.id))}
+                  onclick={() => runFrontendEffect(electronRpc.queue.cancel(download.id))}
                   aria-label="Cancel Download"
                 >
                   <svg
@@ -787,7 +790,7 @@ onDestroy(() => {
                   aria-label="Pause Download"
                   onclick={async () => {
                     if (isQueued(download)) {
-                      Effect.runPromise(electronRpc.queue.cancel(download.id));
+                      runFrontendEffect(electronRpc.queue.cancel(download.id));
                     } else {
                       await runDownloadAction(
                         pauseDownload(download.id),

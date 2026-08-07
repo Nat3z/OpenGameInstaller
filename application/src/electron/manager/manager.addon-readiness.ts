@@ -1,7 +1,10 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { AddonConnection } from '@ogi-sdk/addon-server';
 import { Effect } from 'effect';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { addonServer } from '@/electron/server/addon-server.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 function addonFolderName(addonPath: string): string {
   return addonPath.replace(/\/$/, '').split(/[/\\]/).pop() ?? addonPath;
@@ -40,7 +43,7 @@ export function waitForAddonsConfigured(
     }
 
     const ready = configuredRunningConnections();
-    console.warn(
+    logger.sync.warn(
       `[addon-readiness] Timed out waiting for addons to send configure (${ready.length}/${expectedCount} ready)`
     );
     return ready;

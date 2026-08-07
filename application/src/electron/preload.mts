@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   ELECTRON_RPC_CHANNEL,
   type ElectronRpcTransport,
 } from '@/lib/electron-rpc.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 // === Debug: Events Processed/sec Counter ===
 let dbg_eventsProcessed = 0;
@@ -305,7 +308,7 @@ ipcRenderer.on(
 ipcRenderer.on(
   'all-addons-started',
   wrap(() => {
-    console.log('ALL ADDONS STARTED');
+    logger.sync.info('ALL ADDONS STARTED');
     document.dispatchEvent(new CustomEvent('all-addons-started'));
   })
 );
@@ -313,7 +316,7 @@ ipcRenderer.on(
 ipcRenderer.on(
   'addon-runtime-ready',
   wrap(() => {
-    console.log('ADDON RUNTIME READY');
+    logger.sync.info('ADDON RUNTIME READY');
     document.dispatchEvent(new CustomEvent('addon-runtime-ready'));
   })
 );

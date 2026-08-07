@@ -1,8 +1,10 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { fade, fly } from 'svelte/transition';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import {
   deferredTasks,
   type Notification,
@@ -11,6 +13,8 @@ import {
   showNotificationSideView,
 } from '@/frontend/store.svelte';
 import { clearAllTasks, loadDeferredTasks } from '@/frontend/utils';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let sideViewElement: HTMLElement | null = $state(null);
 let currentTab: 'notifications' | 'tasks' = $state('notifications');
@@ -23,16 +27,14 @@ let closeTimeout = $state(false);
 function refreshDeferredTasks(tasksToRemove: string[] = []) {
   return loadDeferredTasks(tasksToRemove).pipe(
     Effect.catchAll((error) =>
-      Effect.sync(() => {
-        console.error('Failed to refresh deferred tasks:', error);
-      })
+      logger.error('Failed to refresh deferred tasks:', error)
     )
   );
 }
 
 function startTaskPolling() {
   const pollInterval = setInterval(() => {
-    void Effect.runPromise(refreshDeferredTasks($removedTasks));
+    void runFrontendEffect(refreshDeferredTasks($removedTasks));
   }, 1000);
 
   return pollInterval;
@@ -44,10 +46,10 @@ function stopTaskPolling(intervalId: ReturnType<typeof setInterval>) {
 
 // Load tasks when component mounts
 onMount(() => {
-  void Effect.runPromise(refreshDeferredTasks());
+  void runFrontendEffect(refreshDeferredTasks());
   setTimeout(() => {
     closeTimeout = true;
-    console.log('closeTimeout', closeTimeout);
+    logger.sync.info('closeTimeout', closeTimeout);
   }, 5000);
   pollInterval = startTaskPolling();
 });

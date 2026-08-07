@@ -1,4 +1,5 @@
 import { PlatformError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
@@ -8,6 +9,8 @@ import {
   type SetupLog,
   setupLogs,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const BLOCKING_DOWNLOAD_STATUSES = new Set<DownloadStatusAndInfo['status']>([
   'downloading',
@@ -60,7 +63,7 @@ function syncSleepBlock(
       })
     ),
     Effect.tapError((error) =>
-      Effect.sync(() => console.error('Failed to update sleep lock:', error))
+      logger.error('Failed to update sleep lock:', error)
     ),
     Effect.ignore
   );

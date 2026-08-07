@@ -1,4 +1,5 @@
 import { AddonError, AddonNotFound, ipcBoundary } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import axios from 'axios';
 import { exec } from 'child_process';
 import { Effect, Schedule } from 'effect';
@@ -24,6 +25,8 @@ import {
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 function isGitRepository(addonPath: string): boolean {
   if (!fs.existsSync(addonPath)) {
@@ -93,7 +96,7 @@ export function startAddons(): Effect.Effect<void, AddonError> {
               : join(__dirname, 'addons', parsedAddon.addonName);
 
           if (!fs.existsSync(addonPath)) {
-            console.error(`Addon ${addonPath} does not exist`);
+            logger.sync.error(`Addon ${addonPath} does not exist`);
             sendNotification({
               message: `Addon ${addonPath} does not exist`,
               id: Math.random().toString(36).substring(7),
@@ -103,11 +106,11 @@ export function startAddons(): Effect.Effect<void, AddonError> {
           }
 
           if (!fs.existsSync(join(addonPath, 'installation.log'))) {
-            console.log(`Addon ${addonPath} has not been installed yet.`);
+            logger.sync.info(`Addon ${addonPath} has not been installed yet.`);
             return;
           }
 
-          console.log(`Starting addon ${addonPath}`);
+          logger.sync.info(`Starting addon ${addonPath}`);
           const instance = yield* Addon.load(addonPath).pipe(
             Effect.catchAll(() => Effect.succeed(null))
           );
@@ -117,7 +120,7 @@ export function startAddons(): Effect.Effect<void, AddonError> {
         }).pipe(Effect.catchAll(() => Effect.void)),
       { concurrency: 'unbounded', discard: true }
     );
-    console.log('All addons started');
+    logger.sync.info('All addons started');
   });
 }
 
@@ -128,7 +131,7 @@ const HEALTH_CHECK_TIMEOUT_MS =
 
 export function restartAddonServer(): Effect.Effect<void, AddonError> {
   return Effect.gen(function* () {
-    console.log('Stopping server...');
+    logger.sync.info('Stopping server...');
     yield* stopAddonServer().pipe(
       Effect.mapError(
         (cause) =>
@@ -140,7 +143,7 @@ export function restartAddonServer(): Effect.Effect<void, AddonError> {
     yield* Effect.forEach(
       [...Addon.running.values()],
       (instance) => {
-        console.log(`Stopping addon ${instance.config.path}`);
+        logger.sync.info(`Stopping addon ${instance.config.path}`);
         return instance.stop().pipe(
           Effect.mapError(
             (cause) =>
@@ -180,8 +183,8 @@ export function restartAddonServer(): Effect.Effect<void, AddonError> {
       )
     );
 
-    console.log(`Addon Server is running on http://localhost:${port}`);
-    console.log(`Server is being executed by electron!`);
+    logger.sync.info(`Addon Server is running on http://localhost:${port}`);
+    logger.sync.info(`Server is being executed by electron!`);
     yield* startAddons();
     const configuredAddons = yield* waitForAddonsConfigured();
     for (const connection of configuredAddons) {
@@ -226,7 +229,7 @@ export function loadMarketplace(
       const newMarketplace = new AddonMarketplace(url);
       const ok = yield* newMarketplace.fetch();
       if (!ok) return newMarketplace;
-      console.log(
+      logger.sync.info(
         `[addon-handler] Loaded marketplace from ${url}.`,
         newMarketplace.getAddons()
       );
@@ -293,7 +296,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               resume(Effect.succeed(false));
               return;
             }
-            console.log(stdout);
+            logger.sync.info(stdout);
             resume(Effect.succeed(true));
           });
         });
@@ -335,7 +338,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                 )
               );
               if (restoreResult._tag === 'Left') {
-                console.error(
+                logger.sync.error(
                   `Failed to restore ${addonName} to ${previousCheckoutHash}:`,
                   restoreResult.left
                 );
@@ -529,7 +532,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                     addonFromMarketplace.pinnedCommit
                   );
                 } else {
-                  console.log('Defaulting to latest commit.');
+                  logger.sync.info('Defaulting to latest commit.');
                 }
               }
             }
@@ -572,7 +575,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
           }).pipe(
             Effect.catchAll((installErr) =>
               Effect.gen(function* () {
-                console.error(
+                logger.sync.error(
                   `Failed to install addon ${addonName}:`,
                   installErr
                 );
@@ -640,7 +643,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         yield* Effect.forEach(
           [...Addon.running.values()],
           (instance) => {
-            console.log(`Stopping addon ${instance.config.path}`);
+            logger.sync.info(`Stopping addon ${instance.config.path}`);
             return instance.stop();
           },
           { concurrency: 'unbounded', discard: true }
@@ -694,14 +697,14 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             }),
         }).pipe(Effect.catchAll(() => Effect.succeed(false)));
         if (!isWifiAvailable) {
-          console.error('No internet connection. Not updating addons.');
+          logger.sync.error('No internet connection. Not updating addons.');
           return;
         }
 
         yield* Effect.forEach(
           [...Addon.running.values()],
           (instance) => {
-            console.log(`Stopping addon ${instance.config.path}`);
+            logger.sync.info(`Stopping addon ${instance.config.path}`);
             return instance.stop();
           },
           { concurrency: 'unbounded', discard: true }
@@ -764,7 +767,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   }),
               });
               if (!isRepository) {
-                console.log(
+                logger.sync.info(
                   `Skipping addon update for ${addonName}: ${addonPath} is not a valid git repository`
                 );
                 return;
@@ -772,7 +775,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
               if (parsedAddon.kind === 'local') return;
 
-              console.log(addonPath);
+              logger.sync.info(addonPath);
               const addonJSON = yield* Addon.Setup.loadAddonConfig(addonPath);
               const addonSetup = new Addon.Setup({
                 name: addonName,
@@ -818,7 +821,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                       addonSetup.git.checkoutCommit(fetchData.currentHash)
                     );
                     if (checkoutResult._tag === 'Left') {
-                      console.error(
+                      logger.sync.error(
                         `Failed to restore ${addonName} to ${fetchData.currentHash}:`,
                         checkoutResult.left
                       );
@@ -845,14 +848,14 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                     })
                   );
                   if (installationLogResult._tag === 'Left') {
-                    console.error(
+                    logger.sync.error(
                       `Failed to restore ${addonName} installation state:`,
                       installationLogResult.left
                     );
                   }
                 });
 
-              console.log(marketplaceUrl, addonName, gitUrl);
+              logger.sync.info(marketplaceUrl, addonName, gitUrl);
               let alreadyUpToDate = fetchData.alreadyUpToDate;
 
               if (parsedAddon.kind === 'marketplace') {
@@ -917,7 +920,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               }
 
               if (alreadyUpToDate) {
-                console.log(
+                logger.sync.info(
                   `Addon ${addonName} is already up to date, but installation.log is missing. Running setup.`
                 );
               } else if (yield* addonSetup.isInstalled()) {
@@ -966,7 +969,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   'addon:updated',
                   addonWithMarketplace
                 );
-                console.log(
+                logger.sync.info(
                   `Addon ${addonName} updated and setup successfully.`
                 );
               }).pipe(
@@ -992,7 +995,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         results.forEach((result, index) => {
           if (result._tag === 'Left') {
             failedCount++;
-            console.error(
+            logger.sync.error(
               `Addon update failed for ${addons[index]}:`,
               result.left
             );
@@ -1000,7 +1003,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         });
 
         if (failedCount > 0) {
-          console.log(`${failedCount} addons failed to update.`);
+          logger.sync.info(`${failedCount} addons failed to update.`);
         }
 
         // restart all of the addons

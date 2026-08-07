@@ -1,6 +1,8 @@
 import { formatErrorResponse } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect, Fiber, Layer, ManagedRuntime } from 'effect';
 
+const logger = createLogger(LOGGER_PREFIXES.electron);
 const electronRuntime = ManagedRuntime.make(Layer.empty);
 const backgroundFibers = new Set<Fiber.RuntimeFiber<unknown, unknown>>();
 
@@ -12,17 +14,17 @@ export class EffectBoundaryError {
 
 export const runElectronEffect = <A, E>(
   effect: Effect.Effect<A, E>
-): Promise<A> => electronRuntime.runPromise(effect);
+): Promise<A> => electronRuntime.runPromise(logger.observe(effect));
 
 export const forkElectronEffect = <A, E>(effect: Effect.Effect<A, E>): void => {
-  const fiber = electronRuntime.runFork(effect);
+  const fiber = electronRuntime.runFork(logger.observe(effect));
   const trackedFiber = fiber as Fiber.RuntimeFiber<unknown, unknown>;
   backgroundFibers.add(trackedFiber);
   fiber.addObserver(() => backgroundFibers.delete(trackedFiber));
 };
 
 export const runElectronSync = <A, E>(effect: Effect.Effect<A, E>): A =>
-  electronRuntime.runSync(effect);
+  electronRuntime.runSync(logger.observe(effect));
 
 const formatBoundaryError = (error: unknown): EffectBoundaryError =>
   new EffectBoundaryError(formatErrorResponse(error).error);
@@ -40,8 +42,10 @@ export const runSyncBoundary = <A, E>(
   effect: Effect.Effect<A, E>
 ): EffectBoundaryError | A =>
   electronRuntime.runSync(
-    effect.pipe(
-      Effect.catchAll((error) => Effect.succeed(formatBoundaryError(error)))
+    logger.observe(
+      effect.pipe(
+        Effect.catchAll((error) => Effect.succeed(formatBoundaryError(error)))
+      )
     )
   );
 
@@ -50,9 +54,11 @@ export const disposeElectronRuntime = async (): Promise<void> => {
     await Promise.allSettled(
       Array.from(backgroundFibers, (fiber) =>
         electronRuntime.runPromise(
-          Fiber.interrupt(fiber).pipe(
-            Effect.timeout('5 seconds'),
-            Effect.ignore
+          logger.observe(
+            Fiber.interrupt(fiber).pipe(
+              Effect.timeout('5 seconds'),
+              Effect.ignore
+            )
           )
         )
       )

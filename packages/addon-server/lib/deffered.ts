@@ -1,5 +1,8 @@
 import { formatError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect, Fiber } from 'effect';
+
+const logger = createLogger(LOGGER_PREFIXES.addonServer);
 
 /** Safely serializes task data and removes Proxy wrappers. */
 const safeSerialize = <T>(data: T): Effect.Effect<T, ValidationError> =>
@@ -34,17 +37,16 @@ export class DeferrableTask<T> {
     return this.task().pipe(
       Effect.flatMap((result) =>
         safeSerialize(result).pipe(
-          Effect.catchAll((error) => {
-            console.warn(error.message);
-            return Effect.succeed(result);
-          })
+          Effect.catchAll((error) =>
+            logger.warn(error.message).pipe(Effect.as(result))
+          )
         )
       ),
       Effect.tap((result) =>
-        Effect.sync(() => {
+        Effect.gen(this, function* () {
           this.data = result;
           this.finished = true;
-          console.log('task finished', this.id);
+          yield* logger.info('task finished', this.id);
         })
       ),
       Effect.catchAll((error) =>

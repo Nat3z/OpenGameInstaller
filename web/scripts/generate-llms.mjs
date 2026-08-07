@@ -1,8 +1,10 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import matter from 'front-matter';
 
+const logger = createLogger(LOGGER_PREFIXES.web);
 const scriptFilePath = fileURLToPath(import.meta.url);
 const scriptDir = path.dirname(scriptFilePath);
 const webDir = path.resolve(scriptDir, '..');
@@ -143,5 +145,5 @@ export async function generateLlmsBundle() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === scriptFilePath) {
   const generatedPath = await generateLlmsBundle();
-  console.log(`Generated ${generatedPath}`);
+  logger.sync.info(`Generated ${generatedPath}`);
 }

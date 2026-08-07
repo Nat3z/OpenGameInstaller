@@ -1,6 +1,9 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { Effect } from 'effect';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 /**
  * Loads all apps and orders them according to the apps.json file if it exists.
@@ -9,7 +12,7 @@ import { electronRpc } from '@/frontend/lib/electron-rpc';
  * @returns A promise that resolves to an ordered array of LibraryInfo
  */
 export async function getAllApps(): Promise<LibraryInfo[]> {
-  const apps = await Effect.runPromise(electronRpc.app.getAllApps());
+  const apps = await runFrontendEffect(electronRpc.app.getAllApps());
 
   if (window.electronAPI.fs.exists('./internals/apps.json')) {
     const appsOrdered: number[] = JSON.parse(
@@ -30,7 +33,7 @@ export async function getAllApps(): Promise<LibraryInfo[]> {
     // Add any apps that aren't in the ordered list
     apps.forEach((app) => {
       if (!library.find((libApp) => libApp.appID === app.appID)) {
-        console.log('Adding app to library: ' + app.name);
+        logger.sync.info('Adding app to library: ' + app.name);
         library.push(app);
       }
     });

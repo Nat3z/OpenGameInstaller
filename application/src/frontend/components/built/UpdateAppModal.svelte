@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { SearchResult, StoreData } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { onMount } from 'svelte';
@@ -7,6 +8,7 @@ import AddonPicture from '@/frontend/components/AddonPicture.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
 import {
@@ -18,6 +20,8 @@ import {
   startDownloadEffect,
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 interface Props {
   libraryInfo: LibraryInfo;
@@ -38,7 +42,7 @@ let emptyAddons: Set<string> = $state(new Set());
 let collapsedAddons: Set<string> = $state(new Set());
 
 onMount(async () => {
-  const isOnline = await Effect.runPromise(electronRpc.app.isOnline());
+  const isOnline = await runFrontendEffect(electronRpc.app.isOnline());
   if (!isOnline) {
     loading = false;
     createNotification({
@@ -52,7 +56,7 @@ onMount(async () => {
   try {
     await loadUpdateSources();
   } catch (ex) {
-    console.error(ex);
+    logger.sync.error(ex);
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: 'Failed to fetch update sources',
@@ -106,7 +110,7 @@ async function loadUpdateSources() {
   results = [];
 
   // Fetch game details for images
-  const detailAddons = await Effect.runPromise(
+  const detailAddons = await runFrontendEffect(
     findAddonsSupportingStorefront(storefront, 'game-details')
   );
   let response: StoreData | undefined;
@@ -117,7 +121,7 @@ async function loadUpdateSources() {
         storefront,
       })) as StoreData | undefined;
     } catch (error) {
-      console.error(`Failed to load game details from ${addon.id}:`, error);
+      logger.sync.error(`Failed to load game details from ${addon.id}:`, error);
       continue;
     }
     if (response) break;
@@ -126,7 +130,7 @@ async function loadUpdateSources() {
   gameData = response;
   loading = false;
 
-  let addons = await Effect.runPromise(fetchAddonsWithConfigure());
+  let addons = await runFrontendEffect(fetchAddonsWithConfigure());
   queryingSources = true;
 
   if (addons.length === 0) {
@@ -194,7 +198,7 @@ async function loadUpdateSources() {
         .catch((ex) => {
           loadingAddons.delete(addon.id);
           loadingAddons = new Set(loadingAddons);
-          console.error(ex);
+          logger.sync.error(ex);
         })
     );
   }
@@ -220,12 +224,12 @@ async function handleDownloadClick(
     updateVersion: updateVersion,
   } as SearchResultWithAddon & { isUpdate: boolean; updateVersion: string };
 
-  const started = await Effect.runPromise(
+  const started = await runFrontendEffect(
     startDownloadEffect(updateResult, appID, event).pipe(
       Effect.as(true),
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error('Failed to start update download:', error);
+          logger.sync.error('Failed to start update download:', error);
           createNotification({
             id: Math.random().toString(36).substring(7),
             message: `Failed to start update download for ${gameName}`,

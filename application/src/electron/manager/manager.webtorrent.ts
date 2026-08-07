@@ -1,9 +1,12 @@
 import { TorrentError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import webtorrent from 'webtorrent';
 
+const logger = createLogger(LOGGER_PREFIXES.electron);
+
 const client = new webtorrent();
-console.log(webtorrent);
+logger.sync.info(webtorrent);
 
 type TorrentControls = {
   pause: () => void;
@@ -26,7 +29,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
       Effect.async<TorrentControls, TorrentError>((resumeEffect) => {
         try {
           client.add(torrentId, { path }, (activeTorrent) => {
-            console.log('Added torrent to download system');
+            logger.sync.info('Added torrent to download system');
             const length = activeTorrent.files.reduce(
               (total, file) => total + file.length,
               0
@@ -57,7 +60,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
             startProgressReporting();
             activeTorrent.on('done', () => {
               stopProgressReporting();
-              console.log('Torrent download finished');
+              logger.sync.info('Torrent download finished');
               onDone();
             });
 
@@ -97,7 +100,7 @@ export function torrent(torrentId: string | Buffer, path: string) {
       Effect.async<void, TorrentError>((resumeEffect) => {
         try {
           client.seed(path, () => {
-            console.log('Seeding torrent finished');
+            logger.sync.info('Seeding torrent finished');
             resumeEffect(Effect.void);
           });
         } catch (cause) {

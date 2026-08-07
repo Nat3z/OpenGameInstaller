@@ -6,7 +6,10 @@ import {
   SteamProcessTimeoutError,
   SteamRunningError,
 } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Cause, Context, Effect, Layer } from 'effect';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 export type SteamProcessFailure = SteamProcessError | SteamProcessTimeoutError;
 export type SteamInstallationKind = 'native' | 'flatpak';
@@ -55,7 +58,7 @@ export const runWithSteamLifecycle = <A, E>(params: {
 
       if (result._tag === 'Failure') {
         if (restartFailure) {
-          yield* Effect.logError(
+          yield* logger.error(
             `[steam] The Steam shortcut lifecycle failed and Steam could not be restarted: ${restartFailure}`
           );
         }
@@ -296,7 +299,7 @@ export const SteamProcessLive: Layer.Layer<SteamProcess> = Layer.suspend(() => {
       if (!(yield* installationStatus)) return;
       yield* runSteamCommand(['-shutdown'], 'shutdown', installation).pipe(
         Effect.catchAll((error) =>
-          Effect.logWarning(
+          logger.warn(
             `[steam] Graceful shutdown command failed: ${error.message}`
           )
         )
@@ -307,9 +310,7 @@ export const SteamProcessLive: Layer.Layer<SteamProcess> = Layer.suspend(() => {
       if (graceful._tag === 'Right') return;
       yield* terminateSteamProcesses(installation).pipe(
         Effect.catchAll((error) =>
-          Effect.logWarning(
-            `[steam] Fallback shutdown failed: ${error.message}`
-          )
+          logger.warn(`[steam] Fallback shutdown failed: ${error.message}`)
         )
       );
       yield* waitForState('stopped', installationStatus, 5_000);

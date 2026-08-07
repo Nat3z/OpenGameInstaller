@@ -1,3 +1,4 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { ipcProcedure, procedure, router } from '@/electron/rpc/router-core.js';
 /**
  * UMU (Unified Launcher for Windows Games on Linux) IPC handlers
@@ -37,6 +38,8 @@ import {
 } from '@/electron/runtime.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 /**
  * Get the UMU prefix base directory
@@ -321,14 +324,14 @@ function streamChildProcessOutput(
   child.stdout?.on('data', (chunk) => {
     const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
     for (const line of lines) {
-      console.log(`${prefix} ${line}`);
+      logger.sync.info(`${prefix} ${line}`);
     }
   });
 
   child.stderr?.on('data', (chunk) => {
     const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
     for (const line of lines) {
-      console.error(`${prefix} ${line}`);
+      logger.sync.error(`${prefix} ${line}`);
     }
   });
 }
@@ -393,11 +396,11 @@ export async function installUmu(): Promise<{
     return { success: false, error: result.error ?? 'Unknown UMU error' };
   }
   if (result.updated) {
-    console.log(
+    logger.sync.info(
       `[umu] Updated UMU from ${result.currentVersion ?? 'none'} to ${result.latestVersion ?? 'latest'}`
     );
   } else {
-    console.log(
+    logger.sync.info(
       `[umu] UMU already up to date (${result.latestVersion ?? result.currentVersion ?? 'unknown'})`
     );
   }
@@ -500,7 +503,7 @@ export async function launchWithUmu(
   // Ensure UMU is installed
   const umuInstalled = await isUmuInstalled();
   if (!umuInstalled) {
-    console.log('[umu] UMU not found, attempting auto-install...');
+    logger.sync.info('[umu] UMU not found, attempting auto-install...');
     const installResult = await installUmu();
     if (!installResult.success) {
       return {
@@ -547,7 +550,7 @@ export async function launchWithUmu(
     hasWINEPREFIX: 'WINEPREFIX' in env,
     hasPROTONPATH: 'PROTONPATH' in env,
   };
-  console.log('[umu] Launching game:', {
+  logger.sync.info('[umu] Launching game:', {
     name: libraryInfo.name,
     gameId,
     winePrefix,
@@ -558,7 +561,7 @@ export async function launchWithUmu(
   });
 
   return new Promise((resolve) => {
-    console.log("[umu] command i'm running: ", umuRunExecutable, [
+    logger.sync.info("[umu] command i'm running: ", umuRunExecutable, [
       exePath,
       ...parsedLaunchArgs,
     ]);
@@ -575,26 +578,28 @@ export async function launchWithUmu(
     child.unref();
 
     child.stdout?.on('data', (data) => {
-      console.log(`[umu stdout] ${data}`);
+      logger.sync.info(`[umu stdout] ${data}`);
     });
 
     child.stderr?.on('data', (data) => {
-      console.error(`[umu stderr] ${data}`);
+      logger.sync.error(`[umu stderr] ${data}`);
     });
 
     const onExitCallback = options?.onExit;
 
     child.on('error', (error) => {
-      console.error('[umu] Failed to launch game:', error);
+      logger.sync.error('[umu] Failed to launch game:', error);
       resolve({ success: false, error: error.message });
     });
 
     child.on('exit', (code, signal) => {
       onExitCallback?.(code, signal ?? null);
       if (code === 0) {
-        console.log(`[umu] Game process exited normally with code ${code}`);
+        logger.sync.info(
+          `[umu] Game process exited normally with code ${code}`
+        );
       } else {
-        console.error(
+        logger.sync.error(
           `[umu] Game process exited abnormally, code: ${code}, signal: ${signal}`
         );
       }
@@ -641,7 +646,7 @@ export async function installRedistributablesWithUmu(
 
   // Check if this is a legacy game
   if (!libraryInfo.umu) {
-    console.log(
+    logger.sync.info(
       '[umu] No UMU configuration found, skipping UMU redistributables'
     );
     reportProgress?.({
@@ -657,7 +662,7 @@ export async function installRedistributablesWithUmu(
   }
 
   if (!libraryInfo.redistributables) {
-    console.log('[umu] No redistributables to install');
+    logger.sync.info('[umu] No redistributables to install');
     reportProgress?.({
       kind: 'done',
       total: 0,
@@ -697,7 +702,7 @@ export async function installRedistributablesWithUmu(
   const redistributables = libraryInfo.redistributables || [];
   const totalRedistributables = redistributables.length;
 
-  console.log(
+  logger.sync.info(
     `[umu] Installing ${redistributables.length} redistributables for ${libraryInfo.name}`
   );
 
@@ -760,7 +765,9 @@ export async function installRedistributablesWithUmu(
         ) {
           // Special case for .NET repair tool
           // This would need to be downloaded and run
-          console.log('[umu] .NET repair tool not yet implemented for UMU');
+          logger.sync.info(
+            '[umu] .NET repair tool not yet implemented for UMU'
+          );
           finalize(false);
           return;
         } else {
@@ -770,7 +777,7 @@ export async function installRedistributablesWithUmu(
             redistributable.path
           );
           if (!fs.existsSync(redistPath)) {
-            console.error('[umu] Redistributable not found:', redistPath);
+            logger.sync.error('[umu] Redistributable not found:', redistPath);
             finalize(false);
             return;
           }
@@ -795,7 +802,7 @@ export async function installRedistributablesWithUmu(
           (code: number | null, signal: NodeJS.Signals | null) => {
             const success = code === 0 && signal == null && !!child.pid;
             if (!success && signal != null) {
-              console.error(
+              logger.sync.error(
                 `[umu] Redistributable process killed by signal: ${signal}`
               );
             }
@@ -804,7 +811,7 @@ export async function installRedistributablesWithUmu(
         );
 
         child.on('error', (error) => {
-          console.error('[umu] Redistributable error:', error);
+          logger.sync.error('[umu] Redistributable error:', error);
           finalize(false);
         });
       });
@@ -856,7 +863,10 @@ export async function installRedistributablesWithUmu(
     } catch (error) {
       anyFailed = true;
       failedCount++;
-      console.error(`[umu] Error installing ${redistributable.name}:`, error);
+      logger.sync.error(
+        `[umu] Error installing ${redistributable.name}:`,
+        error
+      );
       sendNotification({
         message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
         id: generateNotificationId(),
@@ -921,7 +931,7 @@ async function initializePrefixWithUmuRun(
 ): Promise<{ success: boolean; error?: string }> {
   const umuInstalled = await isUmuInstalled();
   if (!umuInstalled) {
-    console.log(
+    logger.sync.info(
       '[umu] UMU not found during prefix init, attempting auto-install'
     );
     const installResult = await installUmu();
@@ -1006,7 +1016,7 @@ async function initializePrefixWithUmuRun(
     );
 
     initChild.on('error', (error) => {
-      console.error('[umu] Prefix init error:', error);
+      logger.sync.error('[umu] Prefix init error:', error);
       finalize(false);
     });
   });
@@ -1031,7 +1041,7 @@ export const stagedPrefixMigration = (params: {
     initialize: params.sourcePath
       ? undefined
       : async (stagingPath, signal) => {
-          console.log('[umu] Initializing a fresh staged UMU prefix');
+          logger.sync.info('[umu] Initializing a fresh staged UMU prefix');
           const initialized = await initializePrefixWithUmuRun(
             params.libraryInfo,
             params.umuId,
@@ -1129,10 +1139,10 @@ export async function migrateToUmu(
     )
   );
   if (result._tag === 'Left') {
-    console.error('[umu] Migration failed:', result.left);
+    logger.sync.error('[umu] Migration failed:', result.left);
     return { success: false, error: result.left.message };
   }
-  console.log('[umu] Migration completed successfully');
+  logger.sync.info('[umu] Migration completed successfully');
   return { success: true, libraryInfo: result.right };
 }
 

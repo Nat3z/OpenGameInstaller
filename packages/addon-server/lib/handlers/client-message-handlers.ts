@@ -1,3 +1,4 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonClientToServerEventArgs,
   AddonNotificationMessage,
@@ -14,6 +15,8 @@ import {
   requireMessageId,
 } from './helpers';
 import type { ClientMessageHandler, ClientMessageHandlers } from './types';
+
+const logger = createLogger(LOGGER_PREFIXES.addonServer);
 
 const handleNotification: ClientMessageHandler = ({ server }, message) => {
   const args = message.args as AddonClientToServerEventArgs['notification'];
@@ -48,11 +51,9 @@ const handleAuthenticate: ClientMessageHandler = (context, message) =>
       yield* context.resolveAuthentication(false);
       return;
     }
-    yield* Effect.sync(() => {
-      connection.addonInfo = args;
-      console.log('Client authenticated:', args.name);
-      server.addClient(args.id, connection);
-    });
+    connection.addonInfo = args;
+    yield* logger.info('Client authenticated:', args.name);
+    server.addClient(args.id, connection);
     yield* context.resolveAuthentication(true);
   });
 
@@ -112,9 +113,11 @@ const handleInputAsked: ClientMessageHandler = (context, message) =>
       args.config,
       (reply) =>
         Effect.runPromise(
-          context.connection.events
-            .response(message.id!, reply)
-            .pipe(Effect.asVoid)
+          logger.observe(
+            context.connection.events
+              .response(message.id!, reply)
+              .pipe(Effect.asVoid)
+          )
         )
     );
   });
@@ -162,7 +165,7 @@ const handleGetAppDetails: ClientMessageHandler = (context, message) =>
         break;
       }
     }
-    if (!appDetails) console.error('No app details found for client');
+    if (!appDetails) yield* logger.error('No app details found for client');
     yield* context.connection.events
       .response(message.id, appDetails)
       .pipe(Effect.asVoid);

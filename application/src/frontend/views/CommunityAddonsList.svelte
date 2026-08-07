@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { fade } from 'svelte/transition';
 import { parseAddonLink } from '@/electron/lib/addon-links';
@@ -10,12 +11,15 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import { reconnectClientSdk } from '@/frontend/lib/core/ipc';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   type CommunityAddon,
   communityAddons,
   createNotification,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let currentAddons = $state(
   JSON.parse(window.electronAPI.fs.read('./config/option/general.json'))
@@ -25,27 +29,30 @@ let selectedAddon: (CommunityAddon & { url: string }) | null = $state(null);
 let deleteConfirmationModalAddon: CommunityAddon | null = $state(null);
 
 async function installAddon(marketplaceURL: string, addon: CommunityAddon) {
-  console.log('installing', addon);
-  console.log(`Installing ${addon.name} by ${addon.author}`);
+  logger.sync.info('installing', addon);
+  logger.sync.info(`Installing ${addon.name} by ${addon.author}`);
 
   if (!currentAddons.addons) {
     currentAddons.addons = [];
   }
 
   const addonWithMarketplace = marketplaceURL + '@' + addon.source;
-  console.log(addonWithMarketplace);
+  logger.sync.info(addonWithMarketplace);
   // remove proxy wrapping
   currentAddons = {
     ...currentAddons,
-    addons: await Effect.runPromise(
+    addons: await runFrontendEffect(
       electronRpc.installAddons([addonWithMarketplace])
     ),
   };
-  await Effect.runPromise(
+  await runFrontendEffect(
     reconnectClientSdk().pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error('Failed to reconnect after installing addon:', error);
+          logger.sync.error(
+            'Failed to reconnect after installing addon:',
+            error
+          );
           createNotification({
             id: Math.random().toString(36).substring(7),
             message: `Failed to finish installing ${addon.name}`,
@@ -81,7 +88,7 @@ async function deleteAddon(addon: CommunityAddon) {
   if (!matchingLink) return;
 
   const addonId = parseAddonLink(matchingLink).addonName;
-  const result = await Effect.runPromise(
+  const result = await runFrontendEffect(
     electronRpc.deleteInstalledAddon(addonId)
   );
   if (!result.success) {
@@ -96,11 +103,11 @@ async function deleteAddon(addon: CommunityAddon) {
   currentAddons = JSON.parse(
     window.electronAPI.fs.read('./config/option/general.json')
   );
-  await Effect.runPromise(
+  await runFrontendEffect(
     reconnectClientSdk().pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error('Failed to reconnect after deleting addon:', error);
+          logger.sync.error('Failed to reconnect after deleting addon:', error);
           createNotification({
             id: Math.random().toString(36).substring(7),
             message: `Deleted ${addon.name}, but failed to reconnect`,

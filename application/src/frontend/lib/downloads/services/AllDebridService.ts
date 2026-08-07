@@ -1,4 +1,5 @@
 import { DebridError, formatError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
@@ -16,6 +17,8 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { createNotification, currentDownloads } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 type AllDebridSearchResult = SearchResultWithAddon & {
   downloadURL: string;
@@ -133,7 +136,7 @@ export class AllDebridService extends BaseService {
       yield* flow.pipe(
         Effect.tapError((error) =>
           Effect.sync(() => {
-            console.error('Failed to start AllDebrid download:', error);
+            logger.sync.error('Failed to start AllDebrid download:', error);
             currentDownloads.update((downloads) =>
               downloads.map((download) =>
                 download.id === tempId

@@ -1,6 +1,6 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo, SearchResult, StoreData } from '@ogi-sdk/connect';
-import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import { fly, slide } from 'svelte/transition';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
@@ -9,6 +9,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   createNotification,
@@ -30,6 +31,8 @@ import {
   startDownload,
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 interface Props {
   appID: number;
@@ -76,7 +79,7 @@ let originalFilePath: string | undefined = $derived.by(() => {
     }
     return undefined;
   } catch (ex) {
-    console.error(ex);
+    logger.sync.error(ex);
     return undefined;
   }
 });
@@ -94,7 +97,7 @@ let originalExecutable: string | undefined = $derived.by(() => {
     }
     return undefined;
   } catch (ex) {
-    console.error(ex);
+    logger.sync.error(ex);
     return undefined;
   }
 });
@@ -111,7 +114,7 @@ let libraryInfo: LibraryInfo | undefined = $derived.by(() => {
     }
     return undefined;
   } catch (ex) {
-    console.error(ex);
+    logger.sync.error(ex);
     return undefined;
   }
 });
@@ -150,7 +153,7 @@ function formatSize(size: number): string {
 }
 
 onMount(async () => {
-  isOnline = await Effect.runPromise(electronRpc.app.isOnline());
+  isOnline = await runFrontendEffect(electronRpc.app.isOnline());
   if (!isOnline) {
     loading = false;
     return;
@@ -159,7 +162,7 @@ onMount(async () => {
   try {
     await loadCustomStoreData();
   } catch (ex) {
-    console.error(ex);
+    logger.sync.error(ex);
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: `Failed to fetch store page`,
@@ -209,7 +212,7 @@ async function loadCustomStoreData() {
   } else {
     originalExecutable = undefined;
   }
-  const detailAddons = await Effect.runPromise(
+  const detailAddons = await runFrontendEffect(
     findAddonsSupportingStorefront(storefront, 'game-details')
   );
   let response: StoreData | undefined;
@@ -220,7 +223,7 @@ async function loadCustomStoreData() {
         storefront,
       })) as StoreData | undefined;
     } catch (error) {
-      console.error(`Failed to load game details from ${addon.id}:`, error);
+      logger.sync.error(`Failed to load game details from ${addon.id}:`, error);
       continue;
     }
     if (response) break;
@@ -232,7 +235,7 @@ async function loadCustomStoreData() {
   // Fetch search results for custom store
   // if (alreadyOwns) return;
 
-  let addons = await Effect.runPromise(fetchAddonsWithConfigure());
+  let addons = await runFrontendEffect(fetchAddonsWithConfigure());
   queryingSources = true;
 
   if (addons.length === 0) {
@@ -308,7 +311,7 @@ async function loadCustomStoreData() {
           // Remove from loading set even on error
           loadingAddons.delete(addon.id);
           loadingAddons = new Map(loadingAddons);
-          console.error(ex);
+          logger.sync.error(ex);
         })
     );
   }
@@ -350,11 +353,11 @@ function handleDownloadClick(result: SearchResultWithAddon, event: MouseEvent) {
 
   // Proceed with download
   if (result.downloadType === 'task') {
-    void Effect.runPromise(
+    void runFrontendEffect(
       runTask(result, alreadyOwns ? originalFilePath || '' : '', libraryInfo)
     );
   } else {
-    void Effect.runPromise(
+    void runFrontendEffect(
       startDownload(
         {
           ...result,

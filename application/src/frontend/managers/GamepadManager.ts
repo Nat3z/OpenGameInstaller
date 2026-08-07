@@ -1,5 +1,9 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const FOCUSABLE_SELECTOR =
   'button, [role="button"], a, input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -70,7 +74,7 @@ export class GamepadNavigator {
     document.addEventListener('focusin', this.boundExternalFocusHandler);
     document.addEventListener('pointerdown', this.boundPointerDownHandler);
     document.addEventListener('keydown', this.boundKeyboardNavHandler);
-    console.log('GamepadManager initialized');
+    logger.sync.info('GamepadManager initialized');
   }
 
   setInputMode(mode: 'gamepad' | 'pointer') {
@@ -729,7 +733,7 @@ export class GamepadNavigator {
     this.allowProgrammaticTextFocus();
     element.focus();
 
-    await Effect.runPromise(
+    await runFrontendEffect(
       electronRpc.app
         .openSteamKeyboard({
           x: 0,
@@ -742,19 +746,14 @@ export class GamepadNavigator {
             Effect.sync(() => {
               if (!opened) {
                 // Steam keyboard is unavailable, but the input is already focused.
-                console.log(
+                logger.sync.info(
                   'Steam keyboard not available, element focused for input'
                 );
               }
             })
           ),
           Effect.catchAll((error) =>
-            Effect.sync(() =>
-              console.log(
-                'Steam keyboard error, focusing input instead:',
-                error
-              )
-            )
+            logger.info('Steam keyboard error, focusing input instead:', error)
           )
         )
     );

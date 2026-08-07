@@ -1,4 +1,5 @@
 import { NetworkError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import {
   Deferred,
   Effect,
@@ -10,6 +11,8 @@ import {
   Scope,
   Stream,
 } from 'effect';
+
+const logger = createLogger(LOGGER_PREFIXES.connection);
 
 export const EventResponseMessageSchema = Schema.Struct({
   event: Schema.String,
@@ -205,10 +208,10 @@ export class EventResponseSocket<
   public run<E>(effect: Effect.Effect<void, E>): void {
     Effect.runFork(
       this.fork(
-        effect.pipe(
-          Effect.tapError((error) =>
-            Effect.sync(() =>
-              console.error('WebSocket callback failed:', error)
+        logger.observe(
+          effect.pipe(
+            Effect.tapError((error) =>
+              logger.error('WebSocket callback failed:', error)
             )
           )
         )

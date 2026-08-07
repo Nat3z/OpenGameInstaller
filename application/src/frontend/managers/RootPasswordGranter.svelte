@@ -1,10 +1,10 @@
 <script lang="ts">
-import { Effect } from 'effect';
 import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
 import InputModal from '@/frontend/components/modal/InputModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 let openRootPasswordModal = $state(false);
@@ -30,7 +30,7 @@ document.addEventListener('app:ask-root-password', () => {
       variant="primary"
       class="mt-4"
       onclick={() => {
-        Effect.runPromise(electronRpc.app.grantRootPassword(
+        runFrontendEffect(electronRpc.app.grantRootPassword(
           (document.getElementById('root-password') as HTMLInputElement)
             ?.value ?? ''
         ));

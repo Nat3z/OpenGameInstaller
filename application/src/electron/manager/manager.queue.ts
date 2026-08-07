@@ -1,4 +1,7 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 export class Queue<T = any> {
   private queue: { id: string; item: T }[] = [];
@@ -15,7 +18,7 @@ export class Queue<T = any> {
    */
   enqueue(id: string, item: T) {
     if (this.queue.find((q) => q.id === id) || this.processing.has(id)) {
-      console.warn(`[Queue] Ignoring duplicate id: ${id}`);
+      logger.sync.warn(`[Queue] Ignoring duplicate id: ${id}`);
       return {
         initialPosition: this.processing.has(id)
           ? 1
@@ -38,7 +41,7 @@ export class Queue<T = any> {
               resume(Effect.succeed('cancelled'));
               return;
             }
-            console.log('pos', pos, 'processing #', this.processing.size);
+            logger.sync.info('pos', pos, 'processing #', this.processing.size);
             if (pos === 1 && this.processing.size === 0) {
               update(pos);
               resume(Effect.succeed('fulfilled'));
@@ -65,7 +68,7 @@ export class Queue<T = any> {
         });
       },
       finish: () => {
-        console.log('[Queue] Finishing download: ' + id);
+        logger.sync.info('[Queue] Finishing download: ' + id);
         this.finish(id);
       },
     };
@@ -105,7 +108,7 @@ export class Queue<T = any> {
       return;
     }
     this.processing.delete(id);
-    console.log('[Queue] Finished. Next in queue: ', this.dequeue());
+    logger.sync.info('[Queue] Finished. Next in queue: ', this.dequeue());
   }
 
   /**

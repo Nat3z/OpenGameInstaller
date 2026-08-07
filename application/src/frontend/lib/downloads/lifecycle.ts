@@ -1,4 +1,5 @@
 import { DownloadError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
@@ -11,6 +12,8 @@ import {
   type DownloadStatusAndInfo,
   setupLogs,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 /**
  * Resolves download handler from config, finds the matching service, and starts the download.
@@ -69,7 +72,7 @@ export function startDownloadEffect(
       const service = ALL_SERVICES.find((candidate) =>
         candidate.types.includes(downloadHandler)
       );
-      console.log('Service:', service);
+      logger.sync.info('Service:', service);
       if (!service) {
         return yield* Effect.fail(
           new DownloadError({
@@ -103,7 +106,7 @@ export function startDownload(
   return startDownloadEffect(result, appID, event, htmlButton).pipe(
     Effect.catchAll((error) =>
       Effect.sync(() => {
-        console.error('startDownload failed:', error);
+        logger.sync.error('startDownload failed:', error);
         createNotification({
           id: Math.random().toString(36).substring(7),
           type: 'error',

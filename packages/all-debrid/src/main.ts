@@ -6,10 +6,12 @@ import {
   DebridTimeoutError,
   HttpError,
 } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import axios, { type AxiosResponse } from 'axios';
 import { Cause, Context, Effect, Exit, Layer, Option, Schema } from 'effect';
 import FormData from 'form-data';
 
+const logger = createLogger(LOGGER_PREFIXES.allDebrid);
 const BASE_V4 = 'https://api.alldebrid.com/v4';
 const BASE_V4_1 = 'https://api.alldebrid.com/v4.1';
 const SERVICE = 'alldebrid' as const;
@@ -649,7 +651,7 @@ export const AllDebridClientLayer = (
 const runLegacyPromise = async <A, E>(
   effect: Effect.Effect<A, E>
 ): Promise<A> => {
-  const exit = await Effect.runPromiseExit(effect);
+  const exit = await Effect.runPromiseExit(logger.observe(effect));
   if (Exit.isSuccess(exit)) return exit.value;
   throw Cause.squash(exit.cause);
 };

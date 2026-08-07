@@ -1,4 +1,7 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import OGIAddon, { ConfigurationBuilder, type LibraryInfo } from 'ogi-addon';
+
+const logger = createLogger(LOGGER_PREFIXES.testAddon);
 
 const addon = new OGIAddon({
   name: 'Test Addon',
@@ -109,7 +112,7 @@ addon.on('request-dl', (appID, info, event) => {
 });
 
 addon.on('exit', () => {
-  console.log('Exiting');
+  logger.sync.info('Exiting');
   process.exit(0);
 });
 
@@ -160,7 +163,7 @@ addon.on('search', ({ storefront, appID, for: searchFor }, event) => {
     addon.notify({ type: 'info', message: 'Searching...', id: 'search' });
   }
   new Promise(async (resolve) => {
-    console.log(appID);
+    logger.sync.info(appID);
     event.resolve([
       {
         name: 'Magnet Test',
@@ -269,7 +272,7 @@ usedRealDebrid: ${usedRealDebrid}
 multiPartFiles: ${multiPartFiles} 
 manifest: ${manifest}
   `);
-  console.log('oo hello!');
+  logger.sync.info('oo hello!');
   const waitForInput = event
     .askForInput(
       'Please enter the code',
@@ -285,7 +288,7 @@ manifest: ${manifest}
     )
     .then((input) => {
       event.log(`Code: ${input.code}`);
-      console.log(input.code, input.code === 50);
+      logger.sync.info(input.code, input.code === 50);
       if (Number(input.code) === 50) {
         process.exit(1);
       }

@@ -1,5 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import axios from 'axios';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
@@ -34,6 +35,8 @@ class FileSystemError extends Data.TaggedError('FileSystemError')<{
 }> {}
 
 type UpdaterError = UpdateError | FileSystemError | GitSyncError;
+
+const logger = createLogger(LOGGER_PREFIXES.updater);
 
 const formatCause = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
@@ -71,7 +74,7 @@ const tryFileSystem = <A>(
   });
 
 const runUpdater = <A>(effect: Effect.Effect<A, UpdaterError>): Promise<A> =>
-  Effect.runPromise(effect);
+  Effect.runPromise(logger.observe(effect));
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -86,10 +89,10 @@ if (process.platform === 'linux') {
   // it's most likely sandboxed, so just use ./
   __dirname = './';
 }
-console.log(__dirname);
+logger.sync.info(__dirname);
 const SETUP_VERSION = pjson.version;
 fs.writeFile(join(__dirname, 'updater-version.txt'), SETUP_VERSION, () => {
-  console.log('Wrote version file');
+  logger.sync.info('Wrote version file');
 });
 process.noAsar = true;
 
@@ -301,7 +304,7 @@ function runCommand(
   const { quiet = false, ...spawnOptions } = options;
 
   return Effect.async<CommandResult, UpdateError>((resume) => {
-    logUpdater(`Running command: ${command} ${args.join(' ')}`);
+    logger.sync.info(`Running command: ${command} ${args.join(' ')}`);
     const child = spawn(command, args, spawnOptions);
     let stdout = '';
     let stderr = '';
@@ -646,10 +649,11 @@ function getBranches(): Effect.Effect<string[], UpdateError> {
       ? ['main', ...others]
       : others;
   }).pipe(
-    Effect.catchAll((error) => {
-      logUpdater('Local git branch listing failed, using ls-remote:', error);
-      return remoteBranches;
-    })
+    Effect.catchAll((error) =>
+      logger
+        .info('Local git branch listing failed, using ls-remote:', error)
+        .pipe(Effect.zipRight(remoteBranches))
+    )
   );
 }
 
@@ -757,10 +761,10 @@ function getRecentCommits(
 ipcMain.handle('get-branches', async () => {
   try {
     const branches = await runUpdater(getBranches());
-    logUpdater('Loaded branches via git');
+    logger.sync.info('Loaded branches via git');
     return { ok: true, branches };
   } catch (error) {
-    console.error('Failed to load branches via git:', error);
+    logger.sync.error('Failed to load branches via git:', error);
     return {
       ok: false,
       branches: [DEFAULT_BLEEDING_EDGE_BRANCH],
@@ -776,10 +780,10 @@ ipcMain.handle('get-recent-commits', async (_event, branch) => {
       : DEFAULT_BLEEDING_EDGE_BRANCH;
   try {
     const commits = await runUpdater(getRecentCommits(targetBranch));
-    logUpdater('Loaded commits via git');
+    logger.sync.info('Loaded commits via git');
     return { ok: true, commits };
   } catch (error) {
-    console.error('Failed to load recent commits via git:', error);
+    logger.sync.error('Failed to load recent commits via git:', error);
     return {
       ok: false,
       commits: [],
@@ -946,10 +950,6 @@ function nextUiTick() {
   return Effect.yieldNow();
 }
 
-function logUpdater(message: string, ...args: unknown[]) {
-  console.log(`[updater] ${message}`, ...args);
-}
-
 function showBleedingEdgeSetupError(error: UpdaterError) {
   const phase = error instanceof UpdateError ? error.phase : error.operation;
   const detail = phase ? `${error.message}\n\nPhase: ${phase}` : error.message;
@@ -1060,7 +1060,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       )
     );
     if (portCheck._tag === 'Right' && portCheck.right.ok) {
-      console.error(
+      yield* logger.error(
         'Port 7654 is already in use, meaning OpenGameInstaller is already running. Exiting.'
       );
       dialog.showErrorBox(
@@ -1071,7 +1071,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       return;
     }
     if (portCheck._tag === 'Left') {
-      console.log("Port isn't in use! Launching....");
+      yield* logger.info("Port isn't in use! Launching....");
     }
 
     mainWindow = new BrowserWindow({
@@ -1101,7 +1101,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
 
     const initialOnlineState = getEffectiveOnlineState();
     if (!initialOnlineState.effectiveOnline) {
-      console.log(
+      yield* logger.info(
         initialOnlineState.reason === 'cli-offline'
           ? 'Updater requested offline mode, skipping update check'
           : 'Device is offline, skipping update check'
@@ -1152,7 +1152,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
             )
           );
           if (buildResult._tag === 'Left') {
-            console.error(buildResult.left);
+            yield* logger.error(buildResult.left);
             showBleedingEdgeSetupError(buildResult.left);
             continue;
           }
@@ -1167,7 +1167,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
         ensureBleedingEdgeBuild(commit, branch)
       );
       if (buildResult._tag === 'Left') {
-        console.error(buildResult.left);
+        yield* logger.error(buildResult.left);
         showBleedingEdgeSetupError(buildResult.left);
         return;
       } else {
@@ -1187,7 +1187,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       )
     );
     if (releaseResult._tag === 'Left') {
-      console.error(releaseResult.left);
+      yield* logger.error(releaseResult.left);
       const onlineState = getEffectiveOnlineState();
       mainWindow.webContents.send(
         'text',
@@ -1229,7 +1229,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
         if (patchResult._tag === 'Right') {
           updateApplied = true;
         } else {
-          console.error(
+          yield* logger.error(
             'Incremental patching failed, falling back:',
             patchResult.left
           );
@@ -1336,12 +1336,12 @@ function cleanupAfterUpdate(currentTag, currentAssetName) {
   try {
     cleanOldArtifacts(currentAssetName);
   } catch (err) {
-    console.error('Failed to clean old persistent artifacts:', err);
+    logger.sync.error('Failed to clean old persistent artifacts:', err);
   }
   try {
     cleanOldVersionCaches(currentTag);
   } catch (err) {
-    console.error('Failed to clean old temp caches:', err);
+    logger.sync.error('Failed to clean old temp caches:', err);
   }
 }
 
@@ -1490,7 +1490,11 @@ function downloadToFile(
     attempt: number
   ): Effect.Effect<void, UpdaterError> =>
     Effect.gen(function* () {
-      logUpdater(`Starting download: ${status}`, { url, destination, attempt });
+      yield* logger.info(`Starting download: ${status}`, {
+        url,
+        destination,
+        attempt,
+      });
       yield* tryFileSystem('prepare-download', destination, () =>
         fs.rmSync(destination, { force: true })
       );
@@ -1588,7 +1592,7 @@ function downloadToFile(
 
         return Effect.sync(destroyStreams);
       });
-      logUpdater(`Finished download: ${status}`, {
+      yield* logger.info(`Finished download: ${status}`, {
         destination,
         bytesWritten: writer.bytesWritten,
         attempt,
@@ -1600,7 +1604,7 @@ function downloadToFile(
             fs.rmSync(destination, { force: true })
           ).pipe(Effect.orElseSucceed(() => undefined));
           const retryable = shouldRetryHttpError(error.cause ?? error);
-          logUpdater(`Download attempt failed: ${status}`, {
+          yield* logger.info(`Download attempt failed: ${status}`, {
             destination,
             attempt,
             retryable,
@@ -1732,14 +1736,14 @@ function applyBlockmapPath(releasePath: any, releases: any) {
   return Effect.gen(function* () {
     let currentTag = localVersion;
     let latestAssetName = null;
-    logUpdater('Starting incremental update path', {
+    yield* logger.info('Starting incremental update path', {
       from: currentTag,
       steps: releasePath.map((release: any) => release.tag_name),
     });
     for (let i = 0; i < releasePath.length; i++) {
       const currentRelease = getReleaseByTag(releases, currentTag);
       const nextRelease = releasePath[i];
-      logUpdater('Applying incremental patch step', {
+      yield* logger.info('Applying incremental patch step', {
         step: i + 1,
         totalSteps: releasePath.length,
         from: currentTag,
@@ -1816,7 +1820,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
         );
       }
       const outputArtifact = path.join(nextCache, nextAsset.name);
-      logUpdater('Prepared patch inputs', {
+      yield* logger.info('Prepared patch inputs', {
         sourceArtifact,
         oldBlockmapPath,
         newBlockmapPath,
@@ -1845,7 +1849,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
 
       if (process.platform === 'win32') {
         yield* persistSourceArtifact(nextAsset.name, outputArtifact);
-        logUpdater('Extracting patched Windows artifact', {
+        yield* logger.info('Extracting patched Windows artifact', {
           artifact: outputArtifact,
           destination: nextCache,
         });
@@ -1858,7 +1862,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
         yield* nextUiTick();
         yield* unzip(outputArtifact, nextCache);
       } else {
-        logUpdater('Finalizing patched Linux artifact', {
+        yield* logger.info('Finalizing patched Linux artifact', {
           artifact: outputArtifact,
           destination: path.join(nextCache, 'OpenGameInstaller.AppImage'),
         });
@@ -1874,13 +1878,13 @@ function applyBlockmapPath(releasePath: any, releases: any) {
         );
       }
       currentTag = nextRelease.tag_name;
-      logUpdater('Completed incremental patch step', {
+      yield* logger.info('Completed incremental patch step', {
         step: i + 1,
         currentTag,
       });
     }
     sendUpdaterStatus('Copying Update Files');
-    logUpdater('Copying patched cache into update directory', {
+    yield* logger.info('Copying patched cache into update directory', {
       cache: getVersionCache(releasePath[releasePath.length - 1].tag_name),
     });
     copyCacheToUpdate(
@@ -1890,7 +1894,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
       sendUpdaterStatus('Finishing Update');
       fs.chmodSync('./update/OpenGameInstaller.AppImage', '755');
     }
-    logUpdater('Incremental update path complete', {
+    yield* logger.info('Incremental update path complete', {
       finalTag: releasePath[releasePath.length - 1].tag_name,
       latestAssetName,
     });
@@ -1916,7 +1920,7 @@ function applyBlockmapPatch(
     const patchLabel = statusLabels.patchLabel || 'Building patch';
     const verifyLabel = statusLabels.verifyLabel || 'Verifying patch';
     const releaseTag = statusLabels.releaseTag;
-    logUpdater('Starting blockmap patch', {
+    yield* logger.info('Starting blockmap patch', {
       sourceArtifact,
       oldBlockmapPath,
       newBlockmapPath,
@@ -2053,7 +2057,7 @@ function applyBlockmapPatch(
         (total, task) => total + task.size,
         0
       );
-      logUpdater('Patch block analysis complete', {
+      yield* logger.info('Patch block analysis complete', {
         releaseTag,
         blockCount: newFile.checksums.length,
         missingRanges: mergedMisses.length,
@@ -2073,14 +2077,20 @@ function applyBlockmapPatch(
         try {
           fs.closeSync(sourceFd);
         } catch (closeErr) {
-          console.error('Failed to close source file descriptor:', closeErr);
+          yield* logger.error(
+            'Failed to close source file descriptor:',
+            closeErr
+          );
         }
       }
       if (typeof outFd === 'number') {
         try {
           fs.closeSync(outFd);
         } catch (closeErr) {
-          console.error('Failed to close output file descriptor:', closeErr);
+          yield* logger.error(
+            'Failed to close output file descriptor:',
+            closeErr
+          );
         }
       }
     }
@@ -2099,7 +2109,7 @@ function applyBlockmapPatch(
     }
     sendUpdaterStatus(verifyLabel, 0, newFile.checksums.length, releaseTag);
     yield* nextUiTick();
-    logUpdater('Starting patched artifact verification', {
+    yield* logger.info('Starting patched artifact verification', {
       outputArtifact,
       releaseTag,
     });
@@ -2110,7 +2120,7 @@ function applyBlockmapPatch(
       verifyLabel,
       releaseTag
     );
-    logUpdater('Completed blockmap patch', {
+    yield* logger.info('Completed blockmap patch', {
       outputArtifact,
       releaseTag,
     });
@@ -2213,7 +2223,7 @@ function downloadMissingPatchRanges(
             }
 
             const task = tasks[taskIndex];
-            logUpdater('Downloading patch data range', {
+            yield* logger.info('Downloading patch data range', {
               releaseTag,
               start: task.start,
               end: task.end,
@@ -2232,7 +2242,7 @@ function downloadMissingPatchRanges(
             );
             downloadedBytes += chunk.length;
 
-            logUpdater('Downloaded patch data range', {
+            yield* logger.info('Downloaded patch data range', {
               releaseTag,
               start: task.start,
               end: task.end,
@@ -2258,7 +2268,11 @@ function downloadRangeChunk(
   return Effect.gen(function* () {
     const requestedRange = `bytes=${start}-${end}`;
     for (let attempt = 1; attempt <= HTTP_RETRY_ATTEMPTS; attempt++) {
-      logUpdater('Requesting HTTP range', { url, requestedRange, attempt });
+      yield* logger.info('Requesting HTTP range', {
+        url,
+        requestedRange,
+        attempt,
+      });
       const responseResult = yield* Effect.either(
         Effect.tryPromise({
           try: (signal) =>
@@ -2280,7 +2294,7 @@ function downloadRangeChunk(
       if (responseResult._tag === 'Left') {
         const error: any = responseResult.left;
         const retryable = shouldRetryHttpError(error);
-        logUpdater('HTTP range request failed', {
+        yield* logger.info('HTTP range request failed', {
           requestedRange,
           attempt,
           retryable,
@@ -2329,7 +2343,7 @@ function downloadRangeChunk(
           })
         );
       }
-      logUpdater('Received HTTP range', {
+      yield* logger.info('Received HTTP range', {
         requestedRange,
         actualSize,
         contentRange,
@@ -2411,7 +2425,7 @@ function verifyReleaseArtifact(
 
     const parsedDigest = parseDigest(expectedArtifact.digest);
     if (expectedArtifact.digest && !parsedDigest) {
-      logUpdater('Invalid digest format, aborting verification', {
+      yield* logger.info('Invalid digest format, aborting verification', {
         artifactPath,
         logLabel,
         digest: expectedArtifact.digest,
@@ -2423,10 +2437,13 @@ function verifyReleaseArtifact(
       );
     }
     if (!parsedDigest) {
-      logUpdater('No release digest available for artifact verification', {
-        artifactPath,
-        logLabel,
-      });
+      yield* logger.info(
+        'No release digest available for artifact verification',
+        {
+          artifactPath,
+          logLabel,
+        }
+      );
       return;
     }
 
@@ -2450,7 +2467,7 @@ function verifyPatchedArtifact(
   releaseTag
 ): Effect.Effect<void, UpdaterError> {
   return Effect.gen(function* () {
-    logUpdater('Verifying patched artifact metadata', {
+    yield* logger.info('Verifying patched artifact metadata', {
       outputArtifact,
       releaseTag,
     });
@@ -2532,7 +2549,7 @@ function verifyPatchedArtifact(
     } finally {
       fs.closeSync(fd);
     }
-    logUpdater('Completed block-level verification', {
+    yield* logger.info('Completed block-level verification', {
       outputArtifact,
       releaseTag,
       blocks: newFile.checksums.length,
@@ -2540,7 +2557,7 @@ function verifyPatchedArtifact(
 
     const parsedDigest = parseDigest(expectedArtifact.digest);
     if (!parsedDigest) {
-      logUpdater(
+      yield* logger.info(
         'No release digest available for final artifact verification',
         {
           outputArtifact,
@@ -2560,7 +2577,7 @@ function verifyPatchedArtifact(
         })
       );
     }
-    logUpdater('Completed final artifact digest verification', {
+    yield* logger.info('Completed final artifact digest verification', {
       outputArtifact,
       releaseTag,
       algorithm: parsedDigest.algorithm,
@@ -2576,7 +2593,7 @@ function verifyPatchedArtifact(
  */
 function launchApp(online) {
   const effectiveOnline = getEffectiveOnlineState(online).effectiveOnline;
-  console.log(
+  logger.sync.info(
     'Launching in ' + (effectiveOnline ? 'online' : 'offline') + ' mode'
   );
   mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
@@ -2696,7 +2713,7 @@ const unzip = (zipPath, unzipToDir): Effect.Effect<void, UpdaterError> =>
     let filesProcessed = 0;
     let totalFiles = 0;
     let settled = false;
-    logUpdater('Starting unzip', { zipPath, unzipToDir });
+    logger.sync.info('Starting unzip', { zipPath, unzipToDir });
 
     const finish = (effect: Effect.Effect<void, UpdaterError>) => {
       if (settled) return;
@@ -2722,7 +2739,11 @@ const unzip = (zipPath, unzipToDir): Effect.Effect<void, UpdaterError> =>
       filesProcessed++;
       sendUpdaterStatus('Extracting Update', filesProcessed, totalFiles);
       if (filesProcessed >= totalFiles) {
-        logUpdater('Completed unzip', { zipPath, unzipToDir, totalFiles });
+        logger.sync.info('Completed unzip', {
+          zipPath,
+          unzipToDir,
+          totalFiles,
+        });
         finish(Effect.void);
       } else {
         zipFile?.readEntry();
@@ -2738,7 +2759,7 @@ const unzip = (zipPath, unzipToDir): Effect.Effect<void, UpdaterError> =>
         }
         zipFile = zip;
         totalFiles = zip.entryCount;
-        logUpdater('Opened zip archive', { zipPath, totalFiles });
+        logger.sync.info('Opened zip archive', { zipPath, totalFiles });
         zip.on('entry', (entry) => {
           try {
             sendUpdaterStatus('Extracting Update', filesProcessed, totalFiles);
@@ -2789,7 +2810,7 @@ const unzip = (zipPath, unzipToDir): Effect.Effect<void, UpdaterError> =>
 
 app.on('ready', () => {
   void runUpdater(createWindow()).catch((error) => {
-    console.error('Updater workflow failed:', error);
+    logger.sync.error('Updater workflow failed:', error);
     dialog.showErrorBox('OpenGameInstaller updater failed', error.message);
     app.exit(1);
   });

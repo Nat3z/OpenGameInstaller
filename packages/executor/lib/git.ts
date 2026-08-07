@@ -1,7 +1,10 @@
 import { spawn } from 'node:child_process';
 import { dirname } from 'node:path';
 import { AddonError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
+
+const logger = createLogger(LOGGER_PREFIXES.executor);
 
 const runGitProcess = (
   cwd: string,
@@ -30,12 +33,12 @@ const runGitProcess = (
       child.stdout?.on('data', (data) => {
         const text = data.toString();
         stdout += text;
-        console.log(text);
+        logger.sync.info(text);
       });
       child.stderr?.on('data', (data) => {
         const text = data.toString();
         stderr += text;
-        console.error(text);
+        logger.sync.error(text);
       });
       child.on('error', (cause) => {
         if (settled) return;

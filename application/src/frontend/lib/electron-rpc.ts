@@ -1,6 +1,10 @@
 import type { Rpc, RpcGroup } from '@effect/rpc';
 import { RpcClient, RpcClientError, type RpcMessage } from '@effect/rpc';
 import { Effect, Exit, Scope } from 'effect';
+import {
+  forkFrontendEffect,
+  runFrontendEffect,
+} from '@/frontend/lib/core/runtime';
 import { ElectronRpcs } from '@/lib/electron-rpc.js';
 
 type ProcedureApi<Procedure extends Rpc.Any> = Procedure extends Rpc.Any
@@ -70,7 +74,7 @@ function makeElectronRpcClient(
     })
   );
 
-  const client = Effect.runPromise(
+  const client = runFrontendEffect(
     Effect.gen(function* () {
       const scope = yield* Scope.make();
       const protocolService = yield* protocol.pipe(
@@ -136,5 +140,5 @@ const client = makeElectronRpcClient((message) =>
 export const electronRpc = client.api;
 
 window.addEventListener('unload', () => {
-  Effect.runFork(client.close);
+  forkFrontendEffect(client.close);
 });

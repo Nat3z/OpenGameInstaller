@@ -1,4 +1,5 @@
 import { FileSystemError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { SetupCommandData } from '@ogi-sdk/connect';
 import { Effect, Schedule } from 'effect';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
@@ -15,6 +16,8 @@ import {
   failedSetups,
   setupLogs,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const FAILED_SETUPS_DIR = './failed-setups';
 
@@ -57,13 +60,13 @@ export function loadFailedSetups() {
             byDownloadId.set(key, setup);
           }
         } catch (error) {
-          console.error('Error loading failed setup file:', file, error);
+          logger.sync.error('Error loading failed setup file:', file, error);
         }
       }
       failedSetups.set(Array.from(byDownloadId.values()));
     }),
     Effect.catchAll((error) =>
-      Effect.sync(() => console.error('Error loading failed setups:', error))
+      logger.error('Error loading failed setups:', error)
     )
   );
 }
@@ -76,7 +79,7 @@ export function removeFailedSetup(setupId: string): void {
       setups.filter((setup) => setup.id !== setupId)
     );
   } catch (error) {
-    console.error('Error removing failed setup:', error);
+    logger.sync.error('Error removing failed setup:', error);
   }
 }
 
@@ -107,7 +110,7 @@ export function saveFailedSetup(setupInfo: {
       return updated;
     });
   } catch (error) {
-    console.error('Failed to save setup info:', error);
+    logger.sync.error('Failed to save setup info:', error);
   }
 }
 
@@ -123,7 +126,7 @@ function updateRetry(failedSetup: FailedSetup, error: unknown): void {
       JSON.stringify(updated, null, 2)
     );
   } catch (writeError) {
-    console.error('Failed to persist setup retry:', writeError);
+    logger.sync.error('Failed to persist setup retry:', writeError);
   }
   failedSetups.update((setups) =>
     setups.map((setup) => (setup.id === failedSetup.id ? updated : setup))
@@ -253,7 +256,7 @@ export function retryFailedSetup(failedSetup: FailedSetup) {
   }).pipe(
     Effect.tapError((error) =>
       Effect.sync(() => {
-        console.error('Error retrying setup:', error);
+        logger.sync.error('Error retrying setup:', error);
         currentDownloads.update((downloads) =>
           downloads.filter((download) => download.id !== tempId)
         );

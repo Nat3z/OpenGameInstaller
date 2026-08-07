@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   ConfigurationFile,
   OGIAddonConfiguration,
@@ -20,9 +21,12 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { notifications } from '@/frontend/store.svelte';
 import { addonServer, queryConnectedAddons, runTask } from '@/frontend/utils';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const fs = window.electronAPI.fs;
 
@@ -43,7 +47,7 @@ let selectedValues: Record<string, string> = $state({});
 let runningActions: Record<string, boolean> = $state({});
 
 onMount(() => {
-  Effect.runPromise(queryConnectedAddons<ConfigTemplateAndInfo>())
+  runFrontendEffect(queryConnectedAddons<ConfigTemplateAndInfo>())
     .then((data) => {
       const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
       if (addon) {
@@ -65,7 +69,7 @@ onMount(() => {
       }
     })
     .catch((error) => {
-      console.error('Failed to load addon configuration:', error);
+      logger.sync.error('Failed to load addon configuration:', error);
       notifications.update((items) => [
         ...items,
         {
@@ -124,7 +128,7 @@ function updateConfig() {
         for (const key in errors) {
           const element = document.getElementById(key);
           if (!element) {
-            console.error('element not found for key', key);
+            logger.sync.error('element not found for key', key);
             continue;
           }
           const inputElement = element.matches('[data-input]')
@@ -164,7 +168,7 @@ function updateConfig() {
       fs.write('./config/' + addonId + '.json', JSON.stringify(config));
     })
     .catch((error) => {
-      console.error('Failed to update addon configuration:', error);
+      logger.sync.error('Failed to update addon configuration:', error);
       notifications.update((update) => [
         ...update,
         {
@@ -194,7 +198,7 @@ function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {
   const element = (event.target as HTMLElement).parentElement!!.querySelector(
     'input'
   ) as HTMLInputElement;
-  Effect.runPromise(
+  runFrontendEffect(
     electronRpc.fs.dialog.showOpenDialog({
       properties: type === 'file' ? ['openFile'] : ['openDirectory'],
     })
@@ -296,7 +300,7 @@ async function deleteAddon() {
 
 async function deleteAddonGO() {
   if (!selectedAddon) return;
-  await Effect.runPromise(
+  await runFrontendEffect(
     electronRpc.deleteInstalledAddon(selectedAddon.id).pipe(
       Effect.tap((result) =>
         Effect.sync(() => {
@@ -376,7 +380,7 @@ async function handleActionClick(key: string) {
   };
 
   runningActions = { ...runningActions, [key]: true };
-  await Effect.runPromise(
+  await runFrontendEffect(
     runTask(
       {
         addonSource: selectedAddon.id,

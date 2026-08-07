@@ -1,9 +1,10 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   BasicLibraryInfo,
   SearchResult,
   SetupCommandData,
 } from '@ogi-sdk/connect';
-import { Effect, Either, Schema } from 'effect';
+import { Either, Schema } from 'effect';
 import { type Writable, writable } from 'svelte/store';
 import {
   assertMarketplaceUrlProtocol,
@@ -11,7 +12,10 @@ import {
   type CommunityAddon,
   communityAddonArraySchema,
 } from '@/electron/lib/marketplace-schema';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 export type { CommunityAddon };
 
@@ -290,7 +294,7 @@ export function loadMarketplaceSources() {
         : DEFAULT_MARKETPLACE_SOURCES)
     );
   } catch (error) {
-    console.error('Failed to load marketplace sources:', error);
+    logger.sync.error('Failed to load marketplace sources:', error);
     marketplaceSources.splice(
       0,
       marketplaceSources.length,
@@ -334,7 +338,7 @@ export async function fetchCommunityAddons() {
           ? source
           : `${source}/api/marketplace.json`;
         assertMarketplaceUrlProtocol(url);
-        const response = await Effect.runPromise(
+        const response = await runFrontendEffect(
           electronRpc.app.axios({
             method: 'GET',
             url,
@@ -348,12 +352,16 @@ export async function fetchCommunityAddons() {
           response.data
         );
         if (Either.isLeft(parsed)) {
-          console.error('Invalid marketplace JSON for', source, parsed.left);
+          logger.sync.error(
+            'Invalid marketplace JSON for',
+            source,
+            parsed.left
+          );
           return;
         }
         communityAddons[source] = [...parsed.right];
       } catch (error) {
-        console.error('Failed to fetch marketplace for', source, error);
+        logger.sync.error('Failed to fetch marketplace for', source, error);
         if (previousAddons[source]) {
           communityAddons[source] = previousAddons[source];
         }

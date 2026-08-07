@@ -5,11 +5,15 @@ on:
     branches:
       - main
     paths:
-      - 'packages/ogi-addon/package.json'
-      - 'packages/addon-server/package.json'
-      - 'packages/client-kit/package.json'
-      - 'packages/connection/package.json'
-      - 'packages/executor/package.json'
+      - "packages/errors/package.json"
+      - "packages/logger/package.json"
+      - "packages/ogi-addon/package.json"
+      - "packages/addon-server/package.json"
+      - "packages/all-debrid/package.json"
+      - "packages/client-kit/package.json"
+      - "packages/connection/package.json"
+      - "packages/executor/package.json"
+      - "packages/real-debrid/package.json"
   workflow_dispatch:
     inputs:
       package:
@@ -17,11 +21,15 @@ on:
         required: true
         type: choice
         options:
+          - packages/errors
+          - packages/logger
           - packages/ogi-addon
           - packages/addon-server
+          - packages/all-debrid
           - packages/client-kit
           - packages/connection
           - packages/executor
+          - packages/real-debrid
 
 permissions:
   id-token: write # Required for OIDC
@@ -38,9 +46,11 @@ jobs:
           MATRIX='[
             {"dir":"packages/ogi-addon","tag-prefix":"ogi-addon"},
             {"dir":"packages/addon-server","tag-prefix":"ogi-sdk-addon-server"},
+            {"dir":"packages/all-debrid","tag-prefix":"all-debrid-js"},
             {"dir":"packages/client-kit","tag-prefix":"ogi-sdk-client-kit"},
             {"dir":"packages/connection","tag-prefix":"ogi-sdk-connect"},
-            {"dir":"packages/executor","tag-prefix":"ogi-sdk-executor"}
+            {"dir":"packages/executor","tag-prefix":"ogi-sdk-executor"},
+            {"dir":"packages/real-debrid","tag-prefix":"real-debrid-js"}
           ]'
 
           MATRIX=$(echo "$MATRIX" | jq -c .)
@@ -52,8 +62,205 @@ jobs:
 
           echo "matrix={\"package\":${MATRIX}}" >> "$GITHUB_OUTPUT"
 
+  # Shared packages must be available before packages depending on them publish.
+  publish-shared:
+    needs: verify-packages
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - dir: packages/errors
+            tag-prefix: ogi-errors
+          - dir: packages/logger
+            tag-prefix: ogi-logger
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+        env:
+          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Check if package version is unpublished
+        id: version-check
+        env:
+          PACKAGE_DIR: ${{ matrix.package.dir }}
+          SELECTED_PACKAGE: ${{ inputs.package }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             { [ "$SELECTED_PACKAGE" = "packages/errors" ] || [ "$SELECTED_PACKAGE" = "packages/logger" ]; } && \
+             [ "$SELECTED_PACKAGE" != "$PACKAGE_DIR" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CURRENT_VERSION=$(node -p "require('./${PACKAGE_DIR}/package.json').version")
+          PACKAGE_NAME=$(node -p "require('./${PACKAGE_DIR}/package.json').name")
+
+          if npm view "${PACKAGE_NAME}@${CURRENT_VERSION}" version >/dev/null 2>&1; then
+            CHANGED=false
+          else
+            CHANGED=true
+          fi
+
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.version-check.outputs.changed == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Build all packages
+        if: steps.version-check.outputs.changed == 'true'
+        run: bun run build
+
+      - name: Verify package tarball
+        if: steps.version-check.outputs.changed == 'true'
+        working-directory: ${{ matrix.package.dir }}
+        env:
+          PACKAGE_NAME: ${{ steps.version-check.outputs.name }}
+        run: |
+          PACKAGE_TARBALL="$PWD/$(npm pack --silent)"
+          TEMP_DIRECTORY=$(mktemp -d)
+          trap 'rm -rf "$TEMP_DIRECTORY" "$PACKAGE_TARBALL"' EXIT
+          npm install --prefix "$TEMP_DIRECTORY" "$PACKAGE_TARBALL"
+          node -e "require.resolve(process.env.PACKAGE_NAME, { paths: ['$TEMP_DIRECTORY'] })"
+
+      - name: Publish shared package to npm
+        if: steps.version-check.outputs.changed == 'true'
+        working-directory: ${{ matrix.package.dir }}
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create Git tag
+        if: steps.version-check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ matrix.package.tag-prefix }}-v${{ steps.version-check.outputs.version }}"
+          git push origin "${{ matrix.package.tag-prefix }}-v${{ steps.version-check.outputs.version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build all packages
+        run: bun run build
+
+      - name: Verify publishable package tarballs
+        run: |
+          TEMP_DIRECTORY=$(mktemp -d)
+          trap 'rm -rf "$TEMP_DIRECTORY"' EXIT
+          mkdir -p "$TEMP_DIRECTORY/tarballs" "$TEMP_DIRECTORY/install"
+
+          for PACKAGE_DIR in \
+            packages/errors \
+            packages/logger \
+            packages/ogi-addon \
+            packages/addon-server \
+            packages/all-debrid \
+            packages/client-kit \
+            packages/connection \
+            packages/executor \
+            packages/real-debrid; do
+            (cd "$PACKAGE_DIR" && npm pack --silent --pack-destination "$TEMP_DIRECTORY/tarballs" >/dev/null)
+          done
+
+          for PACKAGE_TARBALL in "$TEMP_DIRECTORY"/tarballs/*.tgz; do
+            if tar -xOf "$PACKAGE_TARBALL" package/package.json | grep -q 'workspace:'; then
+              echo "Publish-unsafe workspace protocol found in $PACKAGE_TARBALL"
+              exit 1
+            fi
+          done
+
+          npm install --prefix "$TEMP_DIRECTORY/install" "$TEMP_DIRECTORY"/tarballs/*.tgz
+
+          INSTALL_DIRECTORY="$TEMP_DIRECTORY/install" node <<'NODE'
+          const { existsSync, readFileSync } = require('node:fs');
+          const path = require('node:path');
+
+          const packageNames = [
+            '@ogi/errors',
+            '@ogi/logger',
+            'ogi-addon',
+            '@ogi-sdk/addon-server',
+            'all-debrid-js',
+            '@ogi-sdk/client-kit',
+            '@ogi-sdk/connect',
+            '@ogi-sdk/executor',
+            'real-debrid-js',
+          ];
+          const installDirectory = process.env.INSTALL_DIRECTORY;
+
+          const collectTargets = (value, targets) => {
+            if (typeof value === 'string') {
+              if (value.startsWith('./')) targets.add(value);
+              return;
+            }
+            if (value && typeof value === 'object') {
+              for (const nested of Object.values(value)) collectTargets(nested, targets);
+            }
+          };
+
+          for (const packageName of packageNames) {
+            const packageDirectory = path.join(
+              installDirectory,
+              'node_modules',
+              ...packageName.split('/')
+            );
+            const manifest = JSON.parse(
+              readFileSync(path.join(packageDirectory, 'package.json'), 'utf8')
+            );
+            const targets = new Set();
+
+            for (const field of ['main', 'module', 'types', 'typings', 'bin']) {
+              collectTargets(manifest[field], targets);
+            }
+            collectTargets(manifest.exports, targets);
+
+            for (const target of targets) {
+              if (!existsSync(path.resolve(packageDirectory, target))) {
+                throw new Error(`${packageName} declares missing entrypoint ${target}`);
+              }
+            }
+
+            require.resolve(packageName, { paths: [installDirectory] });
+          }
+          NODE
+
   check-version-and-publish:
-    needs: setup-matrix
+    needs:
+      - setup-matrix
+      - publish-shared
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -68,8 +275,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
         env:
           NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -130,7 +337,6 @@ jobs:
             echo "Publishing scoped package"
             npm publish --access public
           else
-            echo "Publishing unscoped package"
             npm publish
           fi
         env:

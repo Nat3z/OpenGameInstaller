@@ -1,4 +1,5 @@
 import { AddonError, FileSystemError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { exec } from 'child_process';
 import { Effect } from 'effect';
@@ -23,6 +24,8 @@ import {
 import { sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 const UMU_RELEASES_URL =
   'https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest';
@@ -184,9 +187,12 @@ function writeUmuLastCheckTimestamp(timestamp = Date.now()): void {
     }
     fs.writeFileSync(UMU_LAST_CHECK_FILE, `${timestamp}\n`);
   } catch (error) {
-    console.warn('[umu] Failed to persist last background check timestamp', {
-      error,
-    });
+    logger.sync.warn(
+      '[umu] Failed to persist last background check timestamp',
+      {
+        error,
+      }
+    );
   }
 }
 
@@ -205,27 +211,32 @@ function getUmuDelayUntilNextCheck(): number {
 
 async function runUmuBackgroundCheck(reason: 'startup' | 'scheduled') {
   if (umuBackgroundCheckInProgress) {
-    console.log('[umu] Background check already in progress, skipping trigger');
+    logger.sync.info(
+      '[umu] Background check already in progress, skipping trigger'
+    );
     return;
   }
 
   umuBackgroundCheckInProgress = true;
   try {
-    console.log(`[umu] Running background UMU update check (${reason})`);
+    logger.sync.info(`[umu] Running background UMU update check (${reason})`);
     const result = await downloadLatestUmu();
     if (!result.success) {
-      console.warn('[umu] Background UMU update check failed:', result.error);
+      logger.sync.warn(
+        '[umu] Background UMU update check failed:',
+        result.error
+      );
       return;
     }
 
     if (result.updated) {
-      console.log(
+      logger.sync.info(
         `[umu] Background update applied (${result.currentVersion ?? 'none'} -> ${result.latestVersion ?? 'unknown'})`
       );
       return;
     }
 
-    console.log(
+    logger.sync.info(
       `[umu] Background check complete: already up to date (${result.latestVersion ?? result.currentVersion ?? 'unknown'})`
     );
   } finally {
@@ -258,7 +269,7 @@ export function startUmuBackgroundUpdater() {
   if (delayMs === 0) {
     void runUmuBackgroundCheck('startup');
     startUmuRecurringInterval();
-    console.log('[umu] Background updater started (3 day cadence)');
+    logger.sync.info('[umu] Background updater started (3 day cadence)');
     return;
   }
 
@@ -269,7 +280,7 @@ export function startUmuBackgroundUpdater() {
   }, delayMs);
   umuBackgroundCheckTimeout.unref?.();
 
-  console.log(
+  logger.sync.info(
     `[umu] Background updater scheduled to run in ${Math.ceil(
       delayMs / (1000 * 60)
     )} minute(s), then every 3 days`
@@ -309,7 +320,7 @@ function detectNixOS(): Promise<boolean> {
 
 export const startupEnvironmentReady = (async () => {
   IS_NIXOS = await detectNixOS();
-  console.log('NIXOS: ' + IS_NIXOS);
+  logger.sync.info('NIXOS: ' + IS_NIXOS);
 })();
 
 // Directories to skip during restore (same as backup - node_modules will be reinstalled)
@@ -357,7 +368,7 @@ async function* copyDirectoryAsyncRestore(
   try {
     stat = statSync(source);
   } catch (err: any) {
-    console.error(`[backup] Failed to stat ${source}: ${err.message}`);
+    logger.sync.error(`[backup] Failed to stat ${source}: ${err.message}`);
     yield { file: source, success: false, error: err.message };
     return;
   }
@@ -368,7 +379,7 @@ async function* copyDirectoryAsyncRestore(
       copyFileSync(source, destination);
       yield { file: source, success: true };
     } catch (error: any) {
-      console.error(`[backup] Failed to copy ${source}: ${error.message}`);
+      logger.sync.error(`[backup] Failed to copy ${source}: ${error.message}`);
       yield { file: source, success: false, error: error.message };
     }
     return;
@@ -383,7 +394,7 @@ async function* copyDirectoryAsyncRestore(
     const entries = readdirSync(source);
     for (const entry of entries) {
       if (dirsToSkipRestore.includes(entry)) {
-        console.log(`[backup] Skipping ${entry} (will be reinstalled)`);
+        logger.sync.info(`[backup] Skipping ${entry} (will be reinstalled)`);
         continue;
       }
 
@@ -394,7 +405,7 @@ async function* copyDirectoryAsyncRestore(
       yield* copyDirectoryAsyncRestore(srcPath, destPath);
     }
   } catch (error: any) {
-    console.error(
+    logger.sync.error(
       `[backup] Failed to read directory ${source}: ${error.message}`
     );
     yield { file: source, success: false, error: error.message };
@@ -413,12 +424,12 @@ export async function restoreBackup(
   }
 
   if (process.platform === 'linux') {
-    console.log('[backup] Skipping setup backup restore on Linux.');
+    logger.sync.info('[backup] Skipping setup backup restore on Linux.');
     try {
       rmSync(backupDir, { recursive: true, force: true });
-      console.log('[backup] Removed stale Linux update backup.');
+      logger.sync.info('[backup] Removed stale Linux update backup.');
     } catch (deleteError: any) {
-      console.warn(
+      logger.sync.warn(
         '[backup] Could not delete stale Linux update backup:',
         deleteError.message
       );
@@ -434,14 +445,14 @@ export async function restoreBackup(
   // retry the deletion.
   const restoreCompleteFlagPath = join(backupDir, 'restore-complete.flag');
   if (existsSync(restoreCompleteFlagPath)) {
-    console.log(
+    logger.sync.info(
       '[backup] Restore already completed, retrying backup directory cleanup...'
     );
     try {
       rmSync(backupDir, { recursive: true, force: true });
-      console.log('[backup] Backup directory cleaned up successfully.');
+      logger.sync.info('[backup] Backup directory cleaned up successfully.');
     } catch (deleteError: any) {
-      console.warn(
+      logger.sync.warn(
         '[backup] Could not delete backup directory:',
         deleteError.message
       );
@@ -452,7 +463,7 @@ export async function restoreBackup(
   // Check for addon reinstall flag.
   if (needsAddonReinstall) {
     needsAddonReinstall = true;
-    console.log('[backup] Addon reinstall flag found');
+    logger.sync.info('[backup] Addon reinstall flag found');
     try {
       fs.unlinkSync(flagPath);
     } catch {
@@ -461,7 +472,7 @@ export async function restoreBackup(
   }
 
   // Restore the backup asynchronously
-  console.log('[backup] Restoring backup...');
+  logger.sync.info('[backup] Restoring backup...');
   try {
     // Get list of files/directories to restore
     const filesToRestore = readdirSync(backupDir).filter(
@@ -469,7 +480,7 @@ export async function restoreBackup(
     );
 
     if (filesToRestore.length === 0) {
-      console.log('[backup] No files to restore');
+      logger.sync.info('[backup] No files to restore');
       // Clean up empty backup directory
       try {
         rmSync(backupDir, { recursive: true, force: true });
@@ -486,7 +497,7 @@ export async function restoreBackup(
       totalFiles += countFilesToRestore(source);
     }
 
-    console.log(`[backup] Total files to restore: ${totalFiles}`);
+    logger.sync.info(`[backup] Total files to restore: ${totalFiles}`);
 
     let restoredFiles = 0;
     let failedFiles: string[] = [];
@@ -497,11 +508,11 @@ export async function restoreBackup(
       const destination = join(__dirname, file);
 
       if (!existsSync(source)) {
-        console.log(`[backup] Skipping ${file} (does not exist)`);
+        logger.sync.info(`[backup] Skipping ${file} (does not exist)`);
         continue;
       }
 
-      console.log(`[backup] Restoring ${file}`);
+      logger.sync.info(`[backup] Restoring ${file}`);
 
       // Copy files asynchronously with progress
       for await (const result of copyDirectoryAsyncRestore(
@@ -525,7 +536,7 @@ export async function restoreBackup(
     }
 
     if (failedFiles.length > 0) {
-      console.warn(
+      logger.sync.warn(
         `[backup] Failed to restore ${failedFiles.length} files:`,
         failedFiles.slice(0, 10)
       );
@@ -543,26 +554,26 @@ export async function restoreBackup(
     // On Windows, files may still be locked after copying, so we need to handle permission errors
     try {
       rmSync(backupDir, { recursive: true, force: true });
-      console.log('[backup] Backup restored successfully!');
+      logger.sync.info('[backup] Backup restored successfully!');
     } catch (deleteError: any) {
       // If deletion fails due to permissions (common on Windows), log a warning but don't fail.
       // The restore-complete.flag written above ensures the next launch will only retry
       // deletion rather than re-applying the backup.
       if (deleteError.code === 'EPERM' || deleteError.code === 'EBUSY') {
-        console.warn(
+        logger.sync.warn(
           '[backup] Could not delete backup directory immediately (files may be locked). Will retry cleanup on next launch.',
           deleteError.message
         );
       } else {
         // Log but don't throw - allow app to continue
-        console.error(
+        logger.sync.error(
           '[backup] Error deleting backup directory:',
           deleteError.message
         );
       }
     }
   } catch (error: any) {
-    console.error('[backup] Error restoring backup:', error.message);
+    logger.sync.error('[backup] Error restoring backup:', error.message);
     // Don't throw - allow the app to continue even if backup restoration fails
   }
 
@@ -577,12 +588,12 @@ export function reinstallAddonDependencies(
   onProgress?: (addon: string, current: number, total: number) => void
 ): Effect.Effect<void> {
   return Effect.gen(function* () {
-    console.log('[startup] Reinstalling addon dependencies...');
+    logger.sync.info('[startup] Reinstalling addon dependencies...');
 
     // Check if general config exists
     const configPath = join(__dirname, 'config/option/general.json');
     if (!fs.existsSync(configPath)) {
-      console.log(
+      logger.sync.info(
         '[startup] No general config found, skipping addon reinstall'
       );
       return;
@@ -595,7 +606,7 @@ export function reinstallAddonDependencies(
     const addons = generalConfig.addons as string[] | undefined;
 
     if (!addons || addons.length === 0) {
-      console.log('[startup] No addons configured, skipping reinstall');
+      logger.sync.info('[startup] No addons configured, skipping reinstall');
       return;
     }
 
@@ -610,7 +621,7 @@ export function reinstallAddonDependencies(
           : join(__dirname, 'addons', addonName);
 
       if (!fs.existsSync(addonPath)) {
-        console.log(
+        logger.sync.info(
           `[startup] Addon ${addonName} not found at ${addonPath}, skipping`
         );
         continue;
@@ -618,7 +629,7 @@ export function reinstallAddonDependencies(
 
       // Check if addon.json exists
       if (!fs.existsSync(join(addonPath, 'addon.json'))) {
-        console.log(`[startup] No addon.json for ${addonName}, skipping`);
+        logger.sync.info(`[startup] No addon.json for ${addonName}, skipping`);
         continue;
       }
 
@@ -630,16 +641,12 @@ export function reinstallAddonDependencies(
           catch: (error) => error,
         }).pipe(
           Effect.tap(() =>
-            Effect.sync(() =>
-              console.log(`[startup] Removed installation.log for ${addonName}`)
-            )
+            logger.info(`[startup] Removed installation.log for ${addonName}`)
           ),
           Effect.catchAll((error) =>
-            Effect.sync(() =>
-              console.warn(
-                `[startup] Could not remove installation.log for ${addonName}:`,
-                error
-              )
+            logger.warn(
+              `[startup] Could not remove installation.log for ${addonName}:`,
+              error
             )
           )
         );
@@ -647,38 +654,28 @@ export function reinstallAddonDependencies(
 
       onProgress?.(addonName, current, addons.length);
 
-      console.log(
+      logger.sync.info(
         `[startup] Running setup for addon ${addonName} (${current}/${addons.length})`
       );
       const success = yield* Addon.load(addonPath).pipe(
         Effect.flatMap((instance) => instance.install()),
         Effect.catchAll((setupError) =>
-          Effect.sync(() => {
-            console.error(
-              `[startup] Error setting up ${addonName}:`,
-              setupError
-            );
-            // Continue with other addons
-            return false;
-          })
+          logger
+            .error(`[startup] Error setting up ${addonName}:`, setupError)
+            .pipe(Effect.as(false))
         )
       );
       if (success) {
-        console.log(`[startup] Successfully set up ${addonName}`);
+        logger.sync.info(`[startup] Successfully set up ${addonName}`);
       } else {
-        console.error(`[startup] Failed to set up ${addonName}`);
+        logger.sync.error(`[startup] Failed to set up ${addonName}`);
       }
     }
 
-    console.log('[startup] Addon dependency reinstallation complete');
+    logger.sync.info('[startup] Addon dependency reinstallation complete');
   }).pipe(
     Effect.catchAll((error) =>
-      Effect.sync(() =>
-        console.error(
-          '[startup] Failed to reinstall addon dependencies:',
-          error
-        )
-      )
+      logger.error('[startup] Failed to reinstall addon dependencies:', error)
     )
   );
 }
@@ -703,7 +700,7 @@ export async function convertLibrary() {
       data.addonsource = 'steam';
       data.storefront = 'steam';
       fs.writeFileSync(filePath, JSON.stringify(data, null, 4));
-      console.log(`Converted ${file} to new format`);
+      logger.sync.info(`Converted ${file} to new format`);
     }
   }
 }
@@ -767,7 +764,7 @@ export function checkForAddonUpdates(
       const addonName = parsedAddon.addonName;
 
       if (!isGitRepository(addonPath)) {
-        console.log(
+        logger.sync.info(
           `Skipping addon update check for ${addonName}: ${addonPath} is not a valid git repository`
         );
         continue;
@@ -781,7 +778,7 @@ export function checkForAddonUpdates(
 
       const localHashResult = yield* Effect.either(addonGit.getCurrentHash());
       if (localHashResult._tag === 'Left') {
-        console.error(
+        logger.sync.error(
           `[startup] Failed to read the current hash for ${addonName}:`,
           localHashResult.left
         );
@@ -800,7 +797,7 @@ export function checkForAddonUpdates(
             addonGit.resolveRemoteRef('origin', explicitRef)
           );
           if (explicitRefResult._tag === 'Left') {
-            console.error(
+            logger.sync.error(
               `[startup] Failed to resolve ${explicitRef} for ${addonName}:`,
               explicitRefResult.left
             );
@@ -813,7 +810,7 @@ export function checkForAddonUpdates(
         isUpdate = localHash !== remoteHash;
       }
 
-      console.log(
+      logger.sync.info(
         '[startup] Checking update for',
         addonName,
         'local:',
@@ -826,7 +823,7 @@ export function checkForAddonUpdates(
         // dry fetch dry run - check if updates are available
         const status = yield* Effect.either(addonGit.fetch());
         if (status._tag === 'Left') {
-          console.error(
+          logger.sync.error(
             `[startup] Error checking updates for ${addonName}:`,
             status.left
           );
@@ -844,9 +841,9 @@ export function checkForAddonUpdates(
           'addon:update-available',
           addonWithMarketplaceUrl
         );
-        console.log(`Addon ${addonName} has updates.`);
+        logger.sync.info(`Addon ${addonName} has updates.`);
       } else {
-        console.log(`Addon ${addonName} is up to date.`);
+        logger.sync.info(`Addon ${addonName} is up to date.`);
       }
     }
   });
@@ -907,11 +904,11 @@ export async function removeCachedAppUpdates() {
     }
   }
 
-  console.log('[chore] Removed cached app updates');
+  logger.sync.info('[chore] Removed cached app updates');
 }
 
 export async function downloadLatestUmu(): Promise<DownloadLatestUmuResult> {
-  console.log('[umu] Checking local UMU version against latest release');
+  logger.sync.info('[umu] Checking local UMU version against latest release');
 
   let latestVersion = '';
   let installedVersion: string | null = null;

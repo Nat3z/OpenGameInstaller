@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
 import { FileSystemError, formatError, HttpError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import AllDebrid from 'all-debrid-js';
 import axios from 'axios';
 import { Effect, Schema } from 'effect';
@@ -11,6 +12,8 @@ import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
 const ConfigSchema = Schema.Struct({
@@ -58,7 +61,7 @@ const notifyFailure = <A, E>(
   effect.pipe(
     Effect.catchAll((error) =>
       Effect.sync(() => {
-        console.error(error);
+        logger.sync.error(error);
         sendNotification({
           message,
           id: Math.random().toString(36).substring(7),

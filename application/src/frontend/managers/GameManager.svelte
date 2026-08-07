@@ -1,9 +1,12 @@
 <script lang="ts">
-import { Effect } from 'effect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { getAllApps } from '@/frontend/lib/core/library';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { gamesLaunched } from '@/frontend/store.svelte';
 import { runLaunchAppAddons } from '@/frontend/utils';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const launchParams = new URLSearchParams(window.location.search);
 const shortcutLaunchGameId = (() => {
@@ -32,7 +35,7 @@ document.addEventListener('game:launch', (event: Event) => {
   });
 
   if (isShortcutLaunchForGame(appID)) {
-    Effect.runPromise(electronRpc.app.hideWindow());
+    runFrontendEffect(electronRpc.app.hideWindow());
   }
 });
 
@@ -51,19 +54,19 @@ document.addEventListener('game:exit', async (event: Event) => {
   try {
     // For Steam shortcut launches, unhide first so post-launch UI is visible.
     if (isShortcutLaunch) {
-      await Effect.runPromise(electronRpc.app.showWindow());
+      await runFrontendEffect(electronRpc.app.showWindow());
     }
     // run the addon launch-app event with launchType 'post'
     let library = await getAllApps();
     const libraryInfo = library.find((app) => app.appID === appID);
     if (!libraryInfo) {
-      console.error('Library info not found for appID: ' + appID);
+      logger.sync.error('Library info not found for appID: ' + appID);
       return;
     }
 
-    await Effect.runPromise(runLaunchAppAddons(libraryInfo, 'post'));
+    await runFrontendEffect(runLaunchAppAddons(libraryInfo, 'post'));
   } catch (error) {
-    console.error(error);
+    logger.sync.error(error);
   } finally {
     gamesLaunched.update((games) => {
       delete games[appID];
@@ -71,7 +74,7 @@ document.addEventListener('game:exit', async (event: Event) => {
     });
 
     if (isShortcutLaunch) {
-      await Effect.runPromise(electronRpc.app.close());
+      await runFrontendEffect(electronRpc.app.close());
     }
   }
 });

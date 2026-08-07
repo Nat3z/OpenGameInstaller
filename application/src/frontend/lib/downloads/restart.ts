@@ -1,4 +1,5 @@
 import { DownloadError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
@@ -11,6 +12,8 @@ import {
   createNotification,
   type DownloadStatusAndInfo,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 export interface PausedDownloadState {
   id: string;
@@ -196,7 +199,7 @@ export function restartDownload(
   }).pipe(
     Effect.catchAll((error) =>
       Effect.sync(() => {
-        console.error('Error restarting download:', error);
+        logger.sync.error('Error restarting download:', error);
         updateDownloadStatus(newDownloadId || pausedState.id, {
           status: 'error',
           error: 'Failed to restart download',

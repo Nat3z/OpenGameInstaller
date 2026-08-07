@@ -25,6 +25,7 @@
         "@ogi-sdk/connect": "workspace:*",
         "@ogi-sdk/executor": "workspace:*",
         "@ogi/errors": "workspace:*",
+        "@ogi/logger": "workspace:*",
         "all-debrid-js": "workspace:*",
         "axios": "^1.13.4",
         "d3": "^7.9.0",
@@ -72,10 +73,11 @@
     },
     "packages/addon-server": {
       "name": "@ogi-sdk/addon-server",
-      "version": "1.0.2",
+      "version": "1.1.1",
       "dependencies": {
         "@ogi-sdk/connect": "^1.0.2",
-        "@ogi/errors": "workspace:*",
+        "@ogi/errors": "^1.0.0",
+        "@ogi/logger": "^1.0.0",
         "effect": "^3.22.0",
         "elysia": "^1.4.28",
         "ogi-addon": "^4.1.0",
@@ -94,9 +96,10 @@
     },
     "packages/all-debrid": {
       "name": "all-debrid-js",
-      "version": "1.0.0",
+      "version": "1.1.1",
       "dependencies": {
-        "@ogi/errors": "workspace:*",
+        "@ogi/errors": "^1.0.0",
+        "@ogi/logger": "^1.0.0",
         "axios": "^1.7.2",
         "effect": "^3.22.0",
         "form-data": "^4.0.0",
@@ -109,10 +112,11 @@
     },
     "packages/client-kit": {
       "name": "@ogi-sdk/client-kit",
-      "version": "1.0.2",
+      "version": "1.2.1",
       "dependencies": {
         "@ogi-sdk/connect": "^1.0.2",
-        "@ogi/errors": "workspace:*",
+        "@ogi/errors": "^1.0.0",
+        "@ogi/logger": "^1.0.0",
         "effect": "^3.22.0",
         "ogi-addon": "^4.1.0",
         "ws": "^8.20.0",
@@ -128,9 +132,10 @@
     },
     "packages/connection": {
       "name": "@ogi-sdk/connect",
-      "version": "1.0.2",
+      "version": "1.1.1",
       "dependencies": {
-        "@ogi/errors": "workspace:*",
+        "@ogi/errors": "^1.0.0",
+        "@ogi/logger": "^1.0.0",
         "effect": "^3.22.0",
       },
       "devDependencies": {
@@ -143,7 +148,7 @@
     },
     "packages/create-ogi-addon": {
       "name": "create-ogi-addon",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "bin": "./main",
       "dependencies": {
         "@inquirer/prompts": "^5.3.8",
@@ -162,9 +167,10 @@
     },
     "packages/executor": {
       "name": "@ogi-sdk/executor",
-      "version": "1.3.0",
+      "version": "1.4.1",
       "dependencies": {
-        "@ogi/errors": "workspace:*",
+        "@ogi/errors": "^1.0.0",
+        "@ogi/logger": "^1.0.0",
         "effect": "^3.22.0",
         "string-argv": "^0.3.2",
       },
@@ -176,12 +182,24 @@
         "typescript": "^5",
       },
     },
+    "packages/logger": {
+      "name": "@ogi/logger",
+      "version": "1.0.0",
+      "dependencies": {
+        "effect": "^3.22.0",
+      },
+      "devDependencies": {
+        "tsdown": "^0.21.10",
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/ogi-addon": {
       "name": "ogi-addon",
-      "version": "4.1.0",
+      "version": "4.2.1",
       "dependencies": {
         "@ogi-sdk/connect": "^1.0.2",
-        "@ogi/errors": "workspace:*",
+        "@ogi/errors": "^1.0.0",
+        "@ogi/logger": "^1.0.0",
         "effect": "^3.22.0",
         "fuse.js": "^7.1.0",
       },
@@ -194,9 +212,10 @@
     },
     "packages/real-debrid": {
       "name": "real-debrid-js",
-      "version": "1.1.1",
+      "version": "1.2.1",
       "dependencies": {
-        "@ogi/errors": "workspace:*",
+        "@ogi/errors": "^1.0.0",
+        "@ogi/logger": "^1.0.0",
         "axios": "^1.7.2",
         "effect": "^3.22.0",
       },
@@ -209,6 +228,7 @@
     "test-addon": {
       "name": "test-addon",
       "dependencies": {
+        "@ogi/logger": "workspace:*",
         "ogi-addon": "workspace:*",
       },
       "devDependencies": {
@@ -222,6 +242,7 @@
       "name": "ogi-updater",
       "version": "2.1.2",
       "dependencies": {
+        "@ogi/logger": "workspace:*",
         "axios": "^1.13.4",
         "effect": "^3.22.0",
         "yauzl": "^3.2.0",
@@ -240,6 +261,7 @@
       "dependencies": {
         "@astrojs/check": "^0.9.2",
         "@astrojs/tailwind": "^5.1.0",
+        "@ogi/logger": "workspace:*",
         "astro": "^4.13.3",
         "front-matter": "^4.0.2",
         "remark-gfm": "^4.0.1",
@@ -584,6 +606,8 @@
     "@ogi-sdk/executor": ["@ogi-sdk/executor@workspace:packages/executor"],
 
     "@ogi/errors": ["@ogi/errors@workspace:packages/errors"],
+
+    "@ogi/logger": ["@ogi/logger@workspace:packages/logger"],
 
     "@oslojs/encoding": ["@oslojs/encoding@1.1.0", "", {}, "sha512-70wQhgYmndg4GCPxPPxPGevRKqTIJ2Nh4OkiMWmDAVYsTQ+Ta7Sq+rPevXyXGdzr30/qZBnyOalCszoMxlyldQ=="],
 

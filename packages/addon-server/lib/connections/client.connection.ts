@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { formatError, NetworkError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import {
   type AddonClientSDKToServerIncomingMessage,
   type AddonClientSDKToServerWebsocketMessage,
@@ -23,6 +24,8 @@ import { DeferrableTask } from '../deffered';
 import type { AddonServer } from '../server';
 import type { AddonConnection } from './addon.connection';
 import { bindWebSocketLifecycle } from './websocket-lifecycle';
+
+const logger = createLogger(LOGGER_PREFIXES.addonServer);
 
 type SDKResponseMap = { [Name in SDKRequestName]: SDKResponse<Name> };
 type ClientConnectionError = NetworkError | ValidationError;
@@ -65,8 +68,8 @@ export class ClientConnection {
         AddonServerToClientSDKIncomingMessage
       >(socket, {
         onInvalidMessage: () =>
-          Effect.sync(() => {
-            console.error('Failed to parse websocket message');
+          Effect.gen(function* () {
+            yield* logger.error('Failed to parse websocket message');
             socket.close(1008, 'Invalid JSON message');
           }),
       });

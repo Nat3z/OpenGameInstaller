@@ -1,6 +1,6 @@
 {
   "name": "all-debrid-js",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "license": "MIT",
   "module": "./build/main.mjs",
   "author": {
@@ -23,7 +23,8 @@
   "types": "./build/main.d.mts",
   "main": "./build/main.cjs",
   "dependencies": {
-    "@ogi/errors": "workspace:*",
+    "@ogi/errors": "^1.0.0",
+    "@ogi/logger": "^1.0.0",
     "axios": "^1.7.2",
     "effect": "^3.22.0",
     "form-data": "^4.0.0"

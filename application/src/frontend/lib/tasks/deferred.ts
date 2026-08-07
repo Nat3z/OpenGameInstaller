@@ -1,4 +1,5 @@
 import { AddonError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { DeferredTaskSnapshot } from '@ogi-sdk/client-kit';
 import { Effect } from 'effect';
 import { addonServer } from '@/frontend/lib/core/ipc';
@@ -7,6 +8,8 @@ import {
   deferredTasks,
   removedTasks,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 export function loadDeferredTasks(tasksToRemove: string[] = []) {
   return Effect.tryPromise({
@@ -49,7 +52,7 @@ export function loadDeferredTasks(tasksToRemove: string[] = []) {
 
 export function cancelTask(taskId: string): Effect.Effect<void> {
   return Effect.sync(() => {
-    console.warn('Task cancellation is not supported');
+    logger.sync.warn('Task cancellation is not supported');
     removedTasks.update((removed) =>
       removed.includes(taskId) ? removed : [...removed, taskId]
     );

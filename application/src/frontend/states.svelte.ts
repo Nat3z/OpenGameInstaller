@@ -1,3 +1,6 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 type RequiredReadd = {
   appID: number;
   steamAppId?: number;
@@ -62,7 +65,7 @@ export function loadPersistedUpdateState(): {
       }
     }
   } catch (e) {
-    console.error('Failed to load persisted update state:', e);
+    logger.sync.error('Failed to load persisted update state:', e);
   }
   return { requiredReadds: [], dismissedUpdates: [] };
 }
@@ -137,7 +140,7 @@ $effect.root(() => {
           );
         }
       } catch (e) {
-        console.error('Failed to persist update state:', e);
+        logger.sync.error('Failed to persist update state:', e);
       }
     };
 

@@ -2,10 +2,13 @@ import type { ChildProcess } from 'node:child_process';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { AddonError, FileSystemError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Deferred, Effect, Exit, Schema, Scope } from 'effect';
 import parseArgsStringToArgv from 'string-argv';
 import { AddonSetup } from '@/addon-setup';
 import { Git } from './git';
+
+const logger = createLogger(LOGGER_PREFIXES.executor);
 
 export const AddonFileConfigurationSchema = Schema.Struct({
   author: Schema.String,
@@ -190,9 +193,10 @@ export class Addon {
     const name = this.config.name;
     return Effect.async<void, AddonError>((resume) => {
       let settled = false;
-      const onStdout = (data: Buffer): void => console.log(`[${name}] ${data}`);
+      const onStdout = (data: Buffer): void =>
+        logger.sync.info(`[${name}] ${data}`);
       const onStderr = (data: Buffer): void =>
-        console.error(`[${name}] ${data}`);
+        logger.sync.error(`[${name}] ${data}`);
       const cleanup = (): void => {
         child.stdout?.off('data', onStdout);
         child.stderr?.off('data', onStderr);
@@ -217,14 +221,10 @@ export class Addon {
       const onExit = (
         code: number | null,
         signal: NodeJS.Signals | null
-      ): void =>
-        finish(
-          Effect.sync(() => {
-            const message = `[${name}] Exited with code ${code} and signal ${signal}`;
-            if (code === 0) console.log(message);
-            else console.error(message);
-          })
-        );
+      ): void => {
+        const message = `[${name}] Exited with code ${code} and signal ${signal}`;
+        finish(code === 0 ? logger.info(message) : logger.error(message));
+      };
 
       child.stdout?.on('data', onStdout);
       child.stderr?.on('data', onStderr);

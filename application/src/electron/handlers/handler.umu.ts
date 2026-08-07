@@ -27,7 +27,11 @@ import {
   getUmuLaunchEnvironment,
   getUmuRedistributableEnvironment,
 } from '@/electron/handlers/helpers.app/umu-environment.js';
-import { resolveLaunchCommandTokens } from '@/electron/lib/launch-command.js';
+import {
+  type LaunchArgumentToken,
+  parseLaunchArgumentTokens,
+  resolveLaunchCommandTokens,
+} from '@/electron/lib/launch-command.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import {
   resolveLegacyPrefixSource,
@@ -75,21 +79,7 @@ function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-export function parseLaunchArgumentTokens(launchArguments?: string): string[] {
-  const launchArgs = launchArguments || '';
-  return (
-    launchArgs.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((arg) => {
-      const trimmed = arg.trim();
-      if (
-        (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-        (trimmed.startsWith("'") && trimmed.endsWith("'"))
-      ) {
-        return trimmed.slice(1, -1);
-      }
-      return trimmed;
-    }) ?? []
-  );
-}
+export { parseLaunchArgumentTokens } from '@/electron/lib/launch-command.js';
 
 function isKnownLaunchEnvAssignment(token: string): boolean {
   const separatorIndex = token.indexOf('=');
@@ -98,9 +88,14 @@ function isKnownLaunchEnvAssignment(token: string): boolean {
   return KNOWN_LAUNCH_ENV_VARS.has(key);
 }
 
-function stripLeadingLaunchEnvTokens(tokens: string[]): string[] {
+function stripLeadingLaunchEnvTokens(
+  tokens: LaunchArgumentToken[]
+): LaunchArgumentToken[] {
   let start = 0;
-  while (start < tokens.length && ENV_ASSIGNMENT_PATTERN.test(tokens[start])) {
+  while (
+    start < tokens.length &&
+    ENV_ASSIGNMENT_PATTERN.test(tokens[start].value)
+  ) {
     start++;
   }
   return tokens.slice(start);
@@ -122,11 +117,11 @@ function parseLeadingLaunchEnvFromArguments(
   const env: Record<string, string> = {};
   const tokens = parseLaunchArgumentTokens(launchArguments);
   for (const token of tokens) {
-    if (!ENV_ASSIGNMENT_PATTERN.test(token)) break;
-    const separatorIndex = token.indexOf('=');
+    if (!ENV_ASSIGNMENT_PATTERN.test(token.value)) break;
+    const separatorIndex = token.value.indexOf('=');
     if (separatorIndex <= 0) continue;
-    const key = token.slice(0, separatorIndex).trim();
-    const value = token.slice(separatorIndex + 1).trim();
+    const key = token.value.slice(0, separatorIndex).trim();
+    const value = token.value.slice(separatorIndex + 1).trim();
     if (!key) continue;
     env[key] = value;
   }
@@ -134,11 +129,11 @@ function parseLeadingLaunchEnvFromArguments(
 }
 
 export function parseLaunchArguments(launchArguments?: string): string[] {
-  return stripLeadingLaunchEnvTokens(
-    parseLaunchArgumentTokens(launchArguments)
-  ).filter(
-    (token) => token !== '%command%' && !isKnownLaunchEnvAssignment(token)
-  );
+  return stripLeadingLaunchEnvTokens(parseLaunchArgumentTokens(launchArguments))
+    .map((token) => token.value)
+    .filter(
+      (token) => token !== '%command%' && !isKnownLaunchEnvAssignment(token)
+    );
 }
 
 export function parseLaunchArgumentsAfterCommand(
@@ -146,13 +141,14 @@ export function parseLaunchArgumentsAfterCommand(
 ): string[] {
   const tokens = stripLeadingLaunchEnvTokens(
     parseLaunchArgumentTokens(launchArguments)
-  ).filter((token) => !isKnownLaunchEnvAssignment(token));
-  const commandIndex = tokens.indexOf('%command%');
+  ).filter((token) => !isKnownLaunchEnvAssignment(token.value));
+  const commandIndex = tokens.findIndex((token) => token.value === '%command%');
   if (commandIndex === -1) {
     return [];
   }
   return tokens
     .slice(commandIndex + 1)
+    .map((token) => token.value)
     .filter((token) => token !== '%command%');
 }
 
@@ -160,10 +156,10 @@ export function resolveLaunchCommand(
   launchExecutable: string,
   launchArguments?: string,
   executableArgs: readonly string[] = []
-): { command: string; args: string[] } {
+): ReturnType<typeof resolveLaunchCommandTokens> {
   const tokens = stripLeadingLaunchEnvTokens(
     parseLaunchArgumentTokens(launchArguments)
-  ).filter((token) => !isKnownLaunchEnvAssignment(token));
+  ).filter((token) => !isKnownLaunchEnvAssignment(token.value));
   return resolveLaunchCommandTokens(launchExecutable, executableArgs, tokens);
 }
 
@@ -238,13 +234,15 @@ export function inferDllOverridesFromLaunchArguments(
 ): string[] {
   const tokens = parseLaunchArgumentTokens(launchArguments);
   const dllOverrideAssignment = tokens.find((token) =>
-    token.startsWith('WINEDLLOVERRIDES=')
+    token.value.startsWith('WINEDLLOVERRIDES=')
   );
   if (!dllOverrideAssignment) {
     return [];
   }
 
-  const rawValue = dllOverrideAssignment.slice('WINEDLLOVERRIDES='.length);
+  const rawValue = dllOverrideAssignment.value.slice(
+    'WINEDLLOVERRIDES='.length
+  );
   return parseDllOverridesValue(rawValue);
 }
 
@@ -532,12 +530,12 @@ export async function launchWithUmu(
   }
 
   const exePath = libraryInfo.launchExecutable;
-  const { command, args } = resolveLaunchCommand(
+  const { command, args, tokens } = resolveLaunchCommand(
     umuRunExecutable,
     libraryInfo.launchArguments,
     [exePath]
   );
-  const spawnInvocation = resolveSpawnInvocation(command, args);
+  const spawnInvocation = resolveSpawnInvocation(command, args, tokens);
 
   // Log launch info without leaking full env (may contain secrets)
   const envSummary = {

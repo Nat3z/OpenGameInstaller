@@ -31,6 +31,7 @@ let {
 } = $props();
 
 let rows: DllOverrideRow[] = $state([]);
+let scanError: string | null = $state(null);
 
 function createRow(entry = ''): DllOverrideRow {
   const trimmedEntry = entry.trim();
@@ -56,6 +57,7 @@ function cloneInitialOverrides() {
 
 $effect(() => {
   if (!open) return;
+  scanError = null;
   cloneInitialOverrides();
 });
 
@@ -89,7 +91,7 @@ function serializeRows() {
 }
 
 function removeDllSuffix(dll: string): string {
-  return dll.replace(/.dll$/g, '');
+  return dll.replace(/\.dll$/i, '');
 }
 
 function handleSave() {
@@ -98,11 +100,15 @@ function handleSave() {
 }
 
 function scanDlls() {
+  const cwd = gameInfo.cwd?.trim();
+  if (!cwd) {
+    scanError = 'Cannot scan DLLs because this game has no configured path.';
+    return;
+  }
+  scanError = null;
+
   void runDetached(
     Effect.gen(function* () {
-      // read the directory the game is set in and scan for DLLs
-      const cwd = gameInfo.cwd;
-
       const files = yield* electronRpc.fs.getFilesInDir(cwd);
       const dlls = files.filter((file) => /\.dll$/i.test(file));
 
@@ -129,6 +135,9 @@ function scanDlls() {
       variant="description"
       class="mb-4"
     />
+    {#if scanError}
+      <TextModal text={scanError} variant="warning" />
+    {/if}
 
     <div class="dll-table">
       <div class="dll-table-header">

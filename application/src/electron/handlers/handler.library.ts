@@ -8,7 +8,12 @@ import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { FileSystemError, ipcBoundary, LibraryError } from '@ogi-sdk/errors';
-import { spawn, spawnSync } from 'child_process';
+import {
+  type ChildProcess,
+  type SpawnOptions,
+  spawn,
+  spawnSync,
+} from 'child_process';
 import { Effect } from 'effect';
 import * as fs from 'fs';
 import { parse as shellQuoteParse } from 'shell-quote';
@@ -42,7 +47,7 @@ import {
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
-import { inferSpawnShell } from '@/electron/lib/spawn-shell.js';
+import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendNotification } from '@/electron/main.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
@@ -179,8 +184,11 @@ export function launchGameFromLibrary(
 
     // Legacy mode
     const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
-    const { command: launchExecutable, args: otherLaunchArguments } =
-      resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments);
+    const {
+      command: launchExecutable,
+      args: otherLaunchArguments,
+      tokens: launchTokens,
+    } = resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments);
     logger.sync.info(
       'Launching game:',
       launchExecutable,
@@ -189,16 +197,23 @@ export function launchGameFromLibrary(
       appInfo.cwd
     );
 
-    const launchShell = inferSpawnShell(launchExecutable, otherLaunchArguments);
-    const spawnedItem = spawn(launchExecutable, otherLaunchArguments, {
+    const spawnInvocation = resolveSpawnInvocation(
+      launchExecutable,
+      otherLaunchArguments,
+      launchTokens
+    );
+    const spawnOptions: SpawnOptions = {
       cwd: appInfo.cwd,
-      shell: launchShell,
+      shell: spawnInvocation.shell,
       env: {
         ...process.env,
         ...(launchEnv ?? {}),
         ...effectiveLaunchEnv,
       },
-    });
+    };
+    const spawnedItem: ChildProcess = spawnInvocation.args
+      ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
+      : spawn(spawnInvocation.command, spawnOptions);
     spawnedItem.on('error', (error) => {
       logger.sync.error(error);
       sendNotification({

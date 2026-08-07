@@ -1,6 +1,6 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { ConfigurationBuilder } from 'ogi-addon/config';
 import { onMount } from 'svelte';

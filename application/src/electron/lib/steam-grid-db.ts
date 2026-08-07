@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { SteamArtworkError } from '@ogi/errors';
+import { SteamArtworkError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { runElectronEffect } from '@/electron/runtime.js';

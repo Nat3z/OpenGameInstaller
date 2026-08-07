@@ -22,8 +22,8 @@
   "types": "./build/main.d.mts",
   "main": "./build/main.cjs",
   "dependencies": {
-    "@ogi/errors": "^1.0.0",
-    "@ogi/logger": "^1.0.0",
+    "@ogi-sdk/errors": "^1.0.0",
+    "@ogi-sdk/logger": "^1.0.0",
     "axios": "^1.7.2",
     "effect": "^3.22.0"
   },

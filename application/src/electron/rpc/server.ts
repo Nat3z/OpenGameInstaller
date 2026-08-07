@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RpcGroup, type RpcMessage, RpcServer } from '@effect/rpc';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Mailbox, Option } from 'effect';
 import { app, BrowserWindow, ipcMain, type WebContents } from 'electron';
 import { isDev } from '@/electron/manager/manager.paths.js';

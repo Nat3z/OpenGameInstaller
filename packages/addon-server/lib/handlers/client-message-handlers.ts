@@ -1,4 +1,3 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonClientToServerEventArgs,
   AddonNotificationMessage,
@@ -6,6 +5,7 @@ import type {
   OGIAddonSDKEventListener,
   StoreData,
 } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { DeferrableTask } from '../deffered';
 import {

@@ -1,5 +1,5 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { OGIAddonSDKEventListener } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { supportsStorefront } from '../lib';
 import type { HandlerContext } from './types';
 

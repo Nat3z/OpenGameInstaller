@@ -7,8 +7,8 @@ import {
   formatError,
   HttpError,
   PlatformError,
-} from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+} from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
 import {

@@ -1,5 +1,5 @@
 {
-  "name": "@ogi/logger",
+  "name": "@ogi-sdk/logger",
   "version": "1.0.0",
   "type": "module",
   "main": "./build/index.cjs",

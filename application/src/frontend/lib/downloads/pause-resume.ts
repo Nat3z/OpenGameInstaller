@@ -1,5 +1,5 @@
-import { DownloadError, formatError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { DownloadError, formatError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Deferred, Effect } from 'effect';
 import { get } from 'svelte/store';
 import { runDetached } from '@/frontend/lib/core/runtime';

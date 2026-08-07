@@ -8,7 +8,7 @@ import {
   formatError,
   HttpError,
   PlatformError,
-} from '@ogi/errors';
+} from '@ogi-sdk/errors';
 import axios, { type AxiosRequestConfig } from 'axios';
 import { Effect } from 'effect';
 import { app } from 'electron';

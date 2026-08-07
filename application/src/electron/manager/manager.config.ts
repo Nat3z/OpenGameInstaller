@@ -1,4 +1,4 @@
-import { ConfigError } from '@ogi/errors';
+import { ConfigError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';

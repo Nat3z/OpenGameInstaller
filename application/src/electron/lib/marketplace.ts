@@ -1,5 +1,5 @@
-import { formatError, HttpError, ValidationError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { formatError, HttpError, ValidationError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect, Schema } from 'effect';
 import { canonicalizeAddonSource } from './addon-links';

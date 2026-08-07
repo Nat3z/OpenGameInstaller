@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileSystemError, formatError } from '@ogi/errors';
+import { FileSystemError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { dialog, ipcMain, shell } from 'electron';
 import { extraction } from 'ogi-addon';

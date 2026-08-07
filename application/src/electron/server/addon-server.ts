@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ConfigError, formatError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { AddonServer } from '@ogi-sdk/addon-server';
+import { ConfigError, formatError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schema } from 'effect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { runElectronSync } from '@/electron/runtime.js';

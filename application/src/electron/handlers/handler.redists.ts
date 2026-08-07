@@ -1,5 +1,5 @@
-import { formatError, LibraryError, PlatformError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { formatError, LibraryError, PlatformError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { type BrowserWindow } from 'electron';
 import {

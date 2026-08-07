@@ -1,12 +1,13 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
+
 /**
  * Library CRUD IPC handlers
  * Updated to support UMU (Unified Launcher for Windows Games on Linux)
  */
 
-import { FileSystemError, ipcBoundary, LibraryError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { FileSystemError, ipcBoundary, LibraryError } from '@ogi-sdk/errors';
 import { spawn, spawnSync } from 'child_process';
 import { Effect } from 'effect';
 import * as fs from 'fs';

@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import {
   addonProtocol,
   type ServerCommandPack,
@@ -35,7 +35,7 @@ import type {
   AddonClientToServerWebsocketMessage,
   AddonServerToClientWebsocketMessage,
 } from '@ogi-sdk/connect';
-import type { NetworkError, ValidationError } from '@ogi/errors';
+import type { NetworkError, ValidationError } from '@ogi-sdk/errors';
 import type { Effect } from 'effect';
 
 type SendEventProxyMethod<Event extends AddonServerToClientEventName> = (

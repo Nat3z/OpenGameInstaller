@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "@ogi-sdk/connect": "^1.0.2",
-    "@ogi/errors": "^1.0.0",
-    "@ogi/logger": "^1.0.0",
+    "@ogi-sdk/errors": "^1.0.0",
+    "@ogi-sdk/logger": "^1.0.0",
     "effect": "^3.22.0",
     "ogi-addon": "^4.1.0",
     "ws": "^8.20.0"

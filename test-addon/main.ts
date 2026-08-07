@@ -1,4 +1,4 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import OGIAddon, { ConfigurationBuilder, type LibraryInfo } from 'ogi-addon';
 
 const logger = createLogger(LOGGER_PREFIXES.testAddon);

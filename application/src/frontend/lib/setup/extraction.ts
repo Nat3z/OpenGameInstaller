@@ -1,5 +1,5 @@
-import { FileSystemError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { FileSystemError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { basename } from '@/frontend/lib/core/fs';
 import { electronRpc } from '@/frontend/lib/electron-rpc';

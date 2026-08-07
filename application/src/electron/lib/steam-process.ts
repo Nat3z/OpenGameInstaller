@@ -5,8 +5,8 @@ import {
   SteamProcessError,
   SteamProcessTimeoutError,
   SteamRunningError,
-} from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+} from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Cause, Context, Effect, Layer } from 'effect';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);

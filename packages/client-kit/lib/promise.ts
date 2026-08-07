@@ -1,4 +1,3 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonForwardResponse,
   AddonServerToClientEventArgs,
@@ -9,6 +8,7 @@ import type {
   SDKRequestName,
   SDKResponseMessage,
 } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Fiber, Stream } from 'effect';
 import type {
   AddonProxyMetadata,

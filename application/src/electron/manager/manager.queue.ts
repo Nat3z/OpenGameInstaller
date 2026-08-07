@@ -1,4 +1,4 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);

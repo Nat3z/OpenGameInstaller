@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileSystemError, PlatformError } from '@ogi/errors';
+import { FileSystemError, PlatformError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import {
   detectUnrarTypeFromOutput,

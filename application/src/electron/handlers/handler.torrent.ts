@@ -4,8 +4,8 @@ import {
   HttpError,
   runEffectBoundary as run,
   TorrentError,
-} from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+} from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Deferred, Effect, Fiber } from 'effect';
 import { BrowserWindow } from 'electron';

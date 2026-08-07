@@ -1,4 +1,4 @@
-import type { OgiError } from '@ogi/errors';
+import type { OgiError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { cardStatusFromHandshake } from '@/frontend/lib/downloads/events';

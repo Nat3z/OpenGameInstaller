@@ -1,4 +1,4 @@
-import { formatError, TorrentError } from '@ogi/errors';
+import { formatError, TorrentError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import parseTorrent from 'parse-torrent';
 

@@ -6,7 +6,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ogi/logger": "workspace:*",
+    "@ogi-sdk/logger": "workspace:*",
     "ogi-addon": "workspace:*"
   },
   "peerDependencies": {

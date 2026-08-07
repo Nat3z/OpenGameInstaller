@@ -1,4 +1,4 @@
-import { DebridError, formatError } from '@ogi/errors';
+import { DebridError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { getDownloadPath } from '@/frontend/lib/core/fs';

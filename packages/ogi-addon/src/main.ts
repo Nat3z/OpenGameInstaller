@@ -1,11 +1,4 @@
 import events from 'node:events';
-import {
-  AddonError,
-  formatError,
-  NetworkError,
-  ValidationError,
-} from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonClientToServerEventArgs,
   AddonClientToServerEventName,
@@ -25,6 +18,13 @@ import type {
   StoreData,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket, randomMessageId } from '@ogi-sdk/connect';
+import {
+  AddonError,
+  formatError,
+  NetworkError,
+  ValidationError,
+} from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import Fuse, { IFuseOptions } from 'fuse.js';
 import { Configuration, DefiniteConfig } from './config/Configuration';

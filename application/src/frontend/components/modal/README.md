@@ -155,7 +155,7 @@ Provides styled buttons for modal actions.
 
 ```svelte
 <script>
-  import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+  import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
   import Modal from './Modal.svelte';
   import TitleModal from './TitleModal.svelte';
   import SectionModal from './SectionModal.svelte';

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { AddonError } from '@ogi/errors';
+import { AddonError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import EventResponse from './EventResponse';
 

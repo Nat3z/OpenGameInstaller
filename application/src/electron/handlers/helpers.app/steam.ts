@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import {
   ConfigError,
   GameNotFound,
@@ -8,8 +9,7 @@ import {
   SteamShortcutNotFoundError,
   SteamVdfParseError,
   SteamVdfWriteError,
-} from '@ogi/errors';
-import type { LibraryInfo } from '@ogi-sdk/connect';
+} from '@ogi-sdk/errors';
 import { Context, Effect, Layer } from 'effect';
 import {
   getLibraryPath,

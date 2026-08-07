@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { dirname } from 'node:path';
-import { AddonError, ValidationError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { AddonError, ValidationError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 
 const logger = createLogger(LOGGER_PREFIXES.executor);

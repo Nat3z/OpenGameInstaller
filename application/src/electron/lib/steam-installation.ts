@@ -6,7 +6,7 @@ import {
   SteamUserNotFoundError,
   SteamVdfParseError,
   SteamVdfWriteError,
-} from '@ogi/errors';
+} from '@ogi-sdk/errors';
 import { Context, Effect, Exit, Layer } from 'effect';
 import { readShortcuts } from '@/electron/lib/steam-shortcuts.js';
 import type { BinaryVdfObject } from '@/electron/lib/steam-vdf.js';

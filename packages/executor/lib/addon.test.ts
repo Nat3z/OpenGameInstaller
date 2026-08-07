@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ChildProcess } from 'node:child_process';
-import { AddonError } from '@ogi/errors';
+import { AddonError } from '@ogi-sdk/errors';
 import { Effect, Fiber } from 'effect';
 import { Addon } from './addon';
 

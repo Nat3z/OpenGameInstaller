@@ -1,11 +1,11 @@
-import { NetworkError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonNotificationMessage,
   AddonServerHostEventListeners,
   AddonServerHostEventName,
   ConfigurationFile,
 } from '@ogi-sdk/connect';
+import { NetworkError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { randomUUID } from 'crypto';
 import { Effect, Fiber, Runtime } from 'effect';
 import { EventEmitter } from 'events';

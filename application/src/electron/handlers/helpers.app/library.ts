@@ -2,9 +2,9 @@
  * Library file operations
  */
 
-import { GameNotFound } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { GameNotFound } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import * as fs from 'fs';
 import { dirname, join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';

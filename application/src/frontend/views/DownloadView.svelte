@@ -1,5 +1,5 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import * as d3 from 'd3';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';

@@ -1,5 +1,5 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { AddonConnection } from '@ogi-sdk/addon-server';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { addonServer } from '@/electron/server/addon-server.js';

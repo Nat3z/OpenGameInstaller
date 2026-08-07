@@ -209,8 +209,8 @@ jobs:
           const path = require('node:path');
 
           const packageNames = [
-            '@ogi/errors',
-            '@ogi/logger',
+            '@ogi-sdk/errors',
+            '@ogi-sdk/logger',
             'ogi-addon',
             '@ogi-sdk/addon-server',
             'all-debrid-js',

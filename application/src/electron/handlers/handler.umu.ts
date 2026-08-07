@@ -1,12 +1,13 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { ipcProcedure, procedure, router } from '@/electron/rpc/router-core.js';
+
 /**
  * UMU (Unified Launcher for Windows Games on Linux) IPC handlers
  * Replaces the legacy Steam/flatpak wine system with UMU Launcher
  */
 
-import { formatError, PlatformError } from '@ogi/errors';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { formatError, PlatformError } from '@ogi-sdk/errors';
 import { spawn } from 'child_process';
 import { Effect } from 'effect';
 import * as fs from 'fs';

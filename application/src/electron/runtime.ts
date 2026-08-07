@@ -1,5 +1,5 @@
-import { formatErrorResponse } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { formatErrorResponse } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Fiber, Layer, ManagedRuntime } from 'effect';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);

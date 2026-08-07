@@ -9,7 +9,7 @@
     "build": "bun run build:logger && astro check && astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "typecheck": "bun run build:logger && astro check"
+    "typecheck": "astro check"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.2",

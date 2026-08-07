@@ -463,6 +463,37 @@ describe('parallel chunk persistence', () => {
 });
 
 describe('parallel chunk merging', () => {
+  test('stops reporting download progress while chunks are merging', async () => {
+    const progressEvents: Array<Record<string, unknown>> = [];
+    const download = new Download(
+      {
+        isDestroyed: () => false,
+        webContents: {
+          send: (channel: string, data: Record<string, unknown>) => {
+            if (channel === 'ddl:download-progress') progressEvents.push(data);
+          },
+        },
+      } as never,
+      [{ link: 'https://example.test/file', path: 'download.bin' }]
+    );
+    const internals = download as unknown as {
+      useParallel: boolean;
+      parallelTotalSize: number;
+      chunks: Array<{ currentBytes: number }>;
+      trackProgress(): Effect.Effect<never>;
+    };
+    internals.useParallel = true;
+    internals.parallelTotalSize = 10;
+    internals.chunks = [{ currentBytes: 10 }];
+    download.status = 'merging';
+
+    await Effect.runPromise(
+      Effect.race(internals.trackProgress(), Effect.sleep('550 millis'))
+    );
+
+    expect(progressEvents).toEqual([]);
+  });
+
   test('waits for a part that is still merging before resolving', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'ogi-wait-merge-'));
     testDirectories.push(directory);

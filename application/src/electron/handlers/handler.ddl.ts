@@ -2316,6 +2316,8 @@ export class Download {
     return Effect.sleep('500 millis').pipe(
       Effect.tap(() =>
         Effect.sync(() => {
+          if (this.status !== 'downloading') return;
+
           if (this.useParallel) {
             const totalDownloaded = this.chunks.reduce(
               (sum, chunk) => sum + chunk.currentBytes,

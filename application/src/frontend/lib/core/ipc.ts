@@ -1,7 +1,14 @@
 import { AddonError, NetworkError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { type ConnectedAddonInfo, Connection } from '@ogi-sdk/client-kit';
 import { Effect, Schedule } from 'effect';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
+import {
+  runFrontendEffect,
+  runFrontendSync,
+} from '@/frontend/lib/core/runtime';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 export type AddonInfo = ConnectedAddonInfo;
 
@@ -11,7 +18,7 @@ function initialize(server: Connection): Effect.Effect<void, NetworkError> {
       Promise.all([
         server.on('notification', (notification) =>
           Effect.sync(() => {
-            console.log('notification', notification);
+            logger.sync.info('notification', notification);
             document.dispatchEvent(
               new CustomEvent('new-notification', { detail: notification })
             );
@@ -57,11 +64,9 @@ export function connectClientSdk() {
 }
 
 // The addon server may still be starting when the renderer loads.
-export let addonServer = await Effect.runPromise(
+export let addonServer = await runFrontendEffect(
   connectClientSdk().pipe(
-    Effect.tapError((error) =>
-      Effect.sync(() => console.warn('Waiting for addon server:', error))
-    ),
+    Effect.tapError((error) => logger.warn('Waiting for addon server:', error)),
     Effect.retry(Schedule.spaced('1 second'))
   )
 );
@@ -101,7 +106,7 @@ export function reconnectClientSdk(): Effect.Effect<void, NetworkError> {
       });
       addonServer = yield* connectClientSdk();
     });
-    const sharedReconnect = Effect.runSync(Effect.cached(reconnect)).pipe(
+    const sharedReconnect = runFrontendSync(Effect.cached(reconnect)).pipe(
       Effect.ensuring(
         Effect.sync(() => {
           if (reconnectInFlight === sharedReconnect) reconnectInFlight = null;

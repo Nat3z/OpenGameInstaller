@@ -1,4 +1,5 @@
 import { formatError, UpdateError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
@@ -6,6 +7,8 @@ import {
   checkIfInstallerUpdateAvailable,
   type UpdaterCallbacks,
 } from '@/electron/updater.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 export type SystemUpdateResult = {
   id: string;
@@ -48,7 +51,7 @@ export class SystemUpdateManager {
     return Effect.gen(this, function* () {
       const onlineState = getEffectiveOnlineState();
       if (!onlineState.effectiveOnline) {
-        console.log(
+        logger.sync.info(
           `[system-updater] Offline mode enabled (${onlineState.reason}), skipping updates`
         );
         return [];
@@ -58,7 +61,7 @@ export class SystemUpdateManager {
       for (const updater of this.updaters) {
         const shouldRun = yield* updater.shouldRun().pipe(
           Effect.catchAll((error) => {
-            console.error(
+            logger.sync.error(
               `[system-updater] Could not determine whether ${updater.id} should run:`,
               error
             );
@@ -71,14 +74,14 @@ export class SystemUpdateManager {
           })
         );
         if (!shouldRun) {
-          console.log(`[system-updater] Skipping ${updater.id}`);
+          logger.sync.info(`[system-updater] Skipping ${updater.id}`);
           continue;
         }
 
         callbacks.onStatus(`Checking ${updater.label} updates...`);
         const result = yield* updater.update(callbacks).pipe(
           Effect.catchAll((error) => {
-            console.error(`[system-updater] ${updater.id} failed:`, error);
+            logger.sync.error(`[system-updater] ${updater.id} failed:`, error);
             return Effect.succeed<SystemUpdateResult>({
               id: updater.id,
               success: false,

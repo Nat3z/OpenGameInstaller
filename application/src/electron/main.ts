@@ -1,3 +1,4 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import '@/electron/lib/source-maps.js';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
@@ -42,6 +43,8 @@ import {
   closeSplashWindow,
   runStartupTasks,
 } from '@/electron/startup-runner.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 // import steamworks from 'steamworks.js';
 
@@ -154,7 +157,7 @@ async function handleLaunchHooks(
   gameId: number,
   hookType: 'pre' | 'post'
 ): Promise<void> {
-  console.log(
+  logger.sync.info(
     `[launch-hooks] Running ${hookType}-launch hooks for game ${gameId}`
   );
 
@@ -192,7 +195,7 @@ async function handleLaunchHooks(
  * Now integrated into the main Svelte UI via query parameters
  */
 async function launchGameById(gameId: number, wrapperCommand?: string | null) {
-  console.log(
+  logger.sync.info(
     `[launch] Steam shortcut launch detected for game ${gameId}, loading into main UI`
   );
 
@@ -215,7 +218,7 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
       ? `http://localhost:8080`
       : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}`;
 
-    console.log('Direct wrapper command: ' + wrapperCommand);
+    logger.sync.info('Direct wrapper command: ' + wrapperCommand);
 
     const wrapperQuery = wrapperCommand
       ? `&wrapperCommand=${encodeURIComponent(wrapperCommand)}`
@@ -234,14 +237,14 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
 export const VERSION = app.getVersion();
 
 // check if NixOS using command -v nixos-rebuild
-console.log('continuing launch...');
-console.log('NIXOS: ' + IS_NIXOS);
+logger.sync.info('continuing launch...');
+logger.sync.info('NIXOS: ' + IS_NIXOS);
 if (IS_NIXOS) {
-  console.log(
+  logger.sync.info(
     'NixOS detected, but startup logic has been moved. If you have issues, please check startup.ts'
   );
 }
-console.log('Running in directory: ' + __dirname);
+logger.sync.info('Running in directory: ' + __dirname);
 
 /* Sync IPC for initial theme: must be registered before renderer loads to avoid flash */
 ipcMain.on('get-initial-theme', (event) => {
@@ -302,7 +305,7 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
     let resolverRef: (() => void) | null = null;
     await Promise.race([
       new Promise<void>((resolve) => {
-        console.log('waiting for events');
+        logger.sync.info('waiting for events');
         resolverRef = resolve;
         readyForEventWaiters.push(resolve);
       }),
@@ -312,14 +315,14 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
             const idx = readyForEventWaiters.indexOf(resolverRef);
             if (idx !== -1) readyForEventWaiters.splice(idx, 1);
           }
-          console.warn(
+          logger.sync.warn(
             '[sendIPCMessage] client-ready-for-events not received within timeout, proceeding'
           );
           resolve();
         }, IPC_READY_TIMEOUT_MS);
       }),
     ]);
-    if (isReadyForEvents) console.log('events ready');
+    if (isReadyForEvents) logger.sync.info('events ready');
   }
   mainWindow?.webContents.send(channel, ...args);
 }
@@ -339,11 +342,13 @@ export function sendAskForInput(
   callback: (result: any) => void
 ) {
   if (!mainWindow) {
-    console.error('Main window is not ready yet. Cannot send ask for input.');
+    logger.sync.error(
+      'Main window is not ready yet. Cannot send ask for input.'
+    );
     return;
   }
   if (!mainWindow.webContents) {
-    console.error(
+    logger.sync.error(
       'Main window web contents is not ready yet. Cannot send ask for input.'
     );
     return;
@@ -390,12 +395,12 @@ async function ensureAddonServerRunning() {
 
   try {
     await runElectronEffect(startAddonServer());
-    console.log(`Addon Server is running on http://localhost:${port}`);
-    console.log(`Server is being executed by electron!`);
+    logger.sync.info(`Addon Server is running on http://localhost:${port}`);
+    logger.sync.info(`Server is being executed by electron!`);
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code === 'EADDRINUSE') {
-      console.warn(
+      logger.sync.warn(
         `[addon-server] Port ${port} is already in use, continuing startup`
       );
       return;
@@ -436,10 +441,10 @@ async function onMainAppReady() {
 
     app.on('browser-window-focus', function () {
       globalShortcut.register('CommandOrControl+R', () => {
-        console.log('CommandOrControl+R is pressed: Shortcut Disabled');
+        logger.sync.info('CommandOrControl+R is pressed: Shortcut Disabled');
       });
       globalShortcut.register('F5', () => {
-        console.log('F5 is pressed: Shortcut Disabled');
+        logger.sync.info('F5 is pressed: Shortcut Disabled');
       });
     });
 
@@ -449,7 +454,7 @@ async function onMainAppReady() {
     });
   }
 
-  console.log('showing window');
+  logger.sync.info('showing window');
   mainWindow?.show();
   mainWindow?.focus();
 
@@ -508,7 +513,7 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
       parsedUrl = new URL(navigationUrl);
     } catch {
       event.preventDefault();
-      console.error('Blocked navigation to malformed URL:', navigationUrl);
+      logger.sync.error('Blocked navigation to malformed URL:', navigationUrl);
       return;
     }
 
@@ -517,7 +522,7 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
       parsedUrl.protocol !== 'file:'
     ) {
       event.preventDefault();
-      console.warn(`Blocked navigation to: ${navigationUrl}`);
+      logger.sync.warn(`Blocked navigation to: ${navigationUrl}`);
     }
   });
 
@@ -568,7 +573,7 @@ async function startAppFlow(win: BrowserWindow) {
   if (win && !win.isDestroyed()) {
     if (isDev()) {
       win.loadURL('http://localhost:8080');
-      console.log('Running in development');
+      logger.sync.info('Running in development');
     } else {
       win.loadURL(
         'file://' +
@@ -639,7 +644,7 @@ async function runAddonLaunchEvent(
 async function handleRemoteLaunchRequest(
   payload: LaunchForwardPayload
 ): Promise<{ success: boolean; error?: string }> {
-  console.log(
+  logger.sync.info(
     `[single-instance] Remote launch requested for game ${payload.gameId}`,
     payload
   );
@@ -750,7 +755,10 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, commandLine) => {
-    console.log('[single-instance] Second instance detected:', commandLine);
+    logger.sync.info(
+      '[single-instance] Second instance detected:',
+      commandLine
+    );
 
     const launchPayload = parseLaunchRequestFromArgv(commandLine);
     if (launchPayload) {
@@ -778,12 +786,12 @@ app.on('ready', async () => {
   const hookArgs = parseLaunchHookArgs();
   const wrapperCommand = parseWrapperAfterSeparator();
   if (gameIdToLaunch !== null) {
-    console.log(
+    logger.sync.info(
       `[app] Steam shortcut launch detected for game ${gameIdToLaunch}`
     );
 
     if (wrapperCommand) {
-      console.log(
+      logger.sync.info(
         `[app] Wrapper launch detected for game ${gameIdToLaunch}: ${wrapperCommand}`
       );
       await launchGameById(gameIdToLaunch, wrapperCommand);
@@ -793,14 +801,14 @@ app.on('ready', async () => {
     // Check if this is a hook-only launch (--no-launch with --pre or --post)
     if (hookArgs.noLaunch && (hookArgs.runPre || hookArgs.runPost)) {
       if (hookArgs.runPre && hookArgs.runPost) {
-        console.log(
+        logger.sync.info(
           `[app] Hook-only launch detected (pre+post), running both hooks for game ${gameIdToLaunch}`
         );
         await handleLaunchHooks(gameIdToLaunch, 'pre');
         await handleLaunchHooks(gameIdToLaunch, 'post');
       } else {
         const hookType = hookArgs.runPre ? 'pre' : 'post';
-        console.log(
+        logger.sync.info(
           `[app] Hook-only launch detected (${hookType}-launch), running hooks for game ${gameIdToLaunch}`
         );
         await handleLaunchHooks(gameIdToLaunch, hookType);
@@ -827,18 +835,16 @@ app.on('window-all-closed', () => {
   void runElectronEffect(
     Effect.gen(function* () {
       releasePowerSaveBlock();
-      console.log('Stopping torrent client...');
+      logger.sync.info('Stopping torrent client...');
       yield* stopClient();
       for (const instance of [...Addon.running.values()]) {
-        console.log(`Stopping addon ${instance.config.path}`);
+        logger.sync.info(`Stopping addon ${instance.config.path}`);
         yield* instance.stop().pipe(Effect.ignore);
       }
       for (const interval of torrentIntervals) clearInterval(interval);
       if (isAddonServerListening) yield* stopAddonServer();
     }).pipe(
-      Effect.catchAll((error) =>
-        Effect.sync(() => console.error('Error during cleanup:', error))
-      )
+      Effect.catchAll((error) => logger.error('Error during cleanup:', error))
     )
   ).finally(() => {
     void disposeElectronRuntime().finally(() => app.quit());

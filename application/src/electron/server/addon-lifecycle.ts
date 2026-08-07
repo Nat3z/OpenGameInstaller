@@ -1,4 +1,5 @@
 import { AddonError, FileSystemError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { readFileSync, writeFileSync } from 'fs';
@@ -7,6 +8,8 @@ import { join } from 'path';
 import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { addonServer } from '@/electron/server/addon-server.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 export type DeleteInstalledAddonResult = {
   success: boolean;
@@ -86,16 +89,23 @@ export function deleteInstalledAddon(
         }),
     });
 
-    console[removals[0].status === 'fulfilled' ? 'log' : 'error'](
-      removals[0].status === 'fulfilled'
-        ? 'Addon removed from addons folder'
-        : 'Failed to remove addon from addons folder'
-    );
-    console[removals[1].status === 'fulfilled' ? 'log' : 'error'](
-      removals[1].status === 'fulfilled'
-        ? 'Addon removed from config folder'
-        : 'Failed to remove addon from config folder'
-    );
+    if (removals[0].status === 'fulfilled') {
+      yield* logger.info('Addon removed from addons folder');
+    } else {
+      yield* logger.error(
+        'Failed to remove addon from addons folder',
+        removals[0].reason
+      );
+    }
+
+    if (removals[1].status === 'fulfilled') {
+      yield* logger.info('Addon removed from config folder');
+    } else {
+      yield* logger.error(
+        'Failed to remove addon from config folder',
+        removals[1].reason
+      );
+    }
 
     return removals[0].status === 'fulfilled'
       ? { success: true }

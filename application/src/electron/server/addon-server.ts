@@ -1,10 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ConfigError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { AddonServer } from '@ogi-sdk/addon-server';
 import { Effect, Schema } from 'effect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { runElectronSync } from '@/electron/runtime.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 export const port = 7654;
 const DeveloperConfigSchema = Schema.Struct({
@@ -40,7 +43,7 @@ export const isSecurityCheckEnabled = runElectronSync(
 );
 if (!isSecurityCheckEnabled) {
   for (let index = 0; index < 10; index += 1) {
-    console.warn(
+    logger.sync.warn(
       'WARNING Security check is disabled. THIS IS A MAJOR SECURITY RISK.'
     );
   }

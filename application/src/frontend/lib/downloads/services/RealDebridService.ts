@@ -1,4 +1,5 @@
 import { DebridError, formatError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
@@ -7,6 +8,8 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 type RealDebridSearchResult = SearchResultWithAddon & {
   downloadType: 'magnet' | 'torrent';
@@ -110,7 +113,7 @@ export class RealDebridService extends BaseService {
     }).pipe(
       Effect.tapError((error) =>
         Effect.sync(() => {
-          console.error('Failed to start Real-Debrid download:', error);
+          logger.sync.error('Failed to start Real-Debrid download:', error);
           if (!tempId) return;
           currentDownloads.update((downloads) =>
             downloads.map((download) =>

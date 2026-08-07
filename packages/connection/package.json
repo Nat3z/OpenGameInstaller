@@ -2,7 +2,7 @@
   "name": "@ogi-sdk/connect",
   "module": "./build/index.mjs",
   "type": "module",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "exports": {
     ".": {
       "import": {
@@ -48,7 +48,8 @@
   "main": "./build/index.cjs",
   "types": "./build/index.d.mts",
   "dependencies": {
-    "@ogi/errors": "workspace:*",
+    "@ogi/errors": "^1.0.0",
+    "@ogi/logger": "^1.0.0",
     "effect": "^3.22.0"
   }
 }

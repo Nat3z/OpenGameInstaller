@@ -1,4 +1,5 @@
 import { FileSystemError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';
@@ -9,6 +10,8 @@ import {
   type RedistributableInstall,
   redistributableInstalls,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 type PersistableStatus =
   | 'downloading'
@@ -83,7 +86,11 @@ function saveRecord(download: DownloadStatusAndInfo, force = false) {
       JSON.stringify(record, null, 2)
     );
   } catch (e) {
-    console.error('Failed to persist in-progress download:', download.id, e);
+    logger.sync.error(
+      'Failed to persist in-progress download:',
+      download.id,
+      e
+    );
   }
 }
 
@@ -92,7 +99,7 @@ function removeRecord(id: string) {
     const path = recordPath(id);
     window.electronAPI.fs.delete(path);
   } catch (e) {
-    console.error('Failed to remove persisted download:', id, e);
+    logger.sync.error('Failed to remove persisted download:', id, e);
   }
 }
 
@@ -172,7 +179,7 @@ export function loadPersistedDownloads() {
           info.queuePosition = undefined;
           restored.push(info);
         } catch (error) {
-          console.error('Failed to parse persisted download:', file, error);
+          logger.sync.error('Failed to parse persisted download:', file, error);
         }
       }
       return { downloads: restored, redistributableInstallByDownloadId };
@@ -185,7 +192,7 @@ export function initDownloadPersistence() {
     const restoredState = yield* loadPersistedDownloads().pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error('Failed to hydrate persisted downloads:', error);
+          logger.sync.error('Failed to hydrate persisted downloads:', error);
           return {
             downloads: [],
             redistributableInstallByDownloadId: {},
@@ -291,9 +298,7 @@ export function deleteDownloadedItems(id: string) {
                     })
                 ),
                 Effect.tapError((error) =>
-                  Effect.sync(() =>
-                    console.error(error.message, error.path, error.cause)
-                  )
+                  logger.error(error.message, error.path, error.cause)
                 ),
                 Effect.ignore
               ),

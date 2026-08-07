@@ -19,6 +19,7 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PassThrough, Readable } from 'stream';
+import { ElectronRpc } from '../src/lib/electron-rpc.js';
 
 class MockAxiosError extends Error {
   constructor(
@@ -33,10 +34,6 @@ class MockAxiosError extends Error {
 
 class MockBrowserWindow {}
 
-const ipcHandlers = new Map<
-  string,
-  (event: unknown, ...args: unknown[]) => unknown
->();
 const registerDownloadHandshake = mock((_id: string) => {});
 
 const get = mock((_url?: string, _config?: { signal?: AbortSignal }) =>
@@ -59,14 +56,7 @@ mock.module('electron', () => ({
   app: { isPackaged: false, getAppPath: () => process.cwd() },
   BrowserWindow: MockBrowserWindow,
   ipcMain: {
-    handle: mock(
-      (
-        channel: string,
-        callback: (event: unknown, ...args: unknown[]) => unknown
-      ) => {
-        ipcHandlers.set(channel, callback);
-      }
-    ),
+    handle: mock(() => {}),
     handleOnce: mock(() => {}),
     removeHandler: mock(() => {}),
   },
@@ -164,23 +154,25 @@ describe('download resume coordination', () => {
       });
     });
 
-    ipcHandlers.clear();
-    registerDdlHandler({
+    const procedures = registerDdlHandler({
       once: () => {},
       isDestroyed: () => false,
       webContents: { send: () => {} },
     } as never);
+    const getHandler = (
+      rpc: (typeof ElectronRpc.ddl)[keyof typeof ElectronRpc.ddl]
+    ) => procedures.find((procedure) => procedure.rpc === rpc)?.handler;
 
-    const download = ipcHandlers.get('ddl:download');
-    const pause = ipcHandlers.get('ddl:pause');
-    const resume = ipcHandlers.get('ddl:resume');
-    const abort = ipcHandlers.get('ddl:abort');
+    const download = getHandler(ElectronRpc.ddl.download);
+    const pause = getHandler(ElectronRpc.ddl.pauseDownload);
+    const resume = getHandler(ElectronRpc.ddl.resumeDownload);
+    const abort = getHandler(ElectronRpc.ddl.abortDownload);
     expect(download).toBeDefined();
     expect(pause).toBeDefined();
     expect(resume).toBeDefined();
     expect(abort).toBeDefined();
 
-    await download?.(undefined, [
+    await download?.([
       {
         link: 'https://example.test/file',
         path: join(directory, 'download.bin'),
@@ -199,8 +191,8 @@ describe('download resume coordination', () => {
       }
       expect(get).toHaveBeenCalledTimes(1);
 
-      await pause?.(undefined, id);
-      await Promise.all([resume?.(undefined, id), resume?.(undefined, id)]);
+      await pause?.(id);
+      await Promise.all([resume?.(id), resume?.(id)]);
 
       for (
         let attempt = 0;
@@ -212,7 +204,7 @@ describe('download resume coordination', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
       expect(get).toHaveBeenCalledTimes(2);
     } finally {
-      await abort?.(undefined, id);
+      await abort?.(id);
       for (const stream of streams) stream.destroy();
     }
   });

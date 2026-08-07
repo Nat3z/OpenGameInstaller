@@ -1,8 +1,8 @@
 <script lang="ts">
-import { Effect } from 'effect';
 import CustomDropdown from '@/frontend/components/CustomDropdown.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 let {
@@ -88,7 +88,7 @@ function handleDropdownChange(detail: { selectedId: string }) {
 function browseForPath(browseType: 'file' | 'folder') {
   const properties: ('openDirectory' | 'openFile')[] =
     browseType === 'folder' ? ['openDirectory'] : ['openFile'];
-  Effect.runPromise(electronRpc.fs.dialog.showOpenDialog({ properties })).then(
+  runFrontendEffect(electronRpc.fs.dialog.showOpenDialog({ properties })).then(
     (path) => {
       if (!path) return;
       displayValue = path;

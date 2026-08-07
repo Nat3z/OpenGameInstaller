@@ -1,6 +1,6 @@
 {
   "name": "@ogi-sdk/executor",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "module": "./build/index.mjs",
   "main": "./build/index.cjs",
   "exports": {
@@ -30,7 +30,8 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@ogi/errors": "workspace:*",
+    "@ogi/errors": "^1.0.0",
+    "@ogi/logger": "^1.0.0",
     "effect": "^3.22.0",
     "string-argv": "^0.3.2"
   },

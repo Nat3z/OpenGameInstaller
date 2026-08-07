@@ -5,6 +5,7 @@ import {
   runEffectBoundary as run,
   TorrentError,
 } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import axios from 'axios';
 import { Deferred, Effect, Fiber } from 'effect';
 import { BrowserWindow } from 'electron';
@@ -29,6 +30,8 @@ import {
   waitForDownloadHandshake,
 } from '@/lib/download-handshake.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 function torrentError(message: string, cause?: unknown): TorrentError {
   if (cause instanceof TorrentError) return cause;
@@ -205,7 +208,7 @@ class TorrentDownload {
 
         if (queueResult === 'cancelled') return;
 
-        console.log('[torrent] Starting download...');
+        logger.sync.info('[torrent] Starting download...');
         this.setStatus('downloading');
         this.reportHandshake({ status: 'downloading' });
 
@@ -289,7 +292,7 @@ class TorrentDownload {
                 try {
                   controls.destroy();
                 } catch (cause) {
-                  console.error(
+                  logger.sync.error(
                     '[torrent] Failed to release WebTorrent download:',
                     torrentError(
                       `Failed to release WebTorrent download: ${formatError(cause)}`,
@@ -319,7 +322,10 @@ class TorrentDownload {
           this.wtInstance.seed().pipe(
             Effect.catchAll((error) =>
               Effect.sync(() => {
-                console.error('[torrent] Failed to seed WebTorrent:', error);
+                logger.sync.error(
+                  '[torrent] Failed to seed WebTorrent:',
+                  error
+                );
               })
             ),
             Effect.ensuring(
@@ -340,7 +346,7 @@ class TorrentDownload {
           this.releaseQbitTorrent().pipe(
             Effect.catchAll((error) =>
               Effect.sync(() => {
-                console.error(
+                logger.sync.error(
                   '[torrent] Failed to clean up qBittorrent torrent:',
                   error
                 );
@@ -477,7 +483,7 @@ class TorrentDownload {
 
         if (!this.qbitTorrentHash) {
           this.qbitTorrentHash = torrent.id;
-          console.log(
+          logger.sync.info(
             `[torrent-handler] Found torrent hash: ${this.qbitTorrentHash}`
           );
         }
@@ -626,7 +632,7 @@ class TorrentDownload {
         { channel: 'torrent:download-cancelled', data: payload }
       );
       this.sendIpc('torrent:download-cancelled', payload);
-      console.log('[torrent] Download Cancelled', this.id);
+      logger.sync.info('[torrent] Download Cancelled', this.id);
 
       if (this.lifecycleFiber) {
         yield* Fiber.interrupt(this.lifecycleFiber);
@@ -698,7 +704,7 @@ class TorrentDownload {
         id: this.id,
         type: 'error',
       });
-      console.error(`[torrent] Download ${this.id} failed:`, error);
+      logger.sync.error(`[torrent] Download ${this.id} failed:`, error);
       setImmediate(() => clearDownloadHandshake(this.id));
       downloads.delete(this.id);
     });

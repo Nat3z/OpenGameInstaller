@@ -1,4 +1,5 @@
 import { NetworkError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonClientSDKToServerIncomingMessage,
   AddonClientSDKToServerWebsocketMessage,
@@ -21,6 +22,8 @@ import type {
   EffectAddonProxy,
 } from './_generated/addon-proxy';
 import { createEffectAddonProxy } from './_generated/addon-proxy';
+
+const logger = createLogger(LOGGER_PREFIXES.clientKit);
 
 type WebSocketConstructor = new (url: string) => WebSocketLike;
 
@@ -125,8 +128,8 @@ export class EffectConnection {
           AddonClientSDKToServerIncomingMessage
         >(socket, {
           onInvalidMessage: () =>
-            Effect.sync(() => {
-              console.error('Failed to parse websocket message');
+            Effect.gen(function* () {
+              yield* logger.error('Failed to parse websocket message');
               socket.close(1008, 'Invalid JSON message');
             }),
         });

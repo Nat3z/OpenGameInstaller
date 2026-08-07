@@ -3,10 +3,13 @@
  */
 
 import { GameNotFound } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import * as fs from 'fs';
 import { dirname, join } from 'path';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 export function getLibraryPath(appID: number): string {
   return join(__dirname, `library/${appID}.json`);
@@ -142,14 +145,17 @@ export function stageLibraryRemoval(appID: number): LibraryRemovalTransaction {
         fs.renameSync(tombstonePath, deletedPath);
         cleanupPath = deletedPath;
       } catch (cause) {
-        console.warn('[library] Could not mark deletion tombstone', cause);
+        logger.sync.warn('[library] Could not mark deletion tombstone', cause);
       }
       settled = true;
       activeLibraryRemovalTombstones.delete(tombstonePath);
       try {
         fs.rmSync(cleanupPath, { force: true });
       } catch (cause) {
-        console.warn('[library] Could not remove deletion tombstone', cause);
+        logger.sync.warn(
+          '[library] Could not remove deletion tombstone',
+          cause
+        );
       }
     },
     rollback: () => {

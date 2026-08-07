@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import { fly } from 'svelte/transition';
@@ -12,9 +13,12 @@ import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
 import { fetchAddonsWithConfigure, reconnectClientSdk } from '@/frontend/utils';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const fs = window.electronAPI.fs;
 
@@ -124,7 +128,7 @@ let options: OptionsCategory[] = [
         value: 'proton_experimental',
         type: 'string',
         condition: async () =>
-          (await Effect.runPromise(electronRpc.app.getOS())) === 'linux',
+          (await runFrontendEffect(electronRpc.app.getOS())) === 'linux',
       },
       reconfigurSteamGridDb: {
         displayName: 'Change SteamGridDB API Key',
@@ -133,7 +137,7 @@ let options: OptionsCategory[] = [
         value: '',
         type: 'action',
         condition: async () =>
-          (await Effect.runPromise(electronRpc.app.getOS())) === 'linux',
+          (await runFrontendEffect(electronRpc.app.getOS())) === 'linux',
         action: () => {
           document.dispatchEvent(
             new CustomEvent('steamgriddb-launch', {
@@ -149,9 +153,9 @@ let options: OptionsCategory[] = [
         value: '',
         type: 'action',
         condition: async () =>
-          (await Effect.runPromise(electronRpc.app.getOS())) !== 'win32',
+          (await runFrontendEffect(electronRpc.app.getOS())) !== 'win32',
         action: async () => {
-          const result = await Effect.runPromise(
+          const result = await runFrontendEffect(
             electronRpc.app.addToDesktop()
           );
           if (result.success) {
@@ -476,7 +480,7 @@ function browseForFolder(event: MouseEvent) {
   const element = (event.target as HTMLElement).parentElement!!.querySelector(
     'input'
   ) as HTMLInputElement;
-  Effect.runPromise(
+  runFrontendEffect(
     electronRpc.fs.dialog.showOpenDialog({ properties: ['openDirectory'] })
   ).then((path) => {
     if (!path) return;
@@ -509,7 +513,7 @@ async function installAddons() {
     return;
   }
   updateConfig();
-  await Effect.runPromise(electronRpc.installAddons(addons));
+  await runFrontendEffect(electronRpc.installAddons(addons));
   isInstallingAddons = false;
 }
 
@@ -525,27 +529,25 @@ async function cleanAddons() {
     isCleaningAddons = false;
     return;
   }
-  await Effect.runPromise(electronRpc.cleanAddons(addons));
+  await runFrontendEffect(electronRpc.cleanAddons(addons));
   isCleaningAddons = false;
 }
 
 async function updateAddons() {
   isUpdatingAddons = true;
-  await Effect.runPromise(electronRpc.updateAddons());
+  await runFrontendEffect(electronRpc.updateAddons());
   isUpdatingAddons = false;
 }
 
 async function restartAddonServer() {
   isRestartingServer = true;
-  await Effect.runPromise(
+  await runFrontendEffect(
     Effect.gen(function* () {
       yield* electronRpc.restartAddonServer();
       yield* reconnectClientSdk();
     }).pipe(
       Effect.catchAll((error) =>
-        Effect.sync(() =>
-          console.error('Failed to restart addon server:', error)
-        )
+        logger.error('Failed to restart addon server:', error)
       ),
       Effect.ensuring(
         Effect.sync(() => {
@@ -563,7 +565,7 @@ async function saveSteamGridDbKey(): Promise<void> {
   const input = document.getElementById(
     'steamgriddb-api-key'
   ) as HTMLInputElement | null;
-  const saved = await Effect.runPromise(
+  const saved = await runFrontendEffect(
     electronRpc.oobe.setSteamGridDBKey(input?.value.trim() ?? '')
   );
   if (saved) {
@@ -703,12 +705,10 @@ onMount(() => {
     reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
   }
   async function handleAddonConnected() {
-    await Effect.runPromise(
+    await runFrontendEffect(
       fetchAddonsWithConfigure().pipe(
         Effect.catchAll((error) =>
-          Effect.sync(() =>
-            console.error('Failed to configure addons after reconnect:', error)
-          )
+          logger.error('Failed to configure addons after reconnect:', error)
         ),
         Effect.ensuring(
           Effect.sync(() => {

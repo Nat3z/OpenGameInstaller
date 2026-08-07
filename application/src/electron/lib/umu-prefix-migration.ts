@@ -1,8 +1,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { formatError, PlatformError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 const migrationMarkerName = '.ogi-prefix-migration.json';
 const activeStagingPaths = new Set<string>();
@@ -261,7 +264,10 @@ export const stagedPrefixMigration = (params: {
                 force: true,
               });
             } catch (cause) {
-              console.warn('[umu] Could not remove migration marker', cause);
+              logger.sync.warn(
+                '[umu] Could not remove migration marker',
+                cause
+              );
             }
             return params.libraryInfo;
           } finally {

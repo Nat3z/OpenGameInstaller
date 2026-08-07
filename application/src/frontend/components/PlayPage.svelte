@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { ConfigurationBuilder } from 'ogi-addon/config';
@@ -12,7 +13,7 @@ import Image from '@/frontend/components/Image.svelte';
 import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
-import { runDetached } from '@/frontend/lib/core/runtime';
+import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { addToSteam } from '@/frontend/lib/core/steam';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
@@ -41,6 +42,8 @@ import {
   runTask,
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let updateInfo = $derived.by(() => {
   return updatesManager.getAppUpdate(libraryInfo.appID);
@@ -92,7 +95,7 @@ let needsUmuMigration = $derived(needsUmuSetup);
 
 async function doesLinkExist(url: string | undefined) {
   if (!url) return false;
-  const response = await Effect.runPromise(
+  const response = await runFrontendEffect(
     electronRpc.app.axios({
       method: 'get',
       url: url,
@@ -110,7 +113,7 @@ let openedGameConfiguration = $state(false);
 async function launchGame() {
   if ($gamesLaunched[libraryInfo.appID]) return;
   if (!playButton) return;
-  console.log('Launching game with appID: ' + libraryInfo.appID);
+  logger.sync.info('Launching game with appID: ' + libraryInfo.appID);
   playButton.setAttribute('data-error', 'false');
 
   // Fire of the addon launch-app event first
@@ -124,11 +127,11 @@ async function launchGame() {
   playButton.querySelector('svg')!!.style.display = 'none';
   playButton.querySelector('p')!!.textContent = 'WAITING';
   try {
-    console.log('launching pre-launch');
-    console.log('launchApp', libraryInfo);
-    await Effect.runPromise(runLaunchAppAddons(libraryInfo, 'pre'));
+    logger.sync.info('launching pre-launch');
+    logger.sync.info('launchApp', libraryInfo);
+    await runFrontendEffect(runLaunchAppAddons(libraryInfo, 'pre'));
   } catch (error) {
-    console.error(error);
+    logger.sync.error(error);
     // remove the game from the gamesLaunched state first so the play button is restored
     gamesLaunched.update((games) => {
       delete games[libraryInfo.appID];
@@ -142,11 +145,11 @@ async function launchGame() {
     return;
   }
 
-  console.log('pre-launch complete');
+  logger.sync.info('pre-launch complete');
 
-  await Effect.runPromise(electronRpc.app.launchGame('' + libraryInfo.appID));
+  await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
 
-  console.log('launchGame complete');
+  logger.sync.info('launchGame complete');
   if (!window.electronAPI.fs.exists('./internals')) {
     window.electronAPI.fs.mkdir('./internals');
     window.electronAPI.fs.write(
@@ -176,7 +179,7 @@ onMount(() => {
 });
 
 const unsubscribe2 = launchGameTrigger.subscribe((game) => {
-  console.log('launchGameTrigger', libraryInfo.appID);
+  logger.sync.info('launchGameTrigger', libraryInfo.appID);
   if (game === libraryInfo.appID) {
     launchGame();
     launchGameTrigger.set(undefined);
@@ -193,7 +196,7 @@ const unsubscribe = gamesLaunched.subscribe((games) => {
     return;
   }
   if (games[libraryInfo.appID] === 'error') {
-    console.log('Error launching game');
+    logger.sync.info('Error launching game');
     playButton.disabled = false;
     playButton.querySelector('p')!!.textContent = 'ERROR';
     playButton.querySelector('svg')!!.style.display = 'none';
@@ -260,7 +263,7 @@ async function migrateToUmu() {
   if (isMigratingToUmu) return;
   isMigratingToUmu = true;
 
-  await Effect.runPromise(
+  await runFrontendEffect(
     Effect.gen(function* () {
       const steamAppIdResult = yield* electronRpc.app.getSteamAppId(
         libraryInfo.appID
@@ -304,7 +307,7 @@ async function migrateToUmu() {
     }).pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error(error);
+          logger.sync.error(error);
           createNotification({
             id: Math.random().toString(36).substring(7),
             type: 'error',
@@ -324,7 +327,7 @@ async function migrateToUmu() {
 function addRequiredReaddToSteam(button: HTMLButtonElement): Promise<void> {
   const requiredReadd = getRequiredReadd(libraryInfo.appID);
 
-  return Effect.runPromise(
+  return runFrontendEffect(
     addToSteam({
       appID: libraryInfo.appID,
       oldSteamAppId:
@@ -368,25 +371,25 @@ let settledAddons = $derived.by(() => {
 });
 
 $effect(() => {
-  console.log('searchingAddons', searchingAddons);
-  console.log('settledAddons', settledAddons);
+  logger.sync.info('searchingAddons', searchingAddons);
+  logger.sync.info('settledAddons', settledAddons);
 });
 
 onMount(async () => {
-  os = await Effect.runPromise(electronRpc.app.getOS());
+  os = await runFrontendEffect(electronRpc.app.getOS());
 
   // Set up the header back button
-  console.log('PlayPage mounted, setting header back button');
+  logger.sync.info('PlayPage mounted, setting header back button');
   setHeaderBackButton(() => {
-    console.log('Header back button clicked');
+    logger.sync.info('Header back button clicked');
     exitPlayPage();
   }, 'Back to library');
 
-  const addonsResult = await Effect.runPromise(
+  const addonsResult = await runFrontendEffect(
     fetchAddonsWithConfigure().pipe(Effect.either)
   );
   if (addonsResult._tag === 'Left') {
-    console.error('Failed to load configured addons:', addonsResult.left);
+    logger.sync.error('Failed to load configured addons:', addonsResult.left);
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: 'Failed to load configured addons',
@@ -415,11 +418,11 @@ onMount(async () => {
       }) as Promise<SearchResult[]>
     )
       .then((tasks) => {
-        console.log('tasks', tasks);
+        logger.sync.info('tasks', tasks);
         searchingAddons[addon.id] = tasks;
       })
       .catch((ex) => {
-        console.error(ex);
+        logger.sync.error(ex);
         searchingAddons[addon.id] = [];
       });
   }
@@ -427,7 +430,7 @@ onMount(async () => {
 });
 
 function handleRunTask(task: SearchResult, addonID: string) {
-  console.log('Running task: ' + task.name);
+  logger.sync.info('Running task: ' + task.name);
   const addon = addonsMap.get(addonID);
   runDetached(
     runTask(

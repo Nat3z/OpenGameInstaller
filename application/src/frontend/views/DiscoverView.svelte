@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   BasicLibraryInfo,
   CatalogCarouselItem,
@@ -7,9 +8,9 @@ import type {
   ConfigurationFile,
   OGIAddonConfiguration,
 } from '@ogi-sdk/connect';
-import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import {
   createNotification,
   currentStorePageOpened,
@@ -18,6 +19,8 @@ import {
   viewOpenedWhenChanged,
 } from '@/frontend/store.svelte';
 import { addonServer, queryConnectedAddons } from '@/frontend/utils';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile;
@@ -218,7 +221,7 @@ function openFeaturedCarouselItem(item: DiscoverCarouselItem) {
 async function loadCatalogs() {
   try {
     loading = true;
-    addons = await Effect.runPromise(
+    addons = await runFrontendEffect(
       queryConnectedAddons<ConfigTemplateAndInfo>()
     );
 
@@ -238,7 +241,7 @@ async function loadCatalogs() {
           carouselItems: normalizedCatalog.carouselItems,
         };
       } catch (error) {
-        console.warn(
+        logger.sync.warn(
           `Failed to load catalog for addon ${addonInfo.id}:`,
           error
         );
@@ -254,7 +257,7 @@ async function loadCatalogs() {
           catalog.carouselItems.length > 0)
     );
   } catch (error) {
-    console.error('Failed to load catalogs:', error);
+    logger.sync.error('Failed to load catalogs:', error);
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: 'Failed to load catalogs',

@@ -1,6 +1,9 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 interface AddToSteamOptions {
   appID: number;
@@ -37,7 +40,7 @@ export function addToSteam({
     ),
     Effect.catchAll((error) =>
       Effect.sync(() => {
-        console.error(error);
+        logger.sync.error(error);
         createNotification({
           id: Math.random().toString(36).substring(7),
           message: 'Failed to add game to Steam',

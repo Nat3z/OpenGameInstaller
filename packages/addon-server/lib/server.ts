@@ -1,4 +1,5 @@
 import { NetworkError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonNotificationMessage,
   AddonServerHostEventListeners,
@@ -13,6 +14,8 @@ import { type WebSocket, WebSocketServer } from 'ws';
 import { AddonConnection } from './connections/addon.connection';
 import { ClientConnection } from './connections/client.connection';
 import { DeferredTasksManager } from './deffered';
+
+const logger = createLogger(LOGGER_PREFIXES.addonServer);
 
 export type AddonConfig = {
   securityCheck: boolean;
@@ -94,7 +97,7 @@ export class AddonServer {
           catch: (cause) => cause,
         }).pipe(
           Effect.tapError((error) =>
-            Effect.sync(() => console.error('Failed to reply to input:', error))
+            logger.error('Failed to reply to input:', error)
           ),
           Effect.ignore
         );
@@ -276,9 +279,10 @@ export class AddonServer {
 
   /** Supervises Effects launched by EventEmitter and websocket callbacks. */
   private supervise<E>(effect: Effect.Effect<void, E>): void {
+    const observedEffect = logger.observe(effect);
     const fiber = this.runtime
-      ? Runtime.runFork(this.runtime)(effect)
-      : Effect.runFork(effect);
+      ? Runtime.runFork(this.runtime)(observedEffect)
+      : Effect.runFork(observedEffect);
     this.boundaryFibers.add(fiber);
     fiber.addObserver(() => this.boundaryFibers.delete(fiber));
   }

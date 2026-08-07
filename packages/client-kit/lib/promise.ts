@@ -1,3 +1,4 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonForwardResponse,
   AddonServerToClientEventArgs,
@@ -21,6 +22,10 @@ import type {
   SDKEventArgs,
 } from './connection';
 import { EffectConnection } from './connection';
+
+const logger = createLogger(LOGGER_PREFIXES.clientKit);
+const runPromise = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
+  Effect.runPromise(logger.observe(effect));
 
 type MaybePromise = void | Promise<void>;
 
@@ -69,7 +74,7 @@ const callbackEffect = (callback: () => MaybePromise): Effect.Effect<void> =>
     catch: (cause) => cause,
   }).pipe(
     Effect.tapError((error) =>
-      Effect.sync(() => console.error('Deferred task callback failed:', error))
+      logger.error('Deferred task callback failed:', error)
     ),
     Effect.ignore
   );
@@ -105,7 +110,7 @@ const toPromiseAddonProxy = (proxy: EffectAddonProxy): AddonProxy =>
           >
         )[property];
         if (!method) return undefined;
-        return (...args: unknown[]) => Effect.runPromise(method(...args));
+        return (...args: unknown[]) => runPromise(method(...args));
       }
       return (proxy as unknown as Record<string, unknown>)[property];
     },
@@ -119,7 +124,7 @@ export class Connection {
   private constructor(private readonly effect: EffectConnection) {}
 
   public static make(options: ConnectionOptions): Promise<Connection> {
-    return Effect.runPromise(
+    return runPromise(
       EffectConnection.make(options).pipe(
         Effect.map((effect) => new Connection(effect))
       )
@@ -140,14 +145,14 @@ export class Connection {
     event: Event,
     ...args: AddonServerToClientEventArgs[Event]
   ) {
-    return Effect.runPromise(this.effect.sendToAddon(addonId, event, ...args));
+    return runPromise(this.effect.sendToAddon(addonId, event, ...args));
   }
 
   public request<Name extends Exclude<SDKRequestName, 'forward'>>(
     name: Name,
     args: SDKRequest<Name>
   ): Promise<SDKResponseMessage<Name>> {
-    return Effect.runPromise(this.effect.request(name, args));
+    return runPromise(this.effect.request(name, args));
   }
 
   public deferToAddon<Event extends AddonServerToClientEventName>(
@@ -155,24 +160,24 @@ export class Connection {
     event: Event,
     ...args: AddonServerToClientEventArgs[Event]
   ): Promise<string> {
-    return Effect.runPromise(this.effect.deferToAddon(addonId, event, ...args));
+    return runPromise(this.effect.deferToAddon(addonId, event, ...args));
   }
 
   public getDeferredTask<T = unknown>(
     taskID: string
   ): Promise<DeferredTaskSnapshot<T> | undefined> {
-    return Effect.runPromise(this.effect.getDeferredTask<T>(taskID));
+    return runPromise(this.effect.getDeferredTask<T>(taskID));
   }
 
   public getDeferredTasks(): Promise<DeferredTaskSnapshot[]> {
-    return Effect.runPromise(this.effect.getDeferredTasks());
+    return runPromise(this.effect.getDeferredTasks());
   }
 
   public waitForDeferredTask<T = unknown>(
     taskID: string,
     options: DeferredTaskOptions<T> = {}
   ): Promise<T | undefined> {
-    return Effect.runPromise(
+    return runPromise(
       this.effect.waitForDeferredTask(taskID, toEffectOptions(options))
     );
   }
@@ -186,7 +191,7 @@ export class Connection {
     args: AddonServerToClientEventArgs[Event],
     options: DeferredTaskOptions<T> = {}
   ): Promise<T | undefined> {
-    return Effect.runPromise(
+    return runPromise(
       this.effect.deferToAddonAndWait(
         addonId,
         event,
@@ -210,7 +215,7 @@ export class Connection {
       args: PromiseSDKEventArgs<Event>
     ) => Effect.Effect<void, E> | void
   ): Promise<Fiber.RuntimeFiber<void, E>> {
-    return Effect.runPromise(
+    return runPromise(
       this.effect.on(event, (args) => {
         const result = callback(this.toPromiseEventArgs(event, args));
         return Effect.isEffect(result) ? result : Effect.void;
@@ -219,7 +224,7 @@ export class Connection {
   }
 
   public close(): Promise<void> {
-    return Effect.runPromise(this.effect.close());
+    return runPromise(this.effect.close());
   }
 
   public dispose(): Promise<void> {
@@ -235,7 +240,7 @@ export class Connection {
     return {
       ...input,
       reply: (result: Record<string, string | number | boolean>) =>
-        Effect.runPromise(input.reply(result)),
+        runPromise(input.reply(result)),
     } as PromiseSDKEventArgs<Event>;
   }
 }

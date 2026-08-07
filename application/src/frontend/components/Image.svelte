@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Effect } from 'effect';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 interface Props {
@@ -58,7 +58,7 @@ async function loadImage(currentSrc: string, currentClassifier: string) {
     }
 
     // Fetch as arraybuffer
-    const response = await Effect.runPromise(
+    const response = await runFrontendEffect(
       electronRpc.app.axios<ArrayBuffer>({
         method: 'get',
         url: currentSrc,

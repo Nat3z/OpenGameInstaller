@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AddonError, FileSystemError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect, Schema } from 'effect';
 import {
   Addon,
@@ -9,6 +10,8 @@ import {
   AddonFileConfigurationSchema,
 } from '@/addon';
 import { Git } from '@/git';
+
+const logger = createLogger(LOGGER_PREFIXES.executor);
 
 type SetupError = AddonError | FileSystemError | ValidationError;
 
@@ -90,22 +93,24 @@ export class AddonSetup {
           }),
       });
       const name = this.config.name;
+      yield* logger.info(
+        `[${name}@${scriptName}] Running script: ${startCommand}`
+      );
 
       return yield* Effect.async<string, AddonError>((resume) => {
         let stdout = '';
         let stderr = '';
         let settled = false;
-        console.log(`[${name}@${scriptName}] Running script: ${startCommand}`);
 
         child.stdout?.on('data', (data: Buffer) => {
           const text = data.toString();
           stdout += text;
-          console.log(`[${name}@${scriptName}] ${text}`);
+          logger.sync.info(`[${name}@${scriptName}] ${text}`);
         });
         child.stderr?.on('data', (data: Buffer) => {
           const text = data.toString();
           stderr += text;
-          console.error(`[${name}@${scriptName}] ${text}`);
+          logger.sync.error(`[${name}@${scriptName}] ${text}`);
         });
         child.on('error', (cause) => {
           if (settled) return;

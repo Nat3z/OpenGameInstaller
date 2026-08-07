@@ -155,12 +155,15 @@ Provides styled buttons for modal actions.
 
 ```svelte
 <script>
+  import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
   import Modal from './Modal.svelte';
   import TitleModal from './TitleModal.svelte';
   import SectionModal from './SectionModal.svelte';
   import InputModal from './InputModal.svelte';
   import CheckboxModal from './CheckboxModal.svelte';
   import ButtonModal from './ButtonModal.svelte';
+
+  const logger = createLogger(LOGGER_PREFIXES.frontend);
 
   let open = false;
   let formData = { name: '', email: '', subscribe: false };
@@ -197,7 +200,7 @@ Provides styled buttons for modal actions.
       onchange={handleInputChange}
     />
 
-    <ButtonModal text="Submit" onclick={() => console.log(formData)} />
+    <ButtonModal text="Submit" onclick={() => logger.sync.info(formData)} />
   </SectionModal>
 </Modal>
 ```

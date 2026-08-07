@@ -1,4 +1,5 @@
 import { formatError, NetworkError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import axios from 'axios';
 import { exec, spawn } from 'child_process';
 import { createHash } from 'crypto';
@@ -28,6 +29,8 @@ import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import * as zlib from 'zlib';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { runElectronEffect } from '@/electron/runtime.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 function isDev() {
   return !app.isPackaged;
@@ -97,7 +100,7 @@ async function* copyDirectoryAsync(
   try {
     stat = statSync(source);
   } catch (err: any) {
-    console.error(`[updater] Failed to stat ${source}: ${err.message}`);
+    logger.sync.error(`[updater] Failed to stat ${source}: ${err.message}`);
     yield { file: source, success: false, error: err.message };
     return;
   }
@@ -108,7 +111,7 @@ async function* copyDirectoryAsync(
       copyFileSync(source, destination);
       yield { file: source, success: true };
     } catch (error: any) {
-      console.error(`[updater] Failed to copy ${source}: ${error.message}`);
+      logger.sync.error(`[updater] Failed to copy ${source}: ${error.message}`);
       yield { file: source, success: false, error: error.message };
     }
     return;
@@ -123,7 +126,7 @@ async function* copyDirectoryAsync(
     const entries = readdirSync(source);
     for (const entry of entries) {
       if (dirsToSkip.includes(entry)) {
-        console.log(`[updater] Skipping ${entry} (will be reinstalled)`);
+        logger.sync.info(`[updater] Skipping ${entry} (will be reinstalled)`);
         continue;
       }
 
@@ -134,7 +137,7 @@ async function* copyDirectoryAsync(
       yield* copyDirectoryAsync(srcPath, destPath);
     }
   } catch (error: any) {
-    console.error(
+    logger.sync.error(
       `[updater] Failed to read directory ${source}: ${error.message}`
     );
     yield { file: source, success: false, error: error.message };
@@ -159,7 +162,7 @@ async function backupFilesAsync(
     totalFiles += countFilesToBackup(source);
   }
 
-  console.log(
+  logger.sync.info(
     `[updater] Total files to backup: ${totalFiles} from ${sourceRoot}`
   );
 
@@ -175,7 +178,7 @@ async function backupFilesAsync(
     const destination = join(tempFolder, file);
 
     if (!existsSync(source)) {
-      console.log(`[updater] Skipping ${file} (does not exist)`);
+      logger.sync.info(`[updater] Skipping ${file} (does not exist)`);
       continue;
     }
 
@@ -184,7 +187,7 @@ async function backupFilesAsync(
       needsAddonReinstall = true;
     }
 
-    console.log(`[updater] Backing up ${source} to ${destination}`);
+    logger.sync.info(`[updater] Backing up ${source} to ${destination}`);
 
     for await (const result of copyDirectoryAsync(source, destination)) {
       copiedFiles++;
@@ -210,7 +213,7 @@ async function backupFilesAsync(
   }
 
   if (failedFiles.length > 0) {
-    console.warn(
+    logger.sync.warn(
       `[updater] Failed to backup ${failedFiles.length} files:`,
       failedFiles.slice(0, 10)
     );
@@ -719,10 +722,12 @@ async function downloadSetupAppImageWithDifferentialFallback(params: {
           updateProgress: params.updateProgress,
         })
       );
-      console.log('[updater] Setup AppImage differential update succeeded');
+      logger.sync.info(
+        '[updater] Setup AppImage differential update succeeded'
+      );
       return;
     } catch (error) {
-      console.warn(
+      logger.sync.warn(
         '[updater] Setup AppImage differential update failed, falling back to full download:',
         error
       );
@@ -748,11 +753,11 @@ async function backupStateForSetupReplacement(
   const tempFolder = join(app.getPath('temp'), 'ogi-update-backup');
 
   if (process.platform === 'linux') {
-    console.log('[updater] Skipping setup backup on Linux.');
+    logger.sync.info('[updater] Skipping setup backup on Linux.');
     try {
       rmSync(tempFolder, { recursive: true, force: true });
     } catch (cleanupError: any) {
-      console.warn(
+      logger.sync.warn(
         '[updater] Failed to clean stale Linux update backup:',
         cleanupError.message
       );
@@ -775,9 +780,9 @@ async function backupStateForSetupReplacement(
           join(tempFolder, 'needs-addon-reinstall.flag'),
           new Date().toISOString()
         );
-        console.log('[updater] Created addon reinstall flag');
+        logger.sync.info('[updater] Created addon reinstall flag');
       } catch (flagError: any) {
-        console.warn(
+        logger.sync.warn(
           '[updater] Failed to create reinstall flag:',
           flagError.message
         );
@@ -785,12 +790,12 @@ async function backupStateForSetupReplacement(
     }
 
     if (!backupResult.success) {
-      console.warn(
+      logger.sync.warn(
         '[updater] Backup completed with some failures, but continuing...'
       );
     }
   } catch (backupError: any) {
-    console.error('[updater] Backup failed:', backupError.message);
+    logger.sync.error('[updater] Backup failed:', backupError.message);
     // Continue anyway - better to update with potential data loss than to leave broken
   }
 }
@@ -831,16 +836,18 @@ function killUpdaterProcesses(): Promise<void> {
           // Try killall as fallback (without wildcard, just try common names)
           exec('killall -q OpenGameInstaller-Setup.AppImage', (error2) => {
             if (error2) {
-              console.log('[updater] No Setup.AppImage process found to kill');
+              logger.sync.info(
+                '[updater] No Setup.AppImage process found to kill'
+              );
             } else {
-              console.log(
+              logger.sync.info(
                 '[updater] Killed Setup.AppImage process via killall'
               );
             }
             resolve();
           });
         } else {
-          console.log('[updater] Killed Setup.AppImage process via pkill');
+          logger.sync.info('[updater] Killed Setup.AppImage process via pkill');
           resolve();
         }
       });
@@ -874,11 +881,11 @@ export function checkIfInstallerUpdateAvailable(
     const onlineState = getEffectiveOnlineState();
     if (!onlineState.effectiveOnline) {
       if (onlineState.reason === 'cli-offline') {
-        console.log(
+        logger.sync.info(
           '[updater] Launched in offline mode, skipping update check.'
         );
       } else {
-        console.error('[updater] No internet connection available.');
+        logger.sync.error('[updater] No internet connection available.');
       }
       resolve({ success: true, updated: false });
       return;
@@ -886,18 +893,18 @@ export function checkIfInstallerUpdateAvailable(
 
     // check dirname of self
     if (basename(__dirname) !== 'update' && process.platform !== 'linux') {
-      console.log('[updater] Running portably, skipping update check.');
-      console.log(`[updater] Current directory: ${basename(__dirname)}`);
+      logger.sync.info('[updater] Running portably, skipping update check.');
+      logger.sync.info(`[updater] Current directory: ${basename(__dirname)}`);
       resolve({ success: true, updated: false });
       return;
     }
 
     if (process.platform === 'linux') {
-      console.log(
+      logger.sync.info(
         "[updater] Running on linux, most likely running the updater? let's just check to see if the thing exists."
       );
       if (!existsSync('../OpenGameInstaller-Setup.AppImage')) {
-        console.error('[updater] No setup found, exiting.');
+        logger.sync.error('[updater] No setup found, exiting.');
         resolve({
           success: false,
           updated: false,
@@ -906,13 +913,13 @@ export function checkIfInstallerUpdateAvailable(
         return;
       }
 
-      console.log('[updater] Setup found, continuing update process.');
+      logger.sync.info('[updater] Setup found, continuing update process.');
     }
 
     const localVersion = existsSync(`${__dirname}/../updater-version.txt`)
       ? readFileSync(`${__dirname}/../updater-version.txt`, 'utf8') || '0.0.0'
       : '0.0.0';
-    console.log(`[updater] Local version: ${localVersion}`);
+    logger.sync.info(`[updater] Local version: ${localVersion}`);
     const bleedingEdge = existsSync(`${__dirname}/../bleeding-edge.txt`);
     // check for updates
     try {
@@ -953,7 +960,7 @@ export function checkIfInstallerUpdateAvailable(
       }
 
       if (!latestRelease) {
-        console.error('[updater] No new version available.');
+        logger.sync.error('[updater] No new version available.');
         resolve({ success: true, updated: false });
         return;
       }
@@ -961,7 +968,7 @@ export function checkIfInstallerUpdateAvailable(
       const latestSetupAsset = getSetupAsset(latestRelease);
       const latestSetupVersionUrl = latestSetupAsset?.browser_download_url;
       if (!latestSetupVersionUrl || !latestSetupAsset) {
-        console.error(
+        logger.sync.error(
           '[updater] No setup version found for the current platform.'
         );
         resolve({
@@ -971,13 +978,13 @@ export function checkIfInstallerUpdateAvailable(
         });
         return;
       }
-      console.log(
+      logger.sync.info(
         `[updater] Latest setup version url: ${latestSetupVersionUrl}`
       );
       // get the latest version of the setup from the description of the release
       const setupVersion = getSetupVersionFromRelease(latestRelease);
       if (!setupVersion) {
-        console.error(
+        logger.sync.error(
           '[updater] No setup version found in the release description.'
         );
         resolve({
@@ -988,11 +995,11 @@ export function checkIfInstallerUpdateAvailable(
         return;
       }
       const latestSetupVersion = setupVersion;
-      console.log(`[updater] Latest setup version: ${latestSetupVersion}`);
-      console.log(`[updater] Latest version: ${latestVersion}`);
+      logger.sync.info(`[updater] Latest setup version: ${latestSetupVersion}`);
+      logger.sync.info(`[updater] Latest version: ${latestVersion}`);
 
       if (latestSetupVersion !== localVersion) {
-        console.log(`[updater] New version available: ${latestVersion}`);
+        logger.sync.info(`[updater] New version available: ${latestVersion}`);
 
         // Kill any running instances of Setup.AppImage or ogi-updater.exe before updating
         updateStatus('Stopping updater processes');
@@ -1007,8 +1014,8 @@ export function checkIfInstallerUpdateAvailable(
             updateStatus,
             updateProgress
           );
-          console.log(`[updater] Setup downloaded successfully.`);
-          console.log(`[updater] Backing up files in update.`);
+          logger.sync.info(`[updater] Setup downloaded successfully.`);
+          logger.sync.info(`[updater] Backing up files in update.`);
           await backupStateForSetupReplacement(updateStatus, updateProgress);
 
           updateStatus('Starting Setup');
@@ -1020,7 +1027,7 @@ export function checkIfInstallerUpdateAvailable(
               stdio: 'ignore',
             }).unref();
           } catch (spawnError: any) {
-            console.error(
+            logger.sync.error(
               '[updater] Failed to launch setup:',
               spawnError.message
             );
@@ -1044,18 +1051,18 @@ export function checkIfInstallerUpdateAvailable(
             updateStatus,
             updateProgress,
           });
-          console.log(`[updater] Setup downloaded successfully.`);
+          logger.sync.info(`[updater] Setup downloaded successfully.`);
 
           updateStatus('Starting Setup');
 
           await setTimeoutPromise(500);
           try {
             // Replace the old Setup AppImage only after the download is complete.
-            console.log(
+            logger.sync.info(
               `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
             );
             rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
-            console.log(
+            logger.sync.info(
               `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
             );
             copyFileSync(
@@ -1063,12 +1070,15 @@ export function checkIfInstallerUpdateAvailable(
               '../OpenGameInstaller-Setup.AppImage'
             );
             rmSync('../temp-setup-OGI.AppImage', { force: true });
-            console.log(
+            logger.sync.info(
               `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
             );
             chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
           } catch (moveError: any) {
-            console.error('[updater] Failed to move setup:', moveError.message);
+            logger.sync.error(
+              '[updater] Failed to move setup:',
+              moveError.message
+            );
             updateStatus('Update Failed', 'Please try again later');
             await setTimeoutPromise(3000);
             resolve({
@@ -1086,11 +1096,11 @@ export function checkIfInstallerUpdateAvailable(
           resolve({ success: true, updated: true });
         }
       } else {
-        console.log(`[updater] No new version available.`);
+        logger.sync.info(`[updater] No new version available.`);
         resolve({ success: true, updated: false });
       }
     } catch (ex) {
-      console.error('[updater] Error while checking for updates: ', ex);
+      logger.sync.error('[updater] Error while checking for updates: ', ex);
       resolve({
         success: false,
         updated: false,

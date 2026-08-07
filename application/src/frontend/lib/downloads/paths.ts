@@ -1,3 +1,6 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 /**
  * Sanitizes a path segment (e.g. result.name or file.name) to prevent path traversal
  * and invalid characters. Returns a safe basename-like segment.
@@ -123,7 +126,7 @@ export function getPersistedFilePaths(
         if (isPathContained(file.path, downloadRoot)) {
           paths.push(file.path);
         } else {
-          console.warn(
+          logger.sync.warn(
             'Rejected persisted file path outside download root:',
             file.path
           );
@@ -143,7 +146,7 @@ export function getPersistedFilePaths(
     if (isPathContained(downloadInfo.downloadPath, downloadRoot)) {
       return [downloadInfo.downloadPath];
     }
-    console.warn(
+    logger.sync.warn(
       'Rejected download path outside download root:',
       downloadInfo.downloadPath
     );

@@ -1,8 +1,10 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 
+const logger = createLogger(LOGGER_PREFIXES.tooling);
 const require = createRequire(import.meta.url);
 
 function resolveAppBuilderPath() {
@@ -50,7 +52,7 @@ function runAppBuilder(args) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.length === 0) {
-    console.error(
+    logger.sync.error(
       'Usage: bun run .github/workflows/js/generate-blockmaps.mjs <file> [file...]'
     );
     process.exit(1);
@@ -61,11 +63,11 @@ async function main() {
     const blockmapPath = `${artifactPath}.blockmap`;
 
     if (!existsSync(artifactPath)) {
-      console.error(`Artifact not found: ${artifactPath}`);
+      logger.sync.error(`Artifact not found: ${artifactPath}`);
       process.exit(1);
     }
 
-    console.log(`Generating blockmap: ${blockmapPath}`);
+    logger.sync.info(`Generating blockmap: ${blockmapPath}`);
     await runAppBuilder([
       'blockmap',
       '--input',

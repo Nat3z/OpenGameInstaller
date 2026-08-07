@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   BasicLibraryInfo,
   ConfigurationFile,
@@ -13,7 +14,7 @@ import GameLaunchOverlay from '@/frontend/components/GameLaunchOverlay.svelte';
 import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
 import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
 import StorePage from '@/frontend/components/StorePage.svelte';
-import { runDetached } from '@/frontend/lib/core/runtime';
+import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
 import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
@@ -62,6 +63,8 @@ import DownloadView from '@/frontend/views/DownloadView.svelte';
 import LibraryView from '@/frontend/views/LibraryView.svelte';
 import OOBE from '@/frontend/views/OutOfBoxExperience.svelte';
 
+const logger = createLogger(LOGGER_PREFIXES.frontend);
+
 interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile;
 }
@@ -92,7 +95,7 @@ function parseLaunchParams() {
     if (!isNaN(gameId)) {
       launchGameId = gameId;
       showLaunchOverlay = true;
-      console.log('[App] Launch mode detected for game:', gameId);
+      logger.sync.info('[App] Launch mode detected for game:', gameId);
     }
   }
 }
@@ -102,7 +105,7 @@ function handleLaunchComplete() {
 }
 
 function handleLaunchError(error: string) {
-  console.error('[App] Game launch failed:', error);
+  logger.sync.error('[App] Game launch failed:', error);
   // Keep the overlay visible to show the error, user can close it
 }
 
@@ -129,16 +132,16 @@ onMount(() => {
   parseLaunchParams();
 
   // Initialize notification side view state
-  console.log('App mounted, initializing stores');
+  logger.sync.info('App mounted, initializing stores');
   showNotificationSideView.set(false);
   loading = true;
   const installedOption = getConfigClientOption('installed') as {
     installed: boolean;
   };
-  console.log('installedOption', installedOption);
+  logger.sync.info('installedOption', installedOption);
   if (!installedOption || !installedOption.installed) {
-    console.log('OOBE not finished');
-    console.log(installedOption);
+    logger.sync.info('OOBE not finished');
+    logger.sync.info(installedOption);
     finishedOOBE = false;
   }
   loading = false;
@@ -160,7 +163,7 @@ onMount(() => {
   appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
   // send client-ready-for-events
   window.electronAPI.app.clientReadyForEvents();
-  console.log('client-ready-for-events sent');
+  logger.sync.info('client-ready-for-events sent');
 });
 
 // Initialize when DOM is ready
@@ -170,13 +173,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initializeSearch() {
-  await Effect.runPromise(
+  await runFrontendEffect(
     Effect.gen(function* () {
       addons = yield* queryConnectedAddons<ConfigTemplateAndInfo>();
       isOnline.set(yield* electronRpc.app.isOnline());
     }).pipe(
       Effect.catchAll((error) =>
-        Effect.sync(() => console.error('Failed to initialize search:', error))
+        logger.error('Failed to initialize search:', error)
       )
     )
   );
@@ -212,7 +215,7 @@ async function performSearch(query: string) {
     loadingResults.set(true);
     showSearchResults = true;
     const connectedAddonIds = new Set(addons.map((addon) => addon.id));
-    const configuredAddons = await Effect.runPromise(
+    const configuredAddons = await runFrontendEffect(
       fetchAddonsWithConfigure()
     );
     const searchAddons = configuredAddons.filter(
@@ -241,7 +244,7 @@ async function performSearch(query: string) {
             // Check if search was cancelled
             if (signal.aborted || query !== activeQuery) return;
 
-            console.log(addon.id, response);
+            logger.sync.info(addon.id, response);
 
             // Add to flat results (for backward compatibility)
             searchResultsStore.update((value) => [...value, ...response]);
@@ -288,7 +291,7 @@ async function performSearch(query: string) {
             // Remove from loading set even on error
             loadingAddons.delete(addon.id);
             loadingAddons = new Set(loadingAddons);
-            console.error(`Error searching addon ${addon.name}:`, error);
+            logger.sync.error(`Error searching addon ${addon.name}:`, error);
           })
       );
     }
@@ -308,7 +311,7 @@ async function performSearch(query: string) {
     // Don't handle errors if the request was aborted (cancelled)
     if (signal.aborted || query !== activeQuery) return;
 
-    console.error(ex);
+    logger.sync.error(ex);
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: 'Failed to fetch search results',
@@ -409,7 +412,7 @@ document.addEventListener('addon:update-available', (event) => {
 });
 document.addEventListener('all-addons-started', async () => {
   if ($addonUpdates.length > 0) {
-    await Effect.runPromise(electronRpc.updateAddons());
+    await runFrontendEffect(electronRpc.updateAddons());
     createNotification({
       id: Math.random().toString(36).substring(7),
       message: 'Addons updated successfully',
@@ -417,12 +420,15 @@ document.addEventListener('all-addons-started', async () => {
     });
     addonUpdates.set([]);
     // restart the addon server
-    await Effect.runPromise(electronRpc.restartAddonServer());
-    await Effect.runPromise(
+    await runFrontendEffect(electronRpc.restartAddonServer());
+    await runFrontendEffect(
       reconnectClientSdk().pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
-            console.error('Failed to reconnect to the addon server:', error);
+            logger.sync.error(
+              'Failed to reconnect to the addon server:',
+              error
+            );
             createNotification({
               id: Math.random().toString(36).substring(7),
               message: 'Failed to reconnect to the addon server',
@@ -472,13 +478,13 @@ function setView(view: Views) {
     currentStorePageOpened.set(undefined);
     heldPageOpened = undefined;
     viewOpenedWhenChanged.set(undefined);
-    console.log('Removing store from view');
+    logger.sync.info('Removing store from view');
   } else if (view === $viewOpenedWhenChanged && heldPageOpened !== undefined) {
     // If switching back to the tab that had the store, reopen the store
     currentStorePageOpened.set(heldPageOpened);
     selectedView.set(view);
     isStoreOpen = true;
-    console.log('Switching back to tab that had the store');
+    logger.sync.info('Switching back to tab that had the store');
   } else {
     // Otherwise, just switch to the new tab
     if ($selectedView === view && view === 'library') {
@@ -487,7 +493,7 @@ function setView(view: Views) {
       selectedView.set(view);
       currentStorePageOpened.set(undefined);
       isStoreOpen = false;
-      console.log('Otherwise, just switch to the new tab');
+      logger.sync.info('Otherwise, just switch to the new tab');
     }
   }
   iTriggeredIt = false;
@@ -523,7 +529,7 @@ document.addEventListener('store:show-search-results', () => {
 
 // for migration:
 document.addEventListener('migration:event:steamgriddb-launch', () => {
-  console.log('steamgriddb-launch');
+  logger.sync.info('steamgriddb-launch');
   // open client options
   setView('clientoptions');
   // then open the steamgriddb modal
@@ -538,7 +544,7 @@ document.addEventListener('migration:event:steamgriddb-launch', () => {
 });
 document.addEventListener('migration:event:install-steam-addon', async () => {
   // go install steam-integration addon
-  await Effect.runPromise(
+  await runFrontendEffect(
     electronRpc.installAddons(['https://github.com/Nat3z/steam-integration'])
   );
 });
@@ -550,8 +556,8 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
   <OOBE
     finishedSetup={async () => {
       finishedOOBE = true;
-      if ((await Effect.runPromise(electronRpc.app.getOS())) !== 'win32') {
-        const result = await Effect.runPromise(electronRpc.app.addToDesktop());
+      if ((await runFrontendEffect(electronRpc.app.getOS())) !== 'win32') {
+        const result = await runFrontendEffect(electronRpc.app.addToDesktop());
         if (result.success) {
           createNotification({
             id: Math.random().toString(36).substring(7),
@@ -1013,7 +1019,7 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
                                   (
                                     ev.target as HTMLImageElement
                                   ).style.opacity = '0.5';
-                                  console.log(
+                                  logger.sync.info(
                                     'error loading image',
                                     result.name
                                   );

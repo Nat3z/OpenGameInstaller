@@ -1,6 +1,9 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { addonProtocol } from '../../connection/lib/protocol';
+
+const logger = createLogger(LOGGER_PREFIXES.clientKit);
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(scriptDir, '..');
@@ -185,4 +188,4 @@ const format = Bun.spawn(['bunx', 'biome', 'check', '--write', outputPath], {
 if ((await format.exited) !== 0) {
   throw new Error(`Failed to format ${outputPath}`);
 }
-console.log(`Generated ${outputPath}`);
+logger.sync.info(`Generated ${outputPath}`);

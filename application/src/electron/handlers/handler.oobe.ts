@@ -8,6 +8,7 @@ import {
   HttpError,
   PlatformError,
 } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
 import {
@@ -21,9 +22,11 @@ import { runEffectBoundary } from '@/electron/runtime.js';
 import { IS_NIXOS } from '@/electron/startup.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
+const logger = createLogger(LOGGER_PREFIXES.electron);
+
 const log = (content: string): void => {
   sendIPCMessage('oobe:log', content);
-  console.log(`[oobe]${content}`);
+  logger.sync.info(`[oobe]${content}`);
 };
 
 const command = (

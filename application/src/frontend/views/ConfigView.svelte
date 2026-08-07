@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   ConfigurationFile,
   OGIAddonConfiguration,
@@ -17,6 +18,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   addonUpdates,
@@ -31,6 +33,8 @@ import { queryConnectedAddons, reconnectClientSdk } from '@/frontend/utils';
 import CommunityAddonsList from '@/frontend/views/CommunityAddonsList.svelte';
 import FocusedAddonView from '@/frontend/views/FocusedAddonView.svelte';
 
+const logger = createLogger(LOGGER_PREFIXES.frontend);
+
 let addons: ConfigTemplateAndInfo[] = $state([]);
 let communityAddonsInfo: boolean = $state(false);
 let showAddonAddModal: boolean = $state(false);
@@ -42,21 +46,21 @@ let view = writable<'my-addons' | 'community-addons'>('my-addons');
 
 onMount(() => {
   // Initial fetch
-  Effect.runPromise(queryConnectedAddons<ConfigTemplateAndInfo>())
+  runFrontendEffect(queryConnectedAddons<ConfigTemplateAndInfo>())
     .then((data) => {
       addons = data;
     })
     .catch((error) =>
-      console.error('Failed to query connected addons:', error)
+      logger.sync.error('Failed to query connected addons:', error)
     );
   // Start polling every 3 seconds
   pollingInterval = setInterval(() => {
-    Effect.runPromise(queryConnectedAddons<ConfigTemplateAndInfo>())
+    runFrontendEffect(queryConnectedAddons<ConfigTemplateAndInfo>())
       .then((data) => {
         addons = data;
       })
       .catch((error) =>
-        console.error('Failed to query connected addons:', error)
+        logger.sync.error('Failed to query connected addons:', error)
       );
   }, 3000);
 });
@@ -84,7 +88,7 @@ async function updateAddons() {
     button.setAttribute('disabled', 'true');
   });
 
-  await Effect.runPromise(
+  await runFrontendEffect(
     Effect.gen(function* () {
       yield* electronRpc.updateAddons();
       addonUpdates.set([]);
@@ -124,7 +128,7 @@ async function addAddon() {
     message: 'Installing addon...',
     type: 'info',
   });
-  await Effect.runPromise(
+  await runFrontendEffect(
     Effect.gen(function* () {
       yield* electronRpc.installAddons([addonUrl]);
       addonUrl = '';
@@ -132,7 +136,7 @@ async function addAddon() {
     }).pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error('Failed to add addon:', error);
+          logger.sync.error('Failed to add addon:', error);
           createNotification({
             id: Math.random().toString(36).substring(7),
             message: 'Failed to add addon',

@@ -1,6 +1,9 @@
 <script lang="ts">
-import { Effect } from 'effect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let { addonId, class: className }: { addonId: string; class?: string } =
   $props();
@@ -10,12 +13,12 @@ $effect(() => {
   // Reset image when addonId changes
   image = undefined;
 
-  console.log('Getting addon icon for: ' + addonId);
-  Effect.runPromise(electronRpc.app.getAddonIcon(addonId)).then(
+  logger.sync.info('Getting addon icon for: ' + addonId);
+  runFrontendEffect(electronRpc.app.getAddonIcon(addonId)).then(
     async (iconPath) => {
       if (iconPath) {
         image =
-          (await Effect.runPromise(electronRpc.app.getLocalImage(iconPath))) ??
+          (await runFrontendEffect(electronRpc.app.getLocalImage(iconPath))) ??
           undefined;
       }
     }

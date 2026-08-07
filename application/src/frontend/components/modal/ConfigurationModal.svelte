@@ -1,9 +1,9 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   ConfigurationFile,
   ConfigurationOptionWire,
 } from '@ogi-sdk/connect';
-import { Effect } from 'effect';
 import {
   isActionOption,
   isBooleanOption,
@@ -17,7 +17,10 @@ import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
 import InputModal from '@/frontend/components/modal/InputModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 type PendingInputScreen = {
   config: ConfigurationFile;
@@ -149,11 +152,11 @@ async function handleSubmit(actionKey?: string) {
     if (activeScreen.reply) {
       await activeScreen.reply(data);
     } else {
-      await Effect.runPromise(electronRpc.app.inputSend(activeScreen.id, data));
+      await runFrontendEffect(electronRpc.app.inputSend(activeScreen.id, data));
     }
     closeModal();
   } catch (error) {
-    console.error('Failed to submit configuration:', error);
+    logger.sync.error('Failed to submit configuration:', error);
     submitError = error instanceof Error ? error.message : String(error);
   } finally {
     isSubmitting = false;

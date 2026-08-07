@@ -1,4 +1,5 @@
 import type { NetworkError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonClientToServerWebsocketMessage,
   AddonServerToClientEventArgs,
@@ -18,6 +19,8 @@ import { createClientMessageHandlers } from '../handlers/client-message-handlers
 import type { ClientMessageHandlers } from '../handlers/types';
 import type { AddonConfig, AddonServer } from '../server';
 import { bindWebSocketLifecycle } from './websocket-lifecycle';
+
+const logger = createLogger(LOGGER_PREFIXES.addonServer);
 
 export type AddonConnectionError = NetworkError | ValidationError;
 
@@ -54,8 +57,8 @@ export class AddonConnection {
         AddonServerToClientWebsocketMessage
       >(ws, {
         onInvalidMessage: () =>
-          Effect.sync(() => {
-            console.error('Failed to parse websocket message');
+          Effect.gen(function* () {
+            yield* logger.error('Failed to parse websocket message');
             ws.close(1008, 'Invalid JSON message');
           }),
       });
@@ -116,9 +119,11 @@ export class AddonConnection {
         Effect.flatMap((result) =>
           result._tag === 'Some'
             ? Effect.succeed(result.value)
-            : Effect.sync(() => {
+            : Effect.gen(this, function* () {
                 this.ws.close(1008, 'Authentication timeout');
-                console.error('Client kicked due to authentication timeout');
+                yield* logger.error(
+                  'Client kicked due to authentication timeout'
+                );
                 return false;
               })
         )

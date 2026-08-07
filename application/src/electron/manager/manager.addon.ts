@@ -6,6 +6,7 @@ import {
   FileSystemError,
   formatError,
 } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { AddonConnection } from '@ogi-sdk/addon-server';
 import {
   AddonFileConfigurationSchema,
@@ -14,6 +15,8 @@ import {
 import { Effect, Schema } from 'effect';
 import { sendNotification } from '@/electron/main.js';
 import { addonServer, port } from '@/electron/server/addon-server.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 export class Addon extends ExecutorAddon {
   static readonly running = new Map<string, Addon>();
@@ -95,7 +98,7 @@ export class Addon extends ExecutorAddon {
     }).pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error(error);
+          logger.sync.error(error);
           sendNotification({
             type: 'error',
             message: `Error running setup scripts for ${this.config.name}`,

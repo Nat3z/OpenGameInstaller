@@ -1,9 +1,11 @@
 <script lang="ts">
 import { FileSystemError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getApp } from '@/frontend/lib/core/library';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
 // no direct use of EventListenerTypes in this module anymore
@@ -26,6 +28,8 @@ import {
   getDownloadItem,
   updateDownloadStatus,
 } from '@/frontend/utils';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 function isCustomEvent(event: Event): event is CustomEvent {
   return event instanceof CustomEvent;
@@ -112,7 +116,7 @@ async function processDownloadComplete(
   let stagedOldFiles = false;
 
   // Move existing files into old_files before setup unless this update opted out.
-  const currentFiles = await Effect.runPromise(
+  const currentFiles = await runFrontendEffect(
     electronRpc.fs.getFilesInDir(outputDir)
   );
   const filesNotToMove = [
@@ -120,46 +124,49 @@ async function processDownloadComplete(
     basename(downloadedItem.downloadPath),
     'old_files',
   ];
-  console.log('Current files: ', currentFiles);
-  console.log('downloadedItem.files: ', downloadedItem.files);
-  console.log('outputDir: ', outputDir);
-  console.log('originalOutputDir: ', originalOutputDir);
-  console.log('downloadedItem.downloadPath: ', downloadedItem.downloadPath);
+  logger.sync.info('Current files: ', currentFiles);
+  logger.sync.info('downloadedItem.files: ', downloadedItem.files);
+  logger.sync.info('outputDir: ', outputDir);
+  logger.sync.info('originalOutputDir: ', originalOutputDir);
+  logger.sync.info(
+    'downloadedItem.downloadPath: ',
+    downloadedItem.downloadPath
+  );
 
   if (shouldStageOldFiles && currentFiles.length > 0) {
     dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
     await window.electronAPI.fs.mkdir(outputDir + '/old_files');
     stagedOldFiles = true;
 
-    console.log('Files not to move: ', filesNotToMove);
+    logger.sync.info('Files not to move: ', filesNotToMove);
     for (const file of currentFiles) {
       if (!filesNotToMove.includes(file)) {
-        const result = await Effect.runPromise(
+        const result = await runFrontendEffect(
           electronRpc.fs.move({
             source: outputDir + '/' + file,
             destination: outputDir + '/old_files/' + file,
           })
         );
         if (result !== 'success') {
-          console.error('Failed to move file: ', file);
+          logger.sync.error('Failed to move file: ', file);
         }
       }
     }
     dispatchSetupEvent('log', downloadID, ['Moved all files']);
-    console.log('Moved all files to old_files');
+    logger.sync.info('Moved all files to old_files');
   } else if (downloadedItem.isUpdate && !shouldStageOldFiles) {
     dispatchSetupEvent('log', downloadID, [
       'Addon requested in-place update: skipping old_files backup',
     ]);
-    console.log('Skipping old_files staging for update');
+    logger.sync.info('Skipping old_files staging for update');
   }
   let additionalData: any = {};
-  console.log('Downloaded Item: ', downloadedItem);
+  logger.sync.info('Downloaded Item: ', downloadedItem);
 
   async function revertOldFiles() {
     if (!stagedOldFiles) return;
     if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files')) return;
-    const oldFiles = await Effect.runPromise(
+    const oldFiles = await runFrontendEffect(
       electronRpc.fs.getFilesInDir(originalOutputDir + '/old_files')
     );
     if (oldFiles.length === 0) {
@@ -168,14 +175,14 @@ async function processDownloadComplete(
     }
     let allMoved = true;
     for (const file of oldFiles) {
-      const result = await Effect.runPromise(
+      const result = await runFrontendEffect(
         electronRpc.fs.move({
           source: originalOutputDir + '/old_files/' + file,
           destination: originalOutputDir + '/' + file,
         })
       );
       if (result !== 'success') {
-        console.error('Failed to move file: ', file);
+        logger.sync.error('Failed to move file: ', file);
         allMoved = false;
       }
     }
@@ -192,18 +199,18 @@ async function processDownloadComplete(
 
   // Handle torrent-specific logic
   if (isTorrent) {
-    let filesInDir = await Effect.runPromise(
+    let filesInDir = await runFrontendEffect(
       electronRpc.fs.getFilesInDir(outputDir)
     );
     // keep going down the directory tree until we have something with more than one file/folder
     while (filesInDir.length === 1) {
       outputDir = outputDir + '/' + filesInDir[0];
-      filesInDir = await Effect.runPromise(
+      filesInDir = await runFrontendEffect(
         electronRpc.fs.getFilesInDir(outputDir)
       );
     }
     outputDir = outputDir + '/';
-    console.log('Newly calculated outputDir: ', outputDir);
+    logger.sync.info('Newly calculated outputDir: ', outputDir);
     // write to the downloadItem
     downloadedItem.downloadPath = outputDir;
     updateDownloadStatus(downloadID, {
@@ -219,11 +226,11 @@ async function processDownloadComplete(
       downloadedItem.usedDebridService === 'alldebrid')
   ) {
     try {
-      rarArchivePath = await Effect.runPromise(
+      rarArchivePath = await runFrontendEffect(
         resolveRarArchivePath(downloadedItem.downloadPath, downloadedItem.files)
       );
     } catch (error) {
-      console.error('Failed to resolve RAR archive path:', error);
+      logger.sync.error('Failed to resolve RAR archive path:', error);
       processingDownloadCompletions.delete(downloadID);
       updateDownloadStatus(downloadID, {
         status: 'error',
@@ -252,7 +259,7 @@ async function processDownloadComplete(
     const attemptUnrar = async () => {
       try {
         const outputBase = dirname(rarArchivePath);
-        const extractedDir = await Effect.runPromise(
+        const extractedDir = await runFrontendEffect(
           unrarAndReturnOutputDir({
             rarFilePath: rarArchivePath,
             outputBaseDir: outputBase,
@@ -266,7 +273,7 @@ async function processDownloadComplete(
         downloadedItem.downloadPath = extractedDir;
         return true;
       } catch (error) {
-        console.log('Failed to extract RAR file');
+        logger.sync.info('Failed to extract RAR file');
         return false;
       }
     };
@@ -276,7 +283,7 @@ async function processDownloadComplete(
     for (let i = 0; i < 3; i++) {
       success = await attemptUnrar();
       if (success) break; // if successful, break the loop
-      await Effect.runPromise(Effect.sleep(1000)); // wait before retrying
+      await runFrontendEffect(Effect.sleep(1000)); // wait before retrying
     }
 
     if (!success) {
@@ -341,7 +348,7 @@ async function processDownloadComplete(
 
     const attemptUnzip = async () => {
       try {
-        const output = await Effect.runPromise(
+        const output = await runFrontendEffect(
           unzipAndReturnOutputDir({
             zipFilePath: originalZipFilePath,
             outputDirBase: originalZipFilePath.replace(/\.zip$/g, ''),
@@ -351,10 +358,10 @@ async function processDownloadComplete(
         if (!output) return false;
         outputDir = output;
         downloadedItem.downloadPath = outputDir;
-        console.log('Newly calculated outputDir: ', outputDir);
+        logger.sync.info('Newly calculated outputDir: ', outputDir);
         return true;
       } catch (error) {
-        console.error('Failed to process ZIP file: ', error);
+        logger.sync.error('Failed to process ZIP file: ', error);
         return false;
       }
     };
@@ -365,10 +372,10 @@ async function processDownloadComplete(
       try {
         success = await attemptUnzip();
         if (success) break; // if successful, break the loop
-        await Effect.runPromise(Effect.sleep(1000)); // wait before retrying
+        await runFrontendEffect(Effect.sleep(1000)); // wait before retrying
       } catch (error) {
-        console.log('Failed to extract ZIP file');
-        console.error('Failed to process ZIP file: ', error);
+        logger.sync.info('Failed to extract ZIP file');
+        logger.sync.error('Failed to process ZIP file: ', error);
       }
     }
 
@@ -406,7 +413,7 @@ async function processDownloadComplete(
         should: 'call-unzip',
       });
       processingDownloadCompletions.delete(downloadID);
-      return Effect.runPromise(
+      return runFrontendEffect(
         Effect.fail(
           new FileSystemError({
             message: 'Failed to extract ZIP file',
@@ -434,11 +441,11 @@ async function processDownloadComplete(
       processingPhase: undefined,
     });
     if (downloadedItem.isUpdate) {
-      await Effect.runPromise(
+      await runFrontendEffect(
         runSetupAppUpdate(downloadedItem, outputDir, isTorrent, additionalData)
       );
     } else {
-      await Effect.runPromise(
+      await runFrontendEffect(
         runSetupApp(downloadedItem, outputDir, isTorrent, additionalData)
       );
     }
@@ -455,12 +462,12 @@ async function processDownloadComplete(
         message: 'Deleting previous update files...',
       });
       window.electronAPI.fs.delete(originalOutputDir + '/old_files');
-      console.log('Deleted old_files directory');
+      logger.sync.info('Deleted old_files directory');
     } catch (error) {
-      console.error('Failed to delete old_files directory: ', error);
+      logger.sync.error('Failed to delete old_files directory: ', error);
     }
   } catch (error) {
-    console.error('Error setting up app: ', error);
+    logger.sync.error('Error setting up app: ', error);
     await revertOldFiles();
   } finally {
     processingDownloadCompletions.delete(downloadID);
@@ -483,7 +490,7 @@ function handleDownloadProgress(event: Event) {
     processingPhase,
   } = event.detail;
   if (queuePosition > 1) {
-    console.log('Queue Position Update: ', downloadID, queuePosition);
+    logger.sync.info('Queue Position Update: ', downloadID, queuePosition);
   }
 
   const updates: Record<string, unknown> = {
@@ -611,25 +618,25 @@ document.addEventListener('torrent:download-error', handleDownloadError);
 // These events are kept for backward compatibility and additional logging
 document.addEventListener('ddl:download-paused', (event: Event) => {
   if (!isCustomEvent(event)) return;
-  console.log('Direct download paused:', event.detail.id);
+  logger.sync.info('Direct download paused:', event.detail.id);
   // Status is already updated in pauseDownload function
 });
 
 document.addEventListener('ddl:download-resumed', (event: Event) => {
   if (!isCustomEvent(event)) return;
-  console.log('Direct download resumed:', event.detail.id);
+  logger.sync.info('Direct download resumed:', event.detail.id);
   // Status is already updated in resumeDownload function
 });
 
 document.addEventListener('torrent:download-paused', (event: Event) => {
   if (!isCustomEvent(event)) return;
-  console.log('Torrent download paused:', event.detail.id);
+  logger.sync.info('Torrent download paused:', event.detail.id);
   // Status is already updated in pauseDownload function
 });
 
 document.addEventListener('torrent:download-resumed', (event: Event) => {
   if (!isCustomEvent(event)) return;
-  console.log('Torrent download resumed:', event.detail.id);
+  logger.sync.info('Torrent download resumed:', event.detail.id);
   // Status is already updated in resumeDownload function
 });
 </script>

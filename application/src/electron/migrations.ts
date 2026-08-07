@@ -1,4 +1,5 @@
 import { FileSystemError, formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { exec, spawn } from 'child_process';
 import { Effect } from 'effect';
 import * as fsSync from 'fs';
@@ -10,6 +11,8 @@ import { normalizeAddonLink } from '@/electron/lib/addon-links.js';
 import { migrateLegacySteamGridDbKey } from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification, VERSION } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 let migrations: {
   [key: string]: {
@@ -95,7 +98,7 @@ let migrations: {
           addon.includes('Nat3z/steam-integration')
         ) !== undefined;
       if (!hasSteamAddon) {
-        console.log(
+        logger.sync.info(
           'user does not have steam-integration in config. no need to repair.'
         );
         return;
@@ -109,11 +112,11 @@ let migrations: {
         'installation.log'
       );
       if (fsSync.existsSync(addonPath)) {
-        console.log('already installed, no need to repair.');
+        logger.sync.info('already installed, no need to repair.');
         return;
       }
 
-      console.log('repairing steam-integration through installation...');
+      logger.sync.info('repairing steam-integration through installation...');
       await sendIPCMessage('migration:event', 'install-steam-addon');
     },
   },
@@ -128,17 +131,17 @@ let migrations: {
       const flatpakInstalled = await new Promise<boolean>((resolve) => {
         exec('flatpak --version', (err, stdout) => {
           if (err) {
-            console.log('[migration] flatpak not installed');
+            logger.sync.info('[migration] flatpak not installed');
             resolve(false);
           } else {
-            console.log('[migration] flatpak version:', stdout.trim());
+            logger.sync.info('[migration] flatpak version:', stdout.trim());
             resolve(true);
           }
         });
       });
 
       if (!flatpakInstalled) {
-        console.log(
+        logger.sync.info(
           '[migration] flatpak not available, skipping wine installation'
         );
         return;
@@ -148,22 +151,22 @@ let migrations: {
       const wineInstalled = await new Promise<boolean>((resolve) => {
         exec('flatpak run org.winehq.Wine --help', (err) => {
           if (err) {
-            console.log('[migration] wine not installed via flatpak');
+            logger.sync.info('[migration] wine not installed via flatpak');
             resolve(false);
           } else {
-            console.log('[migration] wine already installed via flatpak');
+            logger.sync.info('[migration] wine already installed via flatpak');
             resolve(true);
           }
         });
       });
 
       if (wineInstalled) {
-        console.log('[migration] wine already installed, skipping');
+        logger.sync.info('[migration] wine already installed, skipping');
         return;
       }
 
       // Install wine through flatpak
-      console.log('[migration] installing wine via flatpak...');
+      logger.sync.info('[migration] installing wine via flatpak...');
       const result = await new Promise<boolean>((resolve) => {
         sendNotification({
           message: 'Installing wine via flatpak...',
@@ -189,7 +192,7 @@ let migrations: {
           childProcess.stdout.on('data', (data: Buffer) => {
             const dataStr = data.toString();
             stdout += dataStr;
-            console.log('[migration] wine install stdout:', dataStr);
+            logger.sync.info('[migration] wine install stdout:', dataStr);
           });
         }
 
@@ -197,32 +200,32 @@ let migrations: {
           childProcess.stderr.on('data', (data: Buffer) => {
             const dataStr = data.toString();
             stderr += dataStr;
-            console.log('[migration] wine install stderr:', dataStr);
+            logger.sync.info('[migration] wine install stderr:', dataStr);
           });
         }
 
         childProcess.on('close', (code: number) => {
-          console.log(
+          logger.sync.info(
             '[migration] wine install process exited with code:',
             code
           );
           if (code !== 0) {
-            console.log('[migration] wine installation failed');
+            logger.sync.info('[migration] wine installation failed');
             resolve(false);
             return;
           }
-          console.log('[migration] wine installation successful');
+          logger.sync.info('[migration] wine installation successful');
           resolve(true);
         });
 
         childProcess.on('error', (err: Error) => {
-          console.log('[migration] wine install error:', err);
+          logger.sync.info('[migration] wine install error:', err);
           resolve(false);
         });
       });
 
       if (!result) {
-        console.log('[migration] failed to install wine through flatpak');
+        logger.sync.info('[migration] failed to install wine through flatpak');
         return;
       }
 
@@ -230,19 +233,21 @@ let migrations: {
       const wineVerification = await new Promise<boolean>((resolve) => {
         exec('flatpak run org.winehq.Wine --help', (err) => {
           if (err) {
-            console.log('[migration] wine verification failed');
+            logger.sync.info('[migration] wine verification failed');
             resolve(false);
           } else {
-            console.log('[migration] wine verification successful');
+            logger.sync.info('[migration] wine verification successful');
             resolve(true);
           }
         });
       });
 
       if (!wineVerification) {
-        console.log('[migration] wine installation verification failed');
+        logger.sync.info('[migration] wine installation verification failed');
       } else {
-        console.log('[migration] wine installation completed successfully');
+        logger.sync.info(
+          '[migration] wine installation completed successfully'
+        );
       }
     },
   },
@@ -300,13 +305,15 @@ let migrations: {
         migratedAddons.some((addon, index) => addon !== originalAddons[index]);
 
       if (!changed) {
-        console.log('[migration] addon source associations already migrated');
+        logger.sync.info(
+          '[migration] addon source associations already migrated'
+        );
         return;
       }
 
       generalConfigObj.addons = [...new Set(migratedAddons)];
       await fs.writeFile(configPath, JSON.stringify(generalConfigObj));
-      console.log('[migration] migrated addon source associations');
+      logger.sync.info('[migration] migrated addon source associations');
     },
   },
   'migrate-steamtinkerlaunch-steamgriddb-key': {
@@ -317,7 +324,7 @@ let migrations: {
     platform: 'linux',
     run: async () => {
       const status = migrateLegacySteamGridDbKey();
-      console.log(`[migration] SteamGridDB key: ${status}`);
+      logger.sync.info(`[migration] SteamGridDB key: ${status}`);
     },
   },
   'migrate-update-state-format': {
@@ -331,7 +338,7 @@ let migrations: {
 
       // Skip if file doesn't exist
       if (!fsSync.existsSync(updateStatePath)) {
-        console.log(
+        logger.sync.info(
           '[migration] update-state.json does not exist, skipping migration'
         );
         return;
@@ -350,7 +357,7 @@ let migrations: {
           'appID' in parsed.requiredReadds[0] &&
           'steamAppId' in parsed.requiredReadds[0]
         ) {
-          console.log(
+          logger.sync.info(
             '[migration] update-state.json already in new format, skipping migration'
           );
           return;
@@ -363,7 +370,7 @@ let migrations: {
           );
 
           if (hasOldFormat) {
-            console.log(
+            logger.sync.info(
               '[migration] Converting update-state.json from old format to new format'
             );
 
@@ -388,7 +395,7 @@ let migrations: {
             const oldCount =
               parsed.requiredReadds.length - convertedRequiredReadds.length;
             if (oldCount > 0) {
-              console.log(
+              logger.sync.info(
                 `[migration] Removed ${oldCount} old format entries (steamAppId unknown)`
               );
             }
@@ -401,19 +408,24 @@ let migrations: {
               updateStatePath,
               JSON.stringify(migratedData, null, 2)
             );
-            console.log('[migration] Successfully migrated update-state.json');
+            logger.sync.info(
+              '[migration] Successfully migrated update-state.json'
+            );
           } else {
-            console.log(
+            logger.sync.info(
               '[migration] update-state.json already in new format, skipping migration'
             );
           }
         } else {
-          console.log(
+          logger.sync.info(
             '[migration] update-state.json format is unrecognized, skipping migration'
           );
         }
       } catch (error) {
-        console.error('[migration] Error migrating update-state.json:', error);
+        logger.sync.error(
+          '[migration] Error migrating update-state.json:',
+          error
+        );
         // Don't throw - migration failures shouldn't break the app
       }
     },
@@ -464,7 +476,7 @@ export function execute(): Effect.Effect<void, FileSystemError> {
       });
     }
 
-    console.log('[migration] local version:', lastVersion);
+    logger.sync.info('[migration] local version:', lastVersion);
     // enroll into certain migrations
     for (const migration of Object.values(migrations)) {
       if (
@@ -473,7 +485,7 @@ export function execute(): Effect.Effect<void, FileSystemError> {
         (migration.platform === 'all' ||
           migration.platform === process.platform)
       ) {
-        console.log(
+        logger.sync.info(
           `[migration] ${migration.description}\n - from: ${migration.from}\n - to: ${migration.to}`
         );
         const operation = migration.run();
@@ -485,11 +497,9 @@ export function execute(): Effect.Effect<void, FileSystemError> {
                 catch: (cause) => cause,
               })
         ).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => console.log('[migration] completed'))
-          ),
+          Effect.tap(() => logger.info('[migration] completed')),
           Effect.catchAll((error) =>
-            Effect.sync(() => console.error(`[migration] failed: ${error}`))
+            logger.error(`[migration] failed: ${error}`)
           )
         );
       }

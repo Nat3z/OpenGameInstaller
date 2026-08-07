@@ -1,8 +1,11 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { onDestroy, onMount } from 'svelte';
 import ChangelogModal from '@/frontend/components/modal/ChangelogModal.svelte';
 import { getChangelogByVersion } from '@/frontend/lib/changelog/changelogs';
 import type { Changelog } from '@/frontend/lib/changelog/types';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let showChangelog = $state(false);
 let currentChangelog = $state<Changelog | undefined>(undefined);
@@ -13,14 +16,14 @@ function handleShowChangelog(event: Event) {
   const { version } = event.detail as { version: string };
 
   if (!version) {
-    console.warn('app:show-changelog event received without version');
+    logger.sync.warn('app:show-changelog event received without version');
     return;
   }
 
   const changelog = getChangelogByVersion(version);
 
   if (!changelog) {
-    console.warn(`No changelog found for version: ${version}`);
+    logger.sync.warn(`No changelog found for version: ${version}`);
     return;
   }
 

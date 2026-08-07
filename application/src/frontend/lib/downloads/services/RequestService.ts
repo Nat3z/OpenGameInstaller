@@ -1,4 +1,5 @@
 import { DownloadError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { SearchResult } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
@@ -8,6 +9,8 @@ import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { createNotification, currentDownloads } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 /** Resolves the addon "request" response and delegates to its real service. */
 export class RequestService extends BaseService {
@@ -39,7 +42,7 @@ export class RequestService extends BaseService {
         },
       ]);
 
-      console.log('Requesting download', result);
+      logger.sync.info('Requesting download', result);
       const serializedResult = yield* Effect.try({
         try: () => JSON.parse(JSON.stringify(result)),
         catch: (cause) =>

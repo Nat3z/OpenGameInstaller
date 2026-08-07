@@ -1,10 +1,13 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { onDestroy, onMount, type Snippet, setContext } from 'svelte';
 import {
   modalQueue,
   priorityToNumber,
   type QueuedModal,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let {
   open = false,
@@ -67,10 +70,10 @@ $effect(() => {
   );
 });
 onMount(() => {
-  console.log('mounted', modalId, priority);
+  logger.sync.info('mounted', modalId, priority);
   // subscribe to the queue
   const unsub = modalQueue.subscribe((queue) => {
-    console.log('queue', queue);
+    logger.sync.info('queue', queue);
     const selfIdx = queue.findIndex((modal) => modal.id === modalId);
     if (selfIdx === -1) {
       return;
@@ -83,7 +86,7 @@ onMount(() => {
       for (const modal of queue) {
         // if the modal is me, set the state to true
         if (modal.id === modalId) {
-          console.log('rendering', modal.id);
+          logger.sync.info('rendering', modal.id);
           return true;
         }
         // if the modal has a higher priority and is before me, break
@@ -109,7 +112,7 @@ onMount(() => {
 });
 
 onDestroy(() => {
-  console.log('destroyed', modalId);
+  logger.sync.info('destroyed', modalId);
   if (unsubscriber) {
     unsubscriber();
   }

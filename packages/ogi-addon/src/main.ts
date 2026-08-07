@@ -5,6 +5,7 @@ import {
   NetworkError,
   ValidationError,
 } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonClientToServerEventArgs,
   AddonClientToServerEventName,
@@ -32,6 +33,7 @@ import EventResponse from './EventResponse';
 
 export { Configuration, ConfigurationBuilder, EventResponse, extraction };
 
+const logger = createLogger(LOGGER_PREFIXES.addon);
 const defaultPort = 7654;
 
 import pjson from '../package.json';
@@ -129,8 +131,10 @@ export default class OGIAddon {
     this.addonInfo = addonInfo;
     // The constructor remains the synchronous compatibility boundary for addons.
     this.addonWSListener = this.runtime.runSync(
-      OGIAddonWSListener.make(this, this.eventEmitter, (effect) =>
-        this.runBackground(effect)
+      logger.observe(
+        OGIAddonWSListener.make(this, this.eventEmitter, (effect) =>
+          this.runBackground(effect)
+        )
       )
     );
     this.runBackground(this.addonWSListener.run());
@@ -138,16 +142,16 @@ export default class OGIAddon {
 
   private runBackground(effect: Effect.Effect<void, unknown>): void {
     this.runtime.runFork(
-      effect.pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => console.error(formatError(error)))
+      logger.observe(
+        effect.pipe(
+          Effect.catchAll((error) => logger.error(formatError(error)))
         )
       )
     );
   }
 
   private runPromise<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
-    return this.runtime.runPromise(effect);
+    return this.runtime.runPromise(logger.observe(effect));
   }
 
   public closeEffect(): Effect.Effect<void, NetworkError> {
@@ -529,7 +533,9 @@ export class Task {
     description: string,
     screen: ConfigurationBuilder<U>
   ): Promise<U> {
-    return Effect.runPromise(this.askForInputEffect(name, description, screen));
+    return Effect.runPromise(
+      logger.observe(this.askForInputEffect(name, description, screen))
+    );
   }
 
   /**
@@ -710,37 +716,34 @@ class OGIAddonWSListener {
   public run(): Effect.Effect<void> {
     const onOpen = (): void => this.schedule(this.onOpen());
     const onError = (event: Event): void => {
+      const message =
+        typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent
+          ? event.message
+          : event.type;
       this.schedule(
-        this.transport.rejectPendingResponses('Websocket error').pipe(
-          Effect.zipRight(
-            Effect.sync(() => {
-              const message =
-                typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent
-                  ? event.message
-                  : event.type;
-              console.error(
-                message.includes('Failed to connect')
-                  ? 'OGI Addon Server is not running or is unreachable.'
-                  : 'An addon websocket error occurred:',
-                event
-              );
-            })
+        this.transport
+          .rejectPendingResponses('Websocket error')
+          .pipe(
+            Effect.zipRight(
+              message.includes('Failed to connect')
+                ? logger.error(
+                    'OGI Addon Server is not running or is unreachable.'
+                  )
+                : logger.error('An addon websocket error occurred:', event)
+            )
           )
-        )
       );
     };
     const onClose = (event: CloseEvent): void => {
       this.schedule(
         this.transport.rejectPendingResponses('Websocket closed').pipe(
           Effect.zipRight(
-            Effect.sync(() => {
-              if (event.code === 1008) {
-                console.error('Authentication failed:', event.reason);
-                return;
-              }
-              this.eventEmitter.emit('disconnect', event.reason);
-              this.eventEmitter.emit('exit');
-            })
+            event.code === 1008
+              ? logger.error('Authentication failed:', event.reason)
+              : Effect.sync(() => {
+                  this.eventEmitter.emit('disconnect', event.reason);
+                  this.eventEmitter.emit('exit');
+                })
           )
         )
       );
@@ -769,8 +772,8 @@ class OGIAddonWSListener {
 
   private onOpen(): Effect.Effect<void, NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
-      console.log('Connected to OGI Addon Server');
-      console.log('OGI Addon Server Version:', VERSION);
+      yield* logger.info('Connected to OGI Addon Server');
+      yield* logger.info('OGI Addon Server Version:', VERSION);
       yield* this.send('authenticate', {
         ...this.addon.addonInfo,
         secret: this.secret,
@@ -909,7 +912,7 @@ class OGIAddonWSListener {
               undefined,
               formatError(error)
             ).pipe(Effect.ignore)
-          : Effect.sync(() => console.error(formatError(error)))
+          : logger.error(formatError(error))
       )
     );
   }
@@ -1149,9 +1152,7 @@ class OGIAddonWSListener {
         { expectResponse: false }
       )
       .pipe(
-        Effect.tap(() =>
-          Effect.sync(() => console.log(`dispatched response to ${messageID}`))
-        ),
+        Effect.tap(() => logger.info(`dispatched response to ${messageID}`)),
         Effect.asVoid
       );
   }

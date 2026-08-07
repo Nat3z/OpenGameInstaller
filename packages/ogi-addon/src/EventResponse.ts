@@ -1,6 +1,9 @@
 import { AddonError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { ConfigurationBuilder } from './config/ConfigurationBuilder';
+
+const logger = createLogger(LOGGER_PREFIXES.addon);
 
 type InputValues = Record<string, string | number | boolean>;
 type InputCallback = <U extends InputValues>(
@@ -156,6 +159,8 @@ export default class EventResponse<T> {
     description: string,
     screen: ConfigurationBuilder<U>
   ): Promise<U> {
-    return Effect.runPromise(this.askForInputEffect(name, description, screen));
+    return Effect.runPromise(
+      logger.observe(this.askForInputEffect(name, description, screen))
+    );
   }
 }

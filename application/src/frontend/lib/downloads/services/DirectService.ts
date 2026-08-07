@@ -1,4 +1,5 @@
 import { DownloadError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
 import {
@@ -13,6 +14,8 @@ import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { currentDownloads } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 /** Handles simple direct file downloads (single or multi-part). */
 export class DirectService extends BaseService {
@@ -94,9 +97,7 @@ export class DirectService extends BaseService {
       ]);
       yield* finalizeDownloadCard(handshake.id);
     }).pipe(
-      Effect.tapError((error) =>
-        Effect.sync(() => console.error('Direct download error:', error))
-      ),
+      Effect.tapError((error) => logger.error('Direct download error:', error)),
       Effect.ensuring(
         Effect.sync(() => {
           if (button instanceof HTMLButtonElement) {

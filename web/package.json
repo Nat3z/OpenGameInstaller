@@ -3,16 +3,18 @@
   "type": "module",
   "version": "0.0.1",
   "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
-    "build": "astro check && astro build",
+    "build:logger": "bun run --cwd ../packages/logger build",
+    "dev": "bun run build:logger && astro dev",
+    "start": "bun run build:logger && astro dev",
+    "build": "bun run build:logger && astro check && astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "typecheck": "astro check"
+    "typecheck": "bun run build:logger && astro check"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.2",
     "@astrojs/tailwind": "^5.1.0",
+    "@ogi/logger": "workspace:*",
     "astro": "^4.13.3",
     "front-matter": "^4.0.2",
     "remark-gfm": "^4.0.1",

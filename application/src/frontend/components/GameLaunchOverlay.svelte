@@ -1,7 +1,9 @@
 <script lang="ts">
 import { formatError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   gameFocused,
@@ -10,6 +12,8 @@ import {
   selectedView,
 } from '@/frontend/store.svelte';
 import { runLaunchAppAddons } from '@/frontend/utils';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 interface Props {
   gameId: number;
@@ -47,7 +51,7 @@ onMount(async () => {
 
   try {
     // Load library info
-    const libraryInfo = await Effect.runPromise(
+    const libraryInfo = await runFrontendEffect(
       electronRpc.app.getLibraryInfo(gameId)
     );
 
@@ -63,27 +67,29 @@ onMount(async () => {
 
     if (isHookOnly && hookType) {
       // Hook-only mode: run addon event without launching game
-      console.log(
+      logger.sync.info(
         `[GameLaunchOverlay] Running ${hookType}-launch hooks for ${gameName}`
       );
 
-      const hookResult = await Effect.runPromise(
+      const hookResult = await runFrontendEffect(
         runLaunchAppAddons(libraryInfo, hookType).pipe(Effect.either)
       );
       if (hookResult._tag === 'Right') {
         status = 'success';
-        console.log(`[GameLaunchOverlay] ${hookType}-launch hooks completed`);
+        logger.sync.info(
+          `[GameLaunchOverlay] ${hookType}-launch hooks completed`
+        );
 
         const t = setTimeout(() => {
           if (isMounted) {
             onComplete();
-            Effect.runPromise(electronRpc.app.quit());
+            runFrontendEffect(electronRpc.app.quit());
           }
         }, 2000);
         timeouts.push(t);
       } else {
         const error = hookResult.left;
-        console.error(
+        logger.sync.error(
           `[GameLaunchOverlay] ${hookType}-launch hooks failed:`,
           error
         );
@@ -92,49 +98,55 @@ onMount(async () => {
         onError(errorMessage);
 
         const t = setTimeout(() => {
-          if (isMounted) Effect.runPromise(electronRpc.app.quit());
+          if (isMounted) runFrontendEffect(electronRpc.app.quit());
         }, 5000);
         timeouts.push(t);
       }
     } else if (isWrapperLaunch && wrapperCommand) {
       // Wrapper mode: run pre-launch hooks, execute wrapper command exactly, then run post-launch hooks
-      console.log(
+      logger.sync.info(
         `[GameLaunchOverlay] Running wrapped launch for ${gameName}: ${wrapperCommand}`
       );
 
-      const preLaunchResult = await Effect.runPromise(
+      const preLaunchResult = await runFrontendEffect(
         runLaunchAppAddons(libraryInfo, 'pre').pipe(Effect.either)
       );
       if (preLaunchResult._tag === 'Left') {
         const error = preLaunchResult.left;
-        console.error('[GameLaunchOverlay] Pre-launch hooks failed:', error);
+        logger.sync.error(
+          '[GameLaunchOverlay] Pre-launch hooks failed:',
+          error
+        );
         status = 'error';
         errorMessage = formatError(error) || 'Pre-launch failed';
         onError(errorMessage);
         const t = setTimeout(() => {
-          if (isMounted) Effect.runPromise(electronRpc.app.quit());
+          if (isMounted) runFrontendEffect(electronRpc.app.quit());
         }, 5000);
         timeouts.push(t);
         return;
       }
 
       let wrapperError: string | null = null;
-      await Effect.runPromise(electronRpc.app.hideWindow());
-      const wrapperResult = await Effect.runPromise(
+      await runFrontendEffect(electronRpc.app.hideWindow());
+      const wrapperResult = await runFrontendEffect(
         electronRpc.app.executeWrapperCommand(gameId, wrapperCommand)
       );
       if (!wrapperResult.success) {
         wrapperError = wrapperResult.error || 'Wrapped command failed';
       }
-      await Effect.runPromise(electronRpc.app.showWindow());
+      await runFrontendEffect(electronRpc.app.showWindow());
 
       let postLaunchError: string | null = null;
-      const postLaunchResult = await Effect.runPromise(
+      const postLaunchResult = await runFrontendEffect(
         runLaunchAppAddons(libraryInfo, 'post').pipe(Effect.either)
       );
       if (postLaunchResult._tag === 'Left') {
         const error = postLaunchResult.left;
-        console.error('[GameLaunchOverlay] Post-launch hooks failed:', error);
+        logger.sync.error(
+          '[GameLaunchOverlay] Post-launch hooks failed:',
+          error
+        );
         postLaunchError = formatError(error) || 'Post-launch failed';
       }
 
@@ -146,7 +158,7 @@ onMount(async () => {
             : (wrapperError ?? postLaunchError ?? 'Wrapped launch failed');
         onError(errorMessage);
         const t2 = setTimeout(() => {
-          if (isMounted) Effect.runPromise(electronRpc.app.quit());
+          if (isMounted) runFrontendEffect(electronRpc.app.quit());
         }, 5000);
         timeouts.push(t2);
         return;
@@ -156,7 +168,7 @@ onMount(async () => {
       const t3 = setTimeout(() => {
         if (isMounted) {
           onComplete();
-          Effect.runPromise(electronRpc.app.quit());
+          runFrontendEffect(electronRpc.app.quit());
         }
       }, 2000);
       timeouts.push(t3);
@@ -200,7 +212,7 @@ onMount(async () => {
       onError(errorMessage);
     }
   } catch (error) {
-    console.error('[GameLaunchOverlay] Error launching game:', error);
+    logger.sync.error('[GameLaunchOverlay] Error launching game:', error);
     status = 'error';
     errorMessage =
       error instanceof Error ? error.message : 'Unknown error occurred';

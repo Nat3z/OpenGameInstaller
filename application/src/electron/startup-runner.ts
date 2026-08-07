@@ -1,4 +1,5 @@
 import { formatError, UpdateError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
@@ -13,6 +14,8 @@ import {
   requiresSystemUpdateShutdown,
 } from '@/electron/system-updater.js';
 import type { UpdaterCallbacks } from '@/electron/updater.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 let splashWindow: BrowserWindow | null = null;
 
@@ -178,9 +181,7 @@ export function runStartupTasks(
           }),
       }).pipe(
         Effect.catchAll((error) =>
-          Effect.sync(() =>
-            console.error('[chore] Failed to remove cached app updates', error)
-          )
+          logger.error('[chore] Failed to remove cached app updates', error)
         )
       );
 

@@ -1,3 +1,4 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { ConfigurationFile } from './ConfigurationBuilder';
 import {
   ActionOption,
@@ -11,6 +12,8 @@ import {
   NumberOption,
   StringOption,
 } from './ConfigurationBuilder';
+
+const logger = createLogger(LOGGER_PREFIXES.addon);
 
 interface DefiniteConfig {
   [key: string]: string | number | boolean;
@@ -42,7 +45,7 @@ export class Configuration {
         (this.definiteConfig[key] === null ||
           this.definiteConfig[key] === undefined)
       ) {
-        console.warn(
+        logger.sync.warn(
           'Option ' +
             key +
             ' is not defined. Using default value Value: ' +
@@ -74,7 +77,7 @@ export class Configuration {
       if (this.storedConfigTemplate[key] === undefined) {
         // remove the key from the definite config
         delete this.definiteConfig[key];
-        console.warn(
+        logger.sync.warn(
           'Option ' +
             key +
             ' is not defined in the configuration template. Removing from config.'

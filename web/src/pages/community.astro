@@ -1,4 +1,5 @@
 ---
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import Header from '../components/Header.astro';
 import Layout from '../layouts/Layout.astro';
 import {
@@ -7,6 +8,7 @@ import {
   getCommunityAddonUrl,
 } from '../lib/community-addons';
 
+const logger = createLogger(LOGGER_PREFIXES.web);
 let marketplaceLoadFailed = false;
 const addons = await getCommunityAddons()
   .then((loadedAddons) =>
@@ -14,7 +16,7 @@ const addons = await getCommunityAddons()
   )
   .catch((error: unknown) => {
     marketplaceLoadFailed = true;
-    console.error('Failed to load community marketplace:', error);
+    logger.sync.error('Failed to load community marketplace:', error);
     return [];
   });
 ---

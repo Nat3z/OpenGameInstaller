@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RpcGroup, type RpcMessage, RpcServer } from '@effect/rpc';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect, Mailbox, Option } from 'effect';
 import { app, BrowserWindow, ipcMain, type WebContents } from 'electron';
 import { isDev } from '@/electron/manager/manager.paths.js';
@@ -16,6 +17,8 @@ import {
   type ElectronRpcRequest,
   ElectronRpcs,
 } from '@/lib/electron-rpc.js';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 type PendingReply = {
   readonly resolve: (response: RpcMessage.FromServerEncoded) => void;
@@ -402,7 +405,7 @@ const makeServer = (router: ElectronRouter) =>
     })
   ).pipe(
     Effect.tapErrorCause((cause) =>
-      Effect.logError('Electron RPC server stopped with a failure', cause)
+      logger.error('Electron RPC server stopped with a failure', cause)
     ),
     Effect.ensuring(
       Effect.sync(() => {

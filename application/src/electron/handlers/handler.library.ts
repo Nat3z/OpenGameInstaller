@@ -1,3 +1,4 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 /**
  * Library CRUD IPC handlers
@@ -43,6 +44,8 @@ import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendNotification } from '@/electron/main.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
+const logger = createLogger(LOGGER_PREFIXES.electron);
+
 /**
  * Determine if a game should use UMU mode
  * - If game has `umu` config → use UMU
@@ -69,7 +72,7 @@ export function launchGameFromLibrary(
   launchEnv?: Record<string, string>
 ): Effect.Effect<LaunchGameResult, LibraryError> {
   return Effect.gen(function* () {
-    console.log('[launch] Launching game', appid);
+    logger.sync.info('[launch] Launching game', appid);
     ensureLibraryDir();
     ensureInternalsDir();
 
@@ -81,7 +84,7 @@ export function launchGameFromLibrary(
 
     let appInfo = loadLibraryInfo(parsedAppId);
     if (!appInfo) {
-      console.log('[launch] Game not found');
+      logger.sync.info('[launch] Game not found');
       return { success: false, error: 'Game not found' };
     }
 
@@ -126,7 +129,7 @@ export function launchGameFromLibrary(
           )
         );
         if (shortcutResult.status === 'cancelled') {
-          console.warn(
+          logger.sync.warn(
             '[launch] Steam shortcut migration was cancelled; continuing with direct UMU launch'
           );
         }
@@ -137,7 +140,7 @@ export function launchGameFromLibrary(
     const useUmu = yield* shouldUseUmuMode(appInfo);
 
     if (useUmu) {
-      console.log(`[launch] Using UMU mode for ${appInfo.name}`);
+      logger.sync.info(`[launch] Using UMU mode for ${appInfo.name}`);
 
       const appID = appInfo.appID;
       const result = yield* Effect.tryPromise({
@@ -155,7 +158,7 @@ export function launchGameFromLibrary(
       });
 
       if (!result.success) {
-        console.error('[launch] UMU launch failed:', result.error);
+        logger.sync.error('[launch] UMU launch failed:', result.error);
         sendNotification({
           message: `Failed to launch game: ${result.error}`,
           id: generateNotificationId(),
@@ -176,7 +179,7 @@ export function launchGameFromLibrary(
     const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
     const { command: launchExecutable, args: otherLaunchArguments } =
       resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments);
-    console.log(
+    logger.sync.info(
       'Launching game:',
       launchExecutable,
       otherLaunchArguments,
@@ -195,7 +198,7 @@ export function launchGameFromLibrary(
       },
     });
     spawnedItem.on('error', (error) => {
-      console.error(error);
+      logger.sync.error(error);
       sendNotification({
         message: 'Failed to launch game',
         id: generateNotificationId(),
@@ -204,7 +207,7 @@ export function launchGameFromLibrary(
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
     });
     spawnedItem.on('exit', (exitCode, signal) => {
-      console.log(
+      logger.sync.info(
         'Game exited with code: ' +
           exitCode +
           (signal ? ` signal: ${signal}` : '')
@@ -258,7 +261,7 @@ function executeWrapperCommandForAppSteam(
 
     /* Built for Proton Steam */
 
-    console.log(
+    logger.sync.info(
       `[wrapper] Executing wrapper command for ${appInfo.name}: ${wrapperCommand}`
     );
 
@@ -374,7 +377,7 @@ function executeWrapperCommandForAppSteam(
       ...effectiveLaunchArguments,
     ];
 
-    console.log(
+    logger.sync.info(
       `[wrapper] Resolved exec for ${
         appInfo.name
       }: command=${wrappedCommand} args=${JSON.stringify(wrappedArgv)}`
@@ -408,15 +411,18 @@ function executeWrapperCommandForAppSteam(
       });
 
       wrappedChild.stdout?.on('data', (data) => {
-        console.log(`[wrapper stdout] ${data}`);
+        logger.sync.info(`[wrapper stdout] ${data}`);
       });
 
       wrappedChild.stderr?.on('data', (data) => {
-        console.error(`[wrapper stderr] ${data}`);
+        logger.sync.error(`[wrapper stderr] ${data}`);
       });
 
       wrappedChild.on('error', (error) => {
-        console.error('[wrapper] Failed to execute wrapper command:', error);
+        logger.sync.error(
+          '[wrapper] Failed to execute wrapper command:',
+          error
+        );
         resume(Effect.succeed({ success: false, error: error.message }));
       });
 
@@ -429,7 +435,7 @@ function executeWrapperCommandForAppSteam(
         const error = `Wrapped command exited with code ${code ?? 'null'}${
           signal ? ` (signal: ${signal})` : ''
         }`;
-        console.error(`[wrapper] ${error}`);
+        logger.sync.error(`[wrapper] ${error}`);
         resume(
           Effect.succeed({
             success: false,
@@ -545,9 +551,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 }),
             }).pipe(
               Effect.catchAll((error) =>
-                Effect.sync(() =>
-                  console.error('[library] Could not roll back removal', error)
-                )
+                logger.error('[library] Could not roll back removal', error)
               )
             )
         );
@@ -586,13 +590,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             data.launchExecutable.toLowerCase().endsWith('.exe')
           ) {
             data.umu = { umuId: `umu:${data.appID}` };
-            console.log(
+            logger.sync.info(
               `[setup] Added native UMU configuration for Windows game ${data.appID}`
             );
           }
 
           if (umuAvailable && data.umu) {
-            console.log('[setup] Using UMU mode for new game');
+            logger.sync.info('[setup] Using UMU mode for new game');
 
             // Ensure UMU is installed (if not, try to install)
             const umuInstalled = yield* Effect.tryPromise({
@@ -618,7 +622,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                   }),
               });
               if (!installResult.success) {
-                console.error(
+                logger.sync.error(
                   '[setup] UMU auto-install failed:',
                   installResult.error
                 );
@@ -650,7 +654,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               addToInternalsApps(data.appID);
 
               if (data.redistributables && data.redistributables.length > 0) {
-                console.log(
+                logger.sync.info(
                   '[setup] Redistributables detected, need to install them for:',
                   data.name
                 );
@@ -704,7 +708,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 );
                 if (result._tag === 'Left') {
                   redistributableFailed = true;
-                  console.error(
+                  logger.sync.error(
                     `[redistributable] failed to install ${redistributable.name}: ${result.left.message}`
                   );
                 }
@@ -788,7 +792,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           let appData = existing;
 
           if (requestedUmu && !existing.umu) {
-            console.log('[update] Migrating game from legacy to UMU mode');
+            logger.sync.info('[update] Migrating game from legacy to UMU mode');
             const oldSteamAppId = yield* findSteamAppIdForGame(data.appID);
             const migrationResult = yield* Effect.tryPromise({
               try: () => migrateToUmu(data.appID, oldSteamAppId, updates),

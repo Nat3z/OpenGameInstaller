@@ -1,7 +1,9 @@
 <script lang="ts">
 import { formatError, UpdateError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import core from '@/frontend/lib/core';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
   addonServer,
@@ -12,6 +14,8 @@ import {
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
 
+const logger = createLogger(LOGGER_PREFIXES.frontend);
+
 let updateCheckRunId = 0;
 
 document.addEventListener('addon-runtime-ready', () => {
@@ -19,18 +23,16 @@ document.addEventListener('addon-runtime-ready', () => {
 });
 
 async function onAddonRuntimeReady() {
-  await Effect.runPromise(
+  await runFrontendEffect(
     Effect.gen(function* () {
       yield* reconnectClientSdk();
       yield* fetchAddonsWithConfigure();
       yield* checkForAppUpdates();
     }).pipe(
       Effect.catchAll((error) =>
-        Effect.sync(() =>
-          console.error(
-            'Failed to refresh addon runtime for update checks:',
-            error
-          )
+        logger.error(
+          'Failed to refresh addon runtime for update checks:',
+          error
         )
       )
     )
@@ -40,7 +42,7 @@ async function onAddonRuntimeReady() {
 function checkForAppUpdates() {
   const runId = ++updateCheckRunId;
   updatesManager.clearAppUpdates();
-  console.log('checking for app updates');
+  logger.sync.info('checking for app updates');
 
   const workflow = Effect.gen(function* () {
     const library = yield* Effect.tryPromise({
@@ -90,13 +92,7 @@ function checkForAppUpdates() {
           }
         }).pipe(
           Effect.catchAll((error) =>
-            Effect.sync(() =>
-              console.error(
-                'Error checking for updates for app',
-                app.name,
-                error
-              )
-            )
+            logger.error('Error checking for updates for app', app.name, error)
           )
         ),
       { concurrency: 4 }

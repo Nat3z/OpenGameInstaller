@@ -1,4 +1,5 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { ConfigurationBuilder } from 'ogi-addon/config';
@@ -11,11 +12,14 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   createNotification,
   notificationHistory,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let showDebugModal = $state(false);
 let priorityModals = $state({
@@ -30,7 +34,7 @@ let showInsertAppModal = $state(false);
 function insertDebugApp(
   app: Parameters<typeof electronRpc.app.insertApp>[0]
 ): Promise<void> {
-  return Effect.runPromise(
+  return runFrontendEffect(
     electronRpc.app.insertApp(app).pipe(
       Effect.tap((result) =>
         Effect.sync(() => {
@@ -45,7 +49,7 @@ function insertDebugApp(
       ),
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error('Error inserting test app:', error);
+          logger.sync.error('Error inserting test app:', error);
           createNotification({
             id: Math.random().toString(36).substring(2, 9),
             type: 'error',
@@ -125,7 +129,7 @@ onMount(() => {
 
   if (import.meta.hot) {
     import.meta.hot.on('vite:afterUpdate', (payload) => {
-      console.debug('[HMR] afterUpdate', payload);
+      logger.sync.debug('[HMR] afterUpdate', payload);
       createNotification({
         id: `hmr-after-${Math.random().toString(36).substring(2, 9)}`,
         type: 'warning',
@@ -133,7 +137,7 @@ onMount(() => {
       });
     });
     import.meta.hot.on('vite:beforeFullReload', () => {
-      console.debug('[HMR] beforeFullReload');
+      logger.sync.debug('[HMR] beforeFullReload');
       createNotification({
         id: `hmr-fullreload-${Math.random().toString(36).substring(2, 9)}`,
         type: 'warning',
@@ -186,7 +190,7 @@ onMount(() => {
       description="This is a checkbox"
       checked={true}
       onchange={(id, checked) => {
-        console.log('checkbox changed', id, checked);
+        logger.sync.info('checkbox changed', id, checked);
       }}
     />
   </Modal>

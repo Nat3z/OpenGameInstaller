@@ -1,12 +1,15 @@
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import { supportsStorefront } from '../lib';
 import type { HandlerContext } from './types';
+
+const logger = createLogger(LOGGER_PREFIXES.addonServer);
 
 export const closeProtocolError = (
   { connection }: HandlerContext,
   message: string
 ): void => {
-  console.error(message);
+  logger.sync.error(message);
   connection.ws.close(1008, message);
 };
 

@@ -4,6 +4,7 @@ import {
   GameNotFound,
   UpdateError,
 } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   LibraryInfo,
   SetupCommandData,
@@ -23,6 +24,8 @@ import {
   redistributableInstalls,
   setupLogs,
 } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 type SetupKind = 'game' | 'update';
 type AdditionalSetupData = Record<string, unknown>;
@@ -98,7 +101,7 @@ export function handleSetupError(
   forType: SetupKind = 'game',
   currentLibraryInfo?: LibraryInfo
 ): void {
-  console.error('Error setting up app:', error);
+  logger.sync.error('Error setting up app:', error);
   const errorMessage =
     formatError(error) || 'The addon crashed while setting up.';
 
@@ -257,7 +260,10 @@ export function startRedistributableInstallation(
         ),
         Effect.catchAll((error) =>
           Effect.sync(() => {
-            console.error('[setup] Redistributable installation error:', error);
+            logger.sync.error(
+              '[setup] Redistributable installation error:',
+              error
+            );
             return 'failed' as const;
           })
         ),
@@ -429,9 +435,7 @@ export function runSetupApp(
     });
     return data;
   }).pipe(
-    Effect.tapError((error) =>
-      Effect.sync(() => console.error('Error setting up app:', error))
-    )
+    Effect.tapError((error) => logger.error('Error setting up app:', error))
   );
 }
 

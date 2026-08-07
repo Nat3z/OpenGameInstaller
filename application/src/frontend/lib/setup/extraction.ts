@@ -1,7 +1,10 @@
 import { FileSystemError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { Effect } from 'effect';
 import { basename } from '@/frontend/lib/core/fs';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const fsEffect = <A>(
   operation: Effect.Effect<A, unknown>,
@@ -76,9 +79,7 @@ export function drillDownSingleDirectories(
     return currentDir;
   }).pipe(
     Effect.tapError((error) =>
-      Effect.sync(() =>
-        console.error('Failed to traverse directories from:', startDir, error)
-      )
+      logger.error('Failed to traverse directories from:', startDir, error)
     ),
     Effect.catchAll(() => Effect.succeed(startDir))
   );
@@ -91,8 +92,11 @@ export function unrarAndReturnOutputDir(params: {
 }) {
   const { rarFilePath, outputBaseDir, downloadId } = params;
   return Effect.gen(function* () {
-    yield* Effect.sync(() =>
-      console.log('Extracting RAR file:', rarFilePath, 'to', outputBaseDir)
+    yield* logger.info(
+      'Extracting RAR file:',
+      rarFilePath,
+      'to',
+      outputBaseDir
     );
     const extractedDir = yield* fsEffect(
       electronRpc.fs.unrar({
@@ -113,9 +117,7 @@ export function unrarAndReturnOutputDir(params: {
         }),
     }).pipe(
       Effect.tapError((error) =>
-        Effect.sync(() =>
-          console.error(error.message, rarFilePath, error.cause)
-        )
+        logger.error(error.message, rarFilePath, error.cause)
       ),
       Effect.ignore
     );
@@ -130,7 +132,7 @@ export function unzipAndReturnOutputDir(params: {
 }) {
   const { zipFilePath, outputDirBase, downloadId } = params;
   return Effect.gen(function* () {
-    yield* Effect.sync(() => console.log('Extracting ZIP file:', zipFilePath));
+    yield* logger.info('Extracting ZIP file:', zipFilePath);
     const queriedOutput = yield* fsEffect(
       electronRpc.fs.unzip({
         zipFilePath,
@@ -153,9 +155,7 @@ export function unzipAndReturnOutputDir(params: {
         }),
     }).pipe(
       Effect.tapError((error) =>
-        Effect.sync(() =>
-          console.error(error.message, zipFilePath, error.cause)
-        )
+        logger.error(error.message, zipFilePath, error.cause)
       ),
       Effect.ignore
     );

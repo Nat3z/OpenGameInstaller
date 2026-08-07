@@ -1,4 +1,5 @@
 import { formatError, HttpError, ValidationError } from '@ogi/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import axios from 'axios';
 import { Effect, Schema } from 'effect';
 import { canonicalizeAddonSource } from './addon-links';
@@ -8,6 +9,8 @@ import {
   type CommunityAddon,
   communityAddonArraySchema,
 } from './marketplace-schema';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 export {
   assertMarketplaceUrlProtocol,
@@ -70,7 +73,7 @@ export class AddonMarketplace {
     }).pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          console.error(
+          logger.sync.error(
             `[addon-marketplace ${this.url}] Failed to fetch marketplace.`,
             error
           );

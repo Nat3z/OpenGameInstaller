@@ -1,9 +1,11 @@
-import { defineConfig } from 'astro/config';
-
 import tailwind from '@astrojs/tailwind';
-import { generateLlmsBundle } from './scripts/generate-llms.mjs';
-import remarkCallouts from './remark/callouts.mjs';
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { defineConfig } from 'astro/config';
 import remarkGfm from 'remark-gfm';
+import remarkCallouts from './remark/callouts.mjs';
+import { generateLlmsBundle } from './scripts/generate-llms.mjs';
+
+const logger = createLogger(LOGGER_PREFIXES.tooling);
 
 function llmsBuildIntegration() {
   return {
@@ -11,7 +13,7 @@ function llmsBuildIntegration() {
     hooks: {
       'astro:build:start': async () => {
         const generatedPath = await generateLlmsBundle();
-        console.log(`Generated ${generatedPath}`);
+        logger.sync.info(`Generated ${generatedPath}`);
       },
     },
   };

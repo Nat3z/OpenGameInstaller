@@ -30,13 +30,14 @@
   },
   "scripts": {
     "test": "bun test",
-    "build": "tsc -p tsconfig.json",
+    "build": "bun run --cwd ../packages/logger build && tsc -p tsconfig.json",
     "dev": "bun run build && electron .",
     "preelectron-pack": "bun run build",
     "electron-pack": "electron-builder"
   },
   "license": "ISC",
   "dependencies": {
+    "@ogi/logger": "workspace:*",
     "axios": "^1.13.4",
     "effect": "^3.22.0",
     "yauzl": "^3.2.0"

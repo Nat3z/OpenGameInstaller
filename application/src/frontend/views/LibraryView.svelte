@@ -1,6 +1,6 @@
 <script lang="ts">
+import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { Effect } from 'effect';
 import { onDestroy, onMount, tick } from 'svelte';
 import { type Writable, writable } from 'svelte/store';
 import Image from '@/frontend/components/Image.svelte';
@@ -13,9 +13,12 @@ import {
   getRecentlyPlayed,
   sortLibraryAlphabetically,
 } from '@/frontend/lib/core/library';
+import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { updatesManager } from '@/frontend/states.svelte';
 import { gameFocused } from '@/frontend/store.svelte';
+
+const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let library: LibraryInfo[] = $state([]);
 let recentlyPlayed: LibraryInfo[] = $state([]);
@@ -39,7 +42,10 @@ onMount(() => {
     exitPlayPage = () => {
       $selectedApp = undefined;
       void reloadLibrary().catch((err) => {
-        console.error('Failed to reload library when exiting play page:', err);
+        logger.sync.error(
+          'Failed to reload library when exiting play page:',
+          err
+        );
       });
     };
   }
@@ -101,7 +107,7 @@ function hasVisibleAppUpdate(app: LibraryInfo): boolean {
 }
 
 async function openPlayPage(app: LibraryInfo) {
-  const freshLibraryInfo = await Effect.runPromise(
+  const freshLibraryInfo = await runFrontendEffect(
     electronRpc.app.getLibraryInfo(app.appID)
   );
   $selectedApp = freshLibraryInfo ?? app;
@@ -114,7 +120,7 @@ async function openPlayPageByAppID(appID: number) {
     return;
   }
 
-  const freshLibraryInfo = await Effect.runPromise(
+  const freshLibraryInfo = await runFrontendEffect(
     electronRpc.app.getLibraryInfo(appID)
   );
   if (freshLibraryInfo) {
@@ -138,7 +144,7 @@ $effect(() => {
 
 onMount(async () => {
   const [resolvedOs] = await Promise.all([
-    Effect.runPromise(electronRpc.app.getOS()),
+    runFrontendEffect(electronRpc.app.getOS()),
     reloadLibrary(),
   ]);
 

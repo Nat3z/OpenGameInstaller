@@ -8,7 +8,7 @@ import { ipcProcedure, procedure, router } from '@/electron/rpc/router-core.js';
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { formatError, PlatformError } from '@ogi-sdk/errors';
-import { spawn } from 'child_process';
+import { type ChildProcess, type SpawnOptions, spawn } from 'child_process';
 import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -28,7 +28,7 @@ import {
   getUmuRedistributableEnvironment,
 } from '@/electron/handlers/helpers.app/umu-environment.js';
 import { resolveLaunchCommandTokens } from '@/electron/lib/launch-command.js';
-import { inferSpawnShell } from '@/electron/lib/spawn-shell.js';
+import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import {
   resolveLegacyPrefixSource,
   stagedPrefixMigration as runStagedPrefixMigration,
@@ -537,7 +537,7 @@ export async function launchWithUmu(
     libraryInfo.launchArguments,
     [exePath]
   );
-  const shell = inferSpawnShell(command, args);
+  const spawnInvocation = resolveSpawnInvocation(command, args);
 
   // Log launch info without leaking full env (may contain secrets)
   const envSummary = {
@@ -557,9 +557,9 @@ export async function launchWithUmu(
 
   return new Promise((resolve) => {
     logger.sync.info("[umu] command i'm running: ", command, args);
-    const child = spawn(command, args, {
+    const spawnOptions: SpawnOptions = {
       cwd: libraryInfo.cwd,
-      shell,
+      shell: spawnInvocation.shell,
       env: {
         ...env,
         PWD: libraryInfo.cwd,
@@ -567,7 +567,10 @@ export async function launchWithUmu(
       },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    };
+    const child: ChildProcess = spawnInvocation.args
+      ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
+      : spawn(spawnInvocation.command, spawnOptions);
     child.unref();
 
     child.stdout?.on('data', (data) => {

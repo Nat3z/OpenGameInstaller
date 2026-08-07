@@ -27,6 +27,8 @@ import {
   getUmuLaunchEnvironment,
   getUmuRedistributableEnvironment,
 } from '@/electron/handlers/helpers.app/umu-environment.js';
+import { resolveLaunchCommandTokens } from '@/electron/lib/launch-command.js';
+import { inferSpawnShell } from '@/electron/lib/spawn-shell.js';
 import {
   resolveLegacyPrefixSource,
   stagedPrefixMigration as runStagedPrefixMigration,
@@ -156,26 +158,13 @@ export function parseLaunchArgumentsAfterCommand(
 
 export function resolveLaunchCommand(
   launchExecutable: string,
-  launchArguments?: string
+  launchArguments?: string,
+  executableArgs: readonly string[] = []
 ): { command: string; args: string[] } {
   const tokens = stripLeadingLaunchEnvTokens(
     parseLaunchArgumentTokens(launchArguments)
   ).filter((token) => !isKnownLaunchEnvAssignment(token));
-  const commandIndex = tokens.indexOf('%command%');
-
-  if (commandIndex === -1) {
-    return {
-      command: launchExecutable,
-      args: tokens,
-    };
-  }
-
-  const resolvedTokens = tokens.map((token) =>
-    token === '%command%' ? launchExecutable : token
-  );
-  const [command = launchExecutable, ...args] = resolvedTokens;
-
-  return { command, args };
+  return resolveLaunchCommandTokens(launchExecutable, executableArgs, tokens);
 }
 
 function uniqueCaseInsensitive(values: string[]): string[] {
@@ -543,7 +532,12 @@ export async function launchWithUmu(
   }
 
   const exePath = libraryInfo.launchExecutable;
-  const parsedLaunchArgs = parseLaunchArguments(libraryInfo.launchArguments);
+  const { command, args } = resolveLaunchCommand(
+    umuRunExecutable,
+    libraryInfo.launchArguments,
+    [exePath]
+  );
+  const shell = inferSpawnShell(command, args);
 
   // Log launch info without leaking full env (may contain secrets)
   const envSummary = {
@@ -562,12 +556,10 @@ export async function launchWithUmu(
   });
 
   return new Promise((resolve) => {
-    logger.sync.info("[umu] command i'm running: ", umuRunExecutable, [
-      exePath,
-      ...parsedLaunchArgs,
-    ]);
-    const child = spawn(umuRunExecutable, [exePath, ...parsedLaunchArgs], {
+    logger.sync.info("[umu] command i'm running: ", command, args);
+    const child = spawn(command, args, {
       cwd: libraryInfo.cwd,
+      shell,
       env: {
         ...env,
         PWD: libraryInfo.cwd,

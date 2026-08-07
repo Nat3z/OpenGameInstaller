@@ -24,7 +24,7 @@ export const forkElectronEffect = <A, E>(effect: Effect.Effect<A, E>): void => {
 };
 
 export const runElectronSync = <A, E>(effect: Effect.Effect<A, E>): A =>
-  electronRuntime.runSync(logger.observe(effect));
+  Effect.runSync(logger.observe(effect));
 
 const formatBoundaryError = (error: unknown): EffectBoundaryError =>
   new EffectBoundaryError(formatErrorResponse(error).error);

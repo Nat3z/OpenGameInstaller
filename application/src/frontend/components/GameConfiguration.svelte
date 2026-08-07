@@ -10,12 +10,12 @@ import {
   isNumberOption,
   isStringOption,
 } from 'ogi-addon/config';
+import WineDllOverridesModal from '@/frontend/components/built/WineDllOverridesModal.svelte';
 import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
 import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
 import InputModal from '@/frontend/components/modal/InputModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-import WineDllOverridesModal from '@/frontend/components/modal/WineDllOverridesModal.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { addToSteam as addToSteamEffect } from '@/frontend/lib/core/steam';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
@@ -266,6 +266,7 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
     open={showDllOverridesModal}
     initialOverrides={formData.dllOverrides ?? []}
     onSave={handleDllOverridesSave}
+    gameInfo={gameInfo}
     onClose={() => (showDllOverridesModal = false)}
   />
 {/if}

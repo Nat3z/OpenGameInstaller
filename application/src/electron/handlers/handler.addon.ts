@@ -1,5 +1,5 @@
-import { AddonError, AddonNotFound, ipcBoundary } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { AddonError, AddonNotFound, ipcBoundary } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { exec } from 'child_process';
 import { Effect, Schedule } from 'effect';

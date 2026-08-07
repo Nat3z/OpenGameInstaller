@@ -1,4 +1,4 @@
-import { ValidationError } from '@ogi/errors';
+import { ValidationError } from '@ogi-sdk/errors';
 import { Schema } from 'effect';
 
 export function sanitizePinnedCommit(value?: string): string {

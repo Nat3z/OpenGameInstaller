@@ -1,17 +1,17 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { AddonConnection } from '@ogi-sdk/addon-server';
 import {
   AddonError,
   AddonLoadError,
   FileSystemError,
   formatError,
-} from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
-import type { AddonConnection } from '@ogi-sdk/addon-server';
+} from '@ogi-sdk/errors';
 import {
   AddonFileConfigurationSchema,
   Addon as ExecutorAddon,
 } from '@ogi-sdk/executor';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schema } from 'effect';
 import { sendNotification } from '@/electron/main.js';
 import { addonServer, port } from '@/electron/server/addon-server.js';

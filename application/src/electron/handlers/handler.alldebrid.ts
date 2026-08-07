@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileSystemError, formatError, HttpError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { FileSystemError, formatError, HttpError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import AllDebrid from 'all-debrid-js';
 import axios from 'axios';
 import { Effect, Schema } from 'effect';

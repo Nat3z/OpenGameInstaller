@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   ELECTRON_RPC_CHANNEL,

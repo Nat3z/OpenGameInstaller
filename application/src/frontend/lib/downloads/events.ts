@@ -1,4 +1,4 @@
-import { DownloadError, formatError } from '@ogi/errors';
+import { DownloadError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { DownloadStatusAndInfo } from '@/frontend/store.svelte';

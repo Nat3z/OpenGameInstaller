@@ -8,8 +8,8 @@ import {
   formatError,
   runEffectBoundary,
   TooManyRequests,
-} from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+} from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios, { AxiosError, type AxiosResponse } from 'axios';
 import {
   Context,

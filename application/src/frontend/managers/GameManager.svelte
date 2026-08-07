@@ -1,5 +1,5 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { getAllApps } from '@/frontend/lib/core/library';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';

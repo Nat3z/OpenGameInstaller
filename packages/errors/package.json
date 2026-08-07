@@ -1,5 +1,5 @@
 {
-  "name": "@ogi/errors",
+  "name": "@ogi-sdk/errors",
   "type": "module",
   "version": "1.0.0",
   "module": "./build/index.mjs",

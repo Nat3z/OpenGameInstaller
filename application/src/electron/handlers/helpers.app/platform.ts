@@ -1,7 +1,7 @@
 /**
  * Platform-related utility functions
  */
-import { PlatformError } from '@ogi/errors';
+import { PlatformError } from '@ogi-sdk/errors';
 import * as fs from 'fs';
 import { basename, join } from 'path';
 import { findSteamCompatDataPath } from '@/electron/lib/steam-installation.js';

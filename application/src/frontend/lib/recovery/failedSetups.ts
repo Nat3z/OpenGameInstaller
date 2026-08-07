@@ -1,6 +1,6 @@
-import { FileSystemError, formatError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { SetupCommandData } from '@ogi-sdk/connect';
+import { FileSystemError, formatError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schedule } from 'effect';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {

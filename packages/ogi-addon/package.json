@@ -39,8 +39,8 @@
   },
   "dependencies": {
     "@ogi-sdk/connect": "^1.0.2",
-    "@ogi/errors": "^1.0.0",
-    "@ogi/logger": "^1.0.0",
+    "@ogi-sdk/errors": "^1.0.0",
+    "@ogi-sdk/logger": "^1.0.0",
     "effect": "^3.22.0",
     "fuse.js": "^7.1.0"
   },

@@ -6,7 +6,7 @@ import {
   formatError,
   ipcBoundary,
   SteamRunningError,
-} from '@ogi/errors';
+} from '@ogi-sdk/errors';
 import { Effect, Layer } from 'effect';
 import { type BrowserWindow, dialog } from 'electron';
 import {

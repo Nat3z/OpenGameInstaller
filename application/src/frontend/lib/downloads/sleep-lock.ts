@@ -1,5 +1,5 @@
-import { PlatformError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { PlatformError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { electronRpc } from '@/frontend/lib/electron-rpc';

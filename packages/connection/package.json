@@ -48,8 +48,8 @@
   "main": "./build/index.cjs",
   "types": "./build/index.d.mts",
   "dependencies": {
-    "@ogi/errors": "^1.0.0",
-    "@ogi/logger": "^1.0.0",
+    "@ogi-sdk/errors": "^1.0.0",
+    "@ogi-sdk/logger": "^1.0.0",
     "effect": "^3.22.0"
   }
 }

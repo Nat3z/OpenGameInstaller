@@ -1,5 +1,5 @@
-import { TorrentError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { TorrentError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import webtorrent from 'webtorrent';
 

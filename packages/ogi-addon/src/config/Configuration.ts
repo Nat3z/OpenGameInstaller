@@ -1,4 +1,4 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import type { ConfigurationFile } from './ConfigurationBuilder';
 import {
   ActionOption,

@@ -1,5 +1,4 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   BasicLibraryInfo,
   CatalogCarouselItem,
@@ -8,6 +7,7 @@ import type {
   ConfigurationFile,
   OGIAddonConfiguration,
 } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onMount } from 'svelte';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';

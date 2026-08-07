@@ -1,6 +1,6 @@
 <script lang="ts">
-import { formatError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { formatError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';

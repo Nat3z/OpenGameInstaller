@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SteamProcessError, SteamVdfWriteError } from '@ogi/errors';
+import { SteamProcessError, SteamVdfWriteError } from '@ogi-sdk/errors';
 import { Deferred, Effect, Fiber, Logger } from 'effect';
 import {
   getSteamCommandCandidates,

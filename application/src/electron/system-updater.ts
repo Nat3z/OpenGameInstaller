@@ -1,5 +1,5 @@
-import { formatError, UpdateError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { formatError, UpdateError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { downloadLatestUmu } from '@/electron/startup.js';

@@ -1,15 +1,15 @@
-import {
-  AddonError,
-  formatError,
-  GameNotFound,
-  UpdateError,
-} from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   LibraryInfo,
   SetupCommandData,
   SetupEventResponse,
 } from '@ogi-sdk/connect';
+import {
+  AddonError,
+  formatError,
+  GameNotFound,
+  UpdateError,
+} from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { addonServer } from '@/frontend/lib/core/ipc';

@@ -1,5 +1,5 @@
-import { AddonError, formatError } from '@ogi/errors';
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
+import { AddonError, formatError } from '@ogi-sdk/errors';
 import { Effect, Exit } from 'effect';
 import { get } from 'svelte/store';
 import { addonServer } from '@/frontend/lib/core/ipc';

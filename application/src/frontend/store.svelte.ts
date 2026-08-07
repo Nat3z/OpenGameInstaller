@@ -1,9 +1,9 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   BasicLibraryInfo,
   SearchResult,
   SetupCommandData,
 } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Either, Schema } from 'effect';
 import { type Writable, writable } from 'svelte/store';
 import {

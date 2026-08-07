@@ -1,4 +1,3 @@
-import { ValidationError } from '@ogi/errors';
 import type {
   ActionConfigurationOption,
   BooleanConfigurationOption,
@@ -8,6 +7,7 @@ import type {
   NumberConfigurationOption,
   StringConfigurationOption,
 } from '@ogi-sdk/connect';
+import { ValidationError } from '@ogi-sdk/errors';
 import { Either, Schema } from 'effect';
 
 export type {

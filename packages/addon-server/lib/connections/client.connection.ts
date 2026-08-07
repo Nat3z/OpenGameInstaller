@@ -1,7 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { formatError, NetworkError, ValidationError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import {
   type AddonClientSDKToServerIncomingMessage,
   type AddonClientSDKToServerWebsocketMessage,
@@ -17,6 +15,8 @@ import {
   type SDKResponse,
   type WebSocketLike,
 } from '@ogi-sdk/connect';
+import { formatError, NetworkError, ValidationError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { randomUUID } from 'crypto';
 import { Effect } from 'effect';
 import { buildEventMessage } from '../_generated/event-proxy';

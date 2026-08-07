@@ -1,5 +1,3 @@
-import type { NetworkError, ValidationError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonClientToServerWebsocketMessage,
   AddonServerToClientEventArgs,
@@ -9,6 +7,8 @@ import type {
   OGIAddonSDKEventListener,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket, type WebSocketLike } from '@ogi-sdk/connect';
+import type { NetworkError, ValidationError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Deferred, Effect } from 'effect';
 import {
   buildEventMessage,

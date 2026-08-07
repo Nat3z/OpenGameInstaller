@@ -1,5 +1,5 @@
-import { formatError, NetworkError, ValidationError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { formatError, NetworkError, ValidationError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { exec, spawn } from 'child_process';
 import { createHash } from 'crypto';

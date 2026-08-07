@@ -1,5 +1,5 @@
-import { FileSystemError, formatError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { FileSystemError, formatError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';

@@ -1,8 +1,8 @@
 import type { ChildProcess } from 'node:child_process';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
-import { AddonError, FileSystemError, ValidationError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { AddonError, FileSystemError, ValidationError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Deferred, Effect, Exit, Schema, Scope } from 'effect';
 import parseArgsStringToArgv from 'string-argv';
 import { AddonSetup } from '@/addon-setup';

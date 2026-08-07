@@ -1,5 +1,5 @@
-import { FileSystemError, formatError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { FileSystemError, formatError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { exec, spawn } from 'child_process';
 import { Effect } from 'effect';
 import * as fsSync from 'fs';

@@ -1,6 +1,6 @@
 <script lang="ts">
-import { formatError, UpdateError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { formatError, UpdateError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import core from '@/frontend/lib/core';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';

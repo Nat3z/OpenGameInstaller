@@ -1,5 +1,5 @@
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 

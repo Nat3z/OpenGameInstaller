@@ -1,6 +1,6 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onDestroy, onMount, tick } from 'svelte';
 import { type Writable, writable } from 'svelte/store';
 import Image from '@/frontend/components/Image.svelte';

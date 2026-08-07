@@ -1,6 +1,6 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { SearchResult, StoreData } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import { fly, slide } from 'svelte/transition';

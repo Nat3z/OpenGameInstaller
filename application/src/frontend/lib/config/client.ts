@@ -1,9 +1,9 @@
-import { AddonError, formatError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   ConfigurationFile,
   ConfigurationOptionWire,
 } from '@ogi-sdk/connect';
+import { AddonError, formatError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import {
   isBooleanOption,

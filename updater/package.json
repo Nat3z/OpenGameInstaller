@@ -37,7 +37,7 @@
   },
   "license": "ISC",
   "dependencies": {
-    "@ogi/logger": "workspace:*",
+    "@ogi-sdk/logger": "workspace:*",
     "axios": "^1.13.4",
     "effect": "^3.22.0",
     "yauzl": "^3.2.0"

@@ -7,7 +7,7 @@ import {
   mock,
   test,
 } from 'bun:test';
-import { DownloadAborted } from '@ogi/errors';
+import { DownloadAborted } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import {
   existsSync,

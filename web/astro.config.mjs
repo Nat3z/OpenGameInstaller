@@ -1,5 +1,5 @@
 import tailwind from '@astrojs/tailwind';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { defineConfig } from 'astro/config';
 import remarkGfm from 'remark-gfm';
 import remarkCallouts from './remark/callouts.mjs';

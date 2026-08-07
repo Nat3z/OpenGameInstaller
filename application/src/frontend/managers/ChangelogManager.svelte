@@ -1,5 +1,5 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onDestroy, onMount } from 'svelte';
 import ChangelogModal from '@/frontend/components/modal/ChangelogModal.svelte';
 import { getChangelogByVersion } from '@/frontend/lib/changelog/changelogs';

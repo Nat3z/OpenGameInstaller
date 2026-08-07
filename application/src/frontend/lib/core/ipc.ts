@@ -1,6 +1,6 @@
-import { AddonError, NetworkError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import { type ConnectedAddonInfo, Connection } from '@ogi-sdk/client-kit';
+import { AddonError, NetworkError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schedule } from 'effect';
 import { getConfigClientOption } from '@/frontend/lib/config/client';
 import {

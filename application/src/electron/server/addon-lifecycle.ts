@@ -1,6 +1,6 @@
-import { AddonError, FileSystemError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
+import { AddonError, FileSystemError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { readFileSync, writeFileSync } from 'fs';
 import * as fs from 'fs/promises';

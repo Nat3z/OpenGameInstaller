@@ -12,7 +12,7 @@ import type { LoggerPrefix } from './prefixes.js';
 export type { LoggerPrefix } from './prefixes.js';
 export { LOGGER_PREFIXES, makeLoggerPrefix } from './prefixes.js';
 
-const PREFIX_ANNOTATION = '@ogi/logger/prefix';
+const PREFIX_ANNOTATION = '@ogi-sdk/logger/prefix';
 
 type ConsoleMethod = 'trace' | 'debug' | 'info' | 'warn' | 'error';
 

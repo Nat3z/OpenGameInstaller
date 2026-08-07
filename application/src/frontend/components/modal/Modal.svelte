@@ -1,5 +1,5 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onDestroy, onMount, type Snippet, setContext } from 'svelte';
 import {
   modalQueue,

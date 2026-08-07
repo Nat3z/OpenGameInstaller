@@ -1,5 +1,5 @@
-import { AddonError, formatError } from '@ogi/errors';
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
+import { AddonError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { supportsStorefront } from '@/lib/storefronts';
 import { type AddonInfo, addonServer, queryConnectedAddons } from './ipc';

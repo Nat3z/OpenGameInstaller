@@ -1,5 +1,3 @@
-import { NetworkError, ValidationError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type {
   AddonClientSDKToServerIncomingMessage,
   AddonClientSDKToServerWebsocketMessage,
@@ -16,6 +14,8 @@ import type {
   WebSocketLike,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket } from '@ogi-sdk/connect';
+import { NetworkError, ValidationError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Exit, Fiber, PubSub, Stream } from 'effect';
 import type {
   AddonForwardResponseMessage,

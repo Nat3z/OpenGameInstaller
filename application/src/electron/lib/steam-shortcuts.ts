@@ -1,4 +1,4 @@
-import { SteamShortcutConflictError } from '@ogi/errors';
+import { SteamShortcutConflictError } from '@ogi-sdk/errors';
 import {
   type BinaryVdfObject,
   type BinaryVdfValue,

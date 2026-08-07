@@ -4,8 +4,8 @@ import {
   DebridAuthError,
   DebridResponseError,
   HttpError,
-} from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+} from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import { Cause, Context, Effect, Exit, Layer, Option, Schema } from 'effect';
 

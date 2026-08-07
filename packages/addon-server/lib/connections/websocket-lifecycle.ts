@@ -1,5 +1,5 @@
-import { NetworkError } from '@ogi/errors';
 import type { WebSocketLike } from '@ogi-sdk/connect';
+import { NetworkError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 
 type Supervisor = (effect: Effect.Effect<void>) => void;

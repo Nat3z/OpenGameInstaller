@@ -1,6 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';

@@ -1,6 +1,6 @@
-import { AddonError, FileSystemError, formatError } from '@ogi/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi/logger';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { AddonError, FileSystemError, formatError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { exec } from 'child_process';
 import { Effect } from 'effect';
 import { app, BrowserWindow } from 'electron';

@@ -7,6 +7,7 @@ import {
   ipcBoundary,
   SteamRunningError,
 } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Layer } from 'effect';
 import { type BrowserWindow, dialog } from 'electron';
 import {
@@ -43,6 +44,8 @@ import { ElectronRpc } from '@/lib/electron-rpc.js';
 export type SteamOperationResult =
   | SteamMutationResult
   | { status: 'cancelled'; message: string };
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 const SteamLive = SteamServiceLive.pipe(
   Layer.provide(Layer.merge(SteamRepositoryLive(), SteamProcessLive))
@@ -144,28 +147,47 @@ export function addUmuGameToSteam(
 export function addDeckGameToSteam(
   mainWindow: BrowserWindow,
   appID: number
-): Effect.Effect<void, SteamServiceError | FileSystemError> {
+): Effect.Effect<void> {
   if (!isLinux() || getCurrentUsername()?.toLowerCase() !== 'deck') {
     return Effect.void;
   }
 
-  return Effect.gen(function* () {
-    const result = yield* addUmuGameToSteam(mainWindow, { appID });
-    if (result.status === 'cancelled') {
-      sendNotification({
-        message:
-          'Steam shortcut setup was cancelled. Add the game to Steam later from its configuration page.',
-        id: generateNotificationId(),
-        type: 'info',
-      });
-    } else if (result.warning) {
-      sendNotification({
-        message: result.warning,
-        id: generateNotificationId(),
-        type: 'warning',
-      });
-    }
-  });
+  // Shortcut setup is optional tail work; detaching it lets completed installs
+  // release the power-save blocker without waiting for Steam.
+  return Effect.forkDaemon(
+    Effect.gen(function* () {
+      const result = yield* addUmuGameToSteam(mainWindow, { appID });
+      if (result.status === 'cancelled') {
+        sendNotification({
+          message:
+            'Steam shortcut setup was cancelled. Add the game to Steam later from its configuration page.',
+          id: generateNotificationId(),
+          type: 'info',
+        });
+      } else if (result.warning) {
+        sendNotification({
+          message: result.warning,
+          id: generateNotificationId(),
+          type: 'warning',
+        });
+      }
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.gen(function* () {
+          yield* logger.error(
+            `[steam] Failed to add Deck game ${appID} to Steam`,
+            error
+          );
+          sendNotification({
+            message:
+              'Failed to add the game to Steam. Try again from its configuration page.',
+            id: generateNotificationId(),
+            type: 'error',
+          });
+        })
+      )
+    )
+  ).pipe(Effect.asVoid);
 }
 
 const launchViaSteam = (

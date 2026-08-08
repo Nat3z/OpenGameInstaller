@@ -111,9 +111,8 @@ const installRedistributables = (
       catch: (cause) =>
         new LibraryError({ message: formatError(cause), gameId: appID }),
     });
-    if (result === 'success') {
-      yield* addDeckGameToSteam(mainWindow, appID);
-    }
+
+    yield* addDeckGameToSteam(mainWindow, appID);
     return result;
   });
 

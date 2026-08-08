@@ -17,6 +17,8 @@ const runGitProcess = (
       try: () =>
         spawn('git', filteredArgs, {
           cwd,
+          // Steam injects loader paths that can write warnings into parsed Git output.
+          env: { ...process.env, LANG: 'en_US.UTF-8', LD_PRELOAD: '' },
           stdio: 'pipe',
         }),
       catch: (cause) =>

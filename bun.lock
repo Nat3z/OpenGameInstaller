@@ -167,7 +167,7 @@
     },
     "packages/executor": {
       "name": "@ogi-sdk/executor",
-      "version": "1.4.1",
+      "version": "1.4.2",
       "dependencies": {
         "@ogi-sdk/errors": "^1.0.0",
         "@ogi-sdk/logger": "^1.0.0",

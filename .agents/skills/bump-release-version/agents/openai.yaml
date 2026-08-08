@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Version Bump"
+  short_description: "Choose and bump OGI release package versions"
+  default_prompt: "Use $bump-release-version to prepare the next OpenGameInstaller release version and tag."

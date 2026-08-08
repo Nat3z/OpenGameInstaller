@@ -49,6 +49,24 @@ afterEach(() => {
 });
 
 describe('Git refs', () => {
+  test('ignores Steam loader injection when parsing Git output', async () => {
+    const { clonePath } = await createRepository();
+    const expectedHash = runGit(clonePath, ['rev-parse', 'HEAD']);
+    const originalLdPreload = process.env.LD_PRELOAD;
+
+    process.env.LD_PRELOAD = '/tmp/ogi-missing-steam-runtime-library.so';
+    try {
+      const actualHash = await Effect.runPromise(
+        new Git({ path: clonePath }).getCurrentHash()
+      );
+
+      expect(actualHash).toBe(expectedHash);
+    } finally {
+      if (originalLdPreload === undefined) delete process.env.LD_PRELOAD;
+      else process.env.LD_PRELOAD = originalLdPreload;
+    }
+  });
+
   test('resolves a locally available abbreviated commit without fetching it by name', async () => {
     const { remotePath, clonePath } = await createRepository();
     const fullHash = runGit(clonePath, ['rev-parse', 'HEAD']);

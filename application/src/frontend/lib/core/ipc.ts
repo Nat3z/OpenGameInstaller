@@ -71,17 +71,32 @@ export let addonServer = await runFrontendEffect(
   )
 );
 
+// Keep requests off the closed client while a shared reconnect swaps it out.
+let reconnectInFlight: Effect.Effect<void, NetworkError> | null = null;
+
 export function queryConnectedAddons<T = AddonInfo>() {
-  return Effect.tryPromise({
-    try: () =>
-      addonServer.request('query-connected-addons', {
-        type: 'addons',
-      }),
-    catch: (cause) =>
-      new AddonError({
-        message: `Failed to query connected addons: ${cause instanceof Error ? cause.message : String(cause)}`,
-      }),
-  }).pipe(
+  return Effect.suspend(() =>
+    (reconnectInFlight ?? Effect.void).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AddonError({
+            message: `Failed to query connected addons: ${cause.message}`,
+          })
+      ),
+      Effect.zipRight(
+        Effect.tryPromise({
+          try: () =>
+            addonServer.request('query-connected-addons', {
+              type: 'addons',
+            }),
+          catch: (cause) =>
+            new AddonError({
+              message: `Failed to query connected addons: ${cause instanceof Error ? cause.message : String(cause)}`,
+            }),
+        })
+      )
+    )
+  ).pipe(
     Effect.flatMap((response) =>
       response.statusError
         ? Effect.fail(new AddonError({ message: response.statusError }))
@@ -89,8 +104,6 @@ export function queryConnectedAddons<T = AddonInfo>() {
     )
   );
 }
-
-let reconnectInFlight: Effect.Effect<void, NetworkError> | null = null;
 
 export function reconnectClientSdk(): Effect.Effect<void, NetworkError> {
   return Effect.suspend(() => {

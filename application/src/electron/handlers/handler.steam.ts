@@ -147,47 +147,43 @@ export function addUmuGameToSteam(
 export function addDeckGameToSteam(
   mainWindow: BrowserWindow,
   appID: number
-): Effect.Effect<void> {
+): Effect.Effect<void, SteamServiceError | FileSystemError> {
   if (!isLinux() || getCurrentUsername()?.toLowerCase() !== 'deck') {
     return Effect.void;
   }
 
-  // Shortcut setup is optional tail work; detaching it lets completed installs
-  // release the power-save blocker without waiting for Steam.
-  return Effect.forkDaemon(
-    Effect.gen(function* () {
-      const result = yield* addUmuGameToSteam(mainWindow, { appID });
-      if (result.status === 'cancelled') {
+  return Effect.gen(function* () {
+    const result = yield* addUmuGameToSteam(mainWindow, { appID });
+    if (result.status === 'cancelled') {
+      sendNotification({
+        message:
+          'Steam shortcut setup was cancelled. Add the game to Steam later from its configuration page.',
+        id: generateNotificationId(),
+        type: 'info',
+      });
+    } else if (result.warning) {
+      sendNotification({
+        message: result.warning,
+        id: generateNotificationId(),
+        type: 'warning',
+      });
+    }
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.gen(function* () {
+        yield* logger.error(
+          `[steam] Failed to add Deck game ${appID} to Steam`,
+          error
+        );
         sendNotification({
           message:
-            'Steam shortcut setup was cancelled. Add the game to Steam later from its configuration page.',
+            'Failed to add the game to Steam. Try again from its configuration page.',
           id: generateNotificationId(),
-          type: 'info',
+          type: 'error',
         });
-      } else if (result.warning) {
-        sendNotification({
-          message: result.warning,
-          id: generateNotificationId(),
-          type: 'warning',
-        });
-      }
-    }).pipe(
-      Effect.catchAll((error) =>
-        Effect.gen(function* () {
-          yield* logger.error(
-            `[steam] Failed to add Deck game ${appID} to Steam`,
-            error
-          );
-          sendNotification({
-            message:
-              'Failed to add the game to Steam. Try again from its configuration page.',
-            id: generateNotificationId(),
-            type: 'error',
-          });
-        })
-      )
+      })
     )
-  ).pipe(Effect.asVoid);
+  );
 }
 
 const launchViaSteam = (

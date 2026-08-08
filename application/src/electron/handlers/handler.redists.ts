@@ -112,7 +112,7 @@ const installRedistributables = (
         new LibraryError({ message: formatError(cause), gameId: appID }),
     });
 
-    yield* addDeckGameToSteam(mainWindow, appID);
+    yield* Effect.forkDaemon(addDeckGameToSteam(mainWindow, appID));
     return result;
   });
 

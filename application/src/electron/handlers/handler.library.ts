@@ -678,7 +678,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 return 'setup-prefix-required';
               }
 
-              yield* addDeckGameToSteam(mainWindow, data.appID);
+              yield* Effect.forkDaemon(
+                addDeckGameToSteam(mainWindow, data.appID)
+              );
               return 'setup-success';
             }
           }

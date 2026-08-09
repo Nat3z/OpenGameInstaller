@@ -14,12 +14,17 @@ import {
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
 } from '@/frontend/lib/setup/extraction';
-import { runSetupApp, runSetupAppUpdate } from '@/frontend/lib/setup/setup';
+import {
+  finalizeSetupAppUpdate,
+  runSetupApp,
+  runSetupAppUpdate,
+} from '@/frontend/lib/setup/setup';
 import {
   createNotification,
   currentDownloads,
   type DownloadProcessingPhase,
   type DownloadStatusAndInfo,
+  gamesLaunched,
   setupLogs,
 } from '@/frontend/store.svelte';
 import {
@@ -110,12 +115,53 @@ async function processDownloadComplete(
 
   let originalOutputDir = outputDir;
 
+  const isManagedDirectUpdate =
+    downloadedItem.isUpdate === true &&
+    !isTorrent &&
+    downloadedItem.downloadType === 'direct';
+  let managedManifest = downloadedItem.managedUpdate?.manifest;
+  let managedTransactionId: string | undefined;
+
+  if (isManagedDirectUpdate) {
+    if (downloadedItem.managedUpdate) {
+      outputDir = downloadedItem.managedUpdate.extractedPath;
+    } else {
+      try {
+        const extracted = await runFrontendEffect(
+          electronRpc.update.extract({
+            sources: downloadedItem.files.map((file) => ({
+              url: file.downloadURL,
+              localPath:
+                'path' in file && typeof file.path === 'string'
+                  ? file.path
+                  : `${downloadedItem.downloadPath}/${file.name}`,
+              ...(file.headers ? { headers: file.headers } : {}),
+            })),
+            downloadId: downloadedItem.id,
+          })
+        );
+        outputDir = extracted.extractedPath;
+        managedManifest = extracted.manifest;
+      } catch (error) {
+        logger.sync.warn(
+          'Managed extraction unavailable; falling back to addon setup:',
+          error
+        );
+      }
+    }
+    if (managedManifest) {
+      downloadedItem.downloadPath = outputDir;
+      updateDownloadStatus(downloadID, { downloadPath: outputDir });
+    }
+  }
+
   const shouldStageOldFiles =
-    downloadedItem.isUpdate !== true ||
-    downloadedItem.clearOldFilesBeforeUpdate !== false;
+    managedManifest === undefined &&
+    (downloadedItem.isUpdate !== true ||
+      downloadedItem.clearOldFilesBeforeUpdate !== false);
   let stagedOldFiles = false;
 
-  // Move existing files into old_files before setup unless this update opted out.
+  // Legacy setup keeps its existing full-directory backup behavior.
   const currentFiles = await runFrontendEffect(
     electronRpc.fs.getFilesInDir(outputDir)
   );
@@ -156,9 +202,15 @@ async function processDownloadComplete(
     logger.sync.info('Moved all files to old_files');
   } else if (downloadedItem.isUpdate && !shouldStageOldFiles) {
     dispatchSetupEvent('log', downloadID, [
-      'Addon requested in-place update: skipping old_files backup',
+      managedManifest
+        ? 'Managed update transaction is protecting changed files'
+        : 'Addon requested in-place update: skipping old_files backup',
     ]);
-    logger.sync.info('Skipping old_files staging for update');
+    logger.sync.info(
+      managedManifest
+        ? 'Using managed update transaction'
+        : 'Skipping old_files staging for update'
+    );
   }
   let additionalData: any = {};
   logger.sync.info('Downloaded Item: ', downloadedItem);
@@ -441,9 +493,63 @@ async function processDownloadComplete(
       processingPhase: undefined,
     });
     if (downloadedItem.isUpdate) {
-      await runFrontendEffect(
-        runSetupAppUpdate(downloadedItem, outputDir, isTorrent, additionalData)
+      const currentApp = getApp(downloadedItem.appID);
+      if (managedManifest && currentApp) {
+        if (get(gamesLaunched)[downloadedItem.appID]) {
+          throw new Error(`Close ${downloadedItem.name} before updating it.`);
+        }
+        const prepared = await runFrontendEffect(
+          electronRpc.update.beginSetup({
+            appID: downloadedItem.appID,
+            installationPath: currentApp.cwd,
+            extractedPath: outputDir,
+            manifest: managedManifest,
+          })
+        );
+        managedTransactionId = prepared.transactionId;
+        outputDir = prepared.setupPath;
+      }
+      const setupData = await runFrontendEffect(
+        runSetupAppUpdate(
+          downloadedItem,
+          outputDir,
+          isTorrent,
+          additionalData,
+          managedTransactionId !== undefined
+        )
       );
+      if (managedTransactionId && managedManifest) {
+        if (setupData.cwd !== currentApp?.cwd) {
+          throw new Error('Managed updates cannot move the installation root.');
+        }
+        if (setupData.version !== downloadedItem.updateVersion) {
+          throw new Error(
+            `Version mismatch: expected ${downloadedItem.updateVersion}, got ${setupData.version}`
+          );
+        }
+        await runFrontendEffect(
+          electronRpc.update.finishSetup({
+            transactionId: managedTransactionId,
+            installationPath: setupData.cwd,
+            manifest: managedManifest,
+            expectedLibrary: {
+              version: setupData.version,
+              cwd: setupData.cwd,
+              launchExecutable: setupData.launchExecutable,
+              launchArguments:
+                setupData.launchArguments ?? currentApp.launchArguments,
+              addonSource: downloadedItem.addonSource ?? currentApp.addonsource,
+            },
+          })
+        );
+        await runFrontendEffect(
+          finalizeSetupAppUpdate(downloadedItem, isTorrent, setupData)
+        );
+        await runFrontendEffect(
+          electronRpc.update.completeSetup(managedTransactionId)
+        );
+        managedTransactionId = undefined;
+      }
     } else {
       await runFrontendEffect(
         runSetupApp(downloadedItem, outputDir, isTorrent, additionalData)
@@ -468,6 +574,22 @@ async function processDownloadComplete(
     }
   } catch (error) {
     logger.sync.error('Error setting up app: ', error);
+    if (managedTransactionId) {
+      try {
+        await runFrontendEffect(
+          electronRpc.update.abortSetup(managedTransactionId)
+        );
+      } catch (rollbackError) {
+        logger.sync.error('Failed to roll back managed update:', rollbackError);
+      }
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    updateDownloadStatus(downloadID, { status: 'error', error: message });
+    createNotification({
+      id: Math.random().toString(36).substring(2, 9),
+      type: 'error',
+      message,
+    });
     await revertOldFiles();
   } finally {
     processingDownloadCompletions.delete(downloadID);

@@ -9,6 +9,7 @@ import { registerPowerSaveHandlers } from '@/electron/handlers/handler.power-sav
 import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';
 import TorrentHandler from '@/electron/handlers/handler.torrent.js';
 import { registerUmuHandlers } from '@/electron/handlers/handler.umu.js';
+import UpdateSystemHandler from '@/electron/handlers/handler.update-system.js';
 import { cancelQueuedDownload } from '@/electron/rpc/queue-cancel.js';
 import { mergeRouters, procedure, router } from '@/electron/rpc/router-core.js';
 import { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
@@ -22,6 +23,7 @@ export function createElectronRouter(mainWindow: BrowserWindow) {
     AllDebridHandler(mainWindow),
     TorrentHandler(mainWindow),
     DirectDownloadHandler(mainWindow),
+    UpdateSystemHandler(mainWindow),
     AddonManagerHandler(mainWindow),
     OOBEHandler(),
     registerUmuHandlers(),

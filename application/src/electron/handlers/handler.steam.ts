@@ -7,6 +7,7 @@ import {
   ipcBoundary,
   SteamRunningError,
 } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Layer } from 'effect';
 import { type BrowserWindow, dialog } from 'electron';
 import {
@@ -43,6 +44,8 @@ import { ElectronRpc } from '@/lib/electron-rpc.js';
 export type SteamOperationResult =
   | SteamMutationResult
   | { status: 'cancelled'; message: string };
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 const SteamLive = SteamServiceLive.pipe(
   Layer.provide(Layer.merge(SteamRepositoryLive(), SteamProcessLive))
@@ -165,7 +168,22 @@ export function addDeckGameToSteam(
         type: 'warning',
       });
     }
-  });
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.gen(function* () {
+        yield* logger.error(
+          `[steam] Failed to add Deck game ${appID} to Steam`,
+          error
+        );
+        sendNotification({
+          message:
+            'Failed to add the game to Steam. Try again from its configuration page.',
+          id: generateNotificationId(),
+          type: 'error',
+        });
+      })
+    )
+  );
 }
 
 const launchViaSteam = (

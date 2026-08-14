@@ -83,20 +83,12 @@ export class Addon {
     });
   }
 
-  private static intoPowerShellScript(
-    fullCommand: string
-  ): Effect.Effect<string, AddonError> {
-    return Addon.intoExecutor(fullCommand).pipe(
-      Effect.map((command) => command.replace(/^"([^"]+)"/, '& "$1"'))
-    );
-  }
-
   public static getPowerShellExecutable(): string {
     return 'powershell.exe';
   }
 
-  private static quotePowerShellArgument(value: string): string {
-    return `'${value.replace(/'/g, "''")}'`;
+  private static quoteWindowsShellArgument(value: string): string {
+    return `"${value.replace(/%/g, '%%').replace(/"/g, '""')}"`;
   }
 
   public static getScriptSpawnCommand(
@@ -105,21 +97,14 @@ export class Addon {
   ): Effect.Effect<ScriptSpawnCommand, AddonError | ValidationError> {
     return Effect.gen(function* () {
       if (process.platform === 'win32') {
-        const scriptCommand = yield* Addon.intoPowerShellScript(script);
+        const scriptCommand = yield* Addon.intoExecutor(script);
         const command = [
           scriptCommand,
-          ...extraArgs.map(Addon.quotePowerShellArgument),
+          ...extraArgs.map(Addon.quoteWindowsShellArgument),
         ].join(' ');
         return {
-          command: Addon.getPowerShellExecutable(),
-          args: [
-            '-NoProfile',
-            '-NonInteractive',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-Command',
-            command,
-          ],
+          command: process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe',
+          args: ['/d', '/s', '/c', command],
         };
       }
 

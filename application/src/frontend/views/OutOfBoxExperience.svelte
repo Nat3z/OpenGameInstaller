@@ -456,11 +456,11 @@ async function finishSetup() {
     './config/option/general.json',
     JSON.stringify(generalConfig)
   );
+  await runFrontendEffect(installAddonsAndReconnect(allAddons));
   window.electronAPI.fs.write(
     './config/option/installed.json',
     JSON.stringify({ installed: true })
   );
-  await runFrontendEffect(installAddonsAndReconnect(allAddons));
   completedSetup = true;
 }
 

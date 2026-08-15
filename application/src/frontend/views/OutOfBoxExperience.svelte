@@ -462,24 +462,18 @@ async function finishSetup() {
     JSON.stringify({ installed: true })
   );
   completedSetup = true;
+  document.getElementById('oobe')?.animate([{ opacity: 1 }, { opacity: 0 }], {
+    duration: 500,
+    fill: 'forwards',
+  });
+  Effect.sleep('500 millis').pipe(
+    Effect.andThen(() => Effect.sync(finishedSetup)),
+    Effect.runSync
+  );
 }
 
 function waitForSetup() {
   stage = 7;
-  const waitFor = setInterval(() => {
-    if (completedSetup) {
-      document
-        .getElementById('oobe')
-        ?.animate([{ opacity: 1 }, { opacity: 0 }], {
-          duration: 500,
-          fill: 'forwards',
-        });
-      setTimeout(() => {
-        finishedSetup();
-      }, 500);
-      clearInterval(waitFor);
-    }
-  }, 200);
 }
 
 function toggleAddon(addon: ListedCommunityAddon) {

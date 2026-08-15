@@ -386,7 +386,6 @@ function sendDownloadLocation(event: MouseEvent) {
   stage = 4;
 }
 
-let completedSetup = false;
 let currentOS = $state('');
 let isSteamDeck = $state(false);
 
@@ -461,7 +460,6 @@ async function finishSetup() {
     './config/option/installed.json',
     JSON.stringify({ installed: true })
   );
-  completedSetup = true;
   document.getElementById('oobe')?.animate([{ opacity: 1 }, { opacity: 0 }], {
     duration: 500,
     fill: 'forwards',

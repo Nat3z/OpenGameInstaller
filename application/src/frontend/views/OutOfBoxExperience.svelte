@@ -464,10 +464,8 @@ async function finishSetup() {
     duration: 500,
     fill: 'forwards',
   });
-  Effect.sleep('500 millis').pipe(
-    Effect.andThen(() => Effect.sync(finishedSetup)),
-    Effect.runSync
-  );
+
+  Effect.sync(finishedSetup).pipe(Effect.delay('500 millis'), Effect.runSync);
 }
 
 function waitForSetup() {

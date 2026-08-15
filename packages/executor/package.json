@@ -1,6 +1,6 @@
 {
   "name": "@ogi-sdk/executor",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "module": "./build/index.mjs",
   "main": "./build/index.cjs",
   "exports": {

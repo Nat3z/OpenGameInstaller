@@ -15,6 +15,7 @@ import {
   DEFAULT_MARKETPLACE_SOURCES,
   oobeLog,
 } from '@/frontend/store.svelte';
+import { installAddonsAndReconnect } from '@/frontend/utils';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -459,7 +460,7 @@ async function finishSetup() {
     './config/option/installed.json',
     JSON.stringify({ installed: true })
   );
-  await runFrontendEffect(electronRpc.installAddons(allAddons));
+  await runFrontendEffect(installAddonsAndReconnect(allAddons));
   completedSetup = true;
 }
 

@@ -555,6 +555,7 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
 {#if !finishedOOBE}
   <OOBE
     finishedSetup={async () => {
+      await initializeSearch();
       finishedOOBE = true;
       if ((await runFrontendEffect(electronRpc.app.getOS())) !== 'win32') {
         const result = await runFrontendEffect(electronRpc.app.addToDesktop());

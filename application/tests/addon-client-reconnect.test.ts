@@ -5,6 +5,18 @@ mock.module('@/frontend/lib/config/client', () => ({
   getConfigClientOption: () => null,
 }));
 
+let installedAddonUrls: string[] = [];
+
+mock.module('@/frontend/lib/electron-rpc', () => ({
+  electronRpc: {
+    installAddons: (addons: string[]) =>
+      Effect.sync(() => {
+        installedAddonUrls = addons;
+        return addons;
+      }),
+  },
+}));
+
 type MockResponse = {
   statusError?: string;
   args: { addons: { id: string }[] };
@@ -46,6 +58,7 @@ mock.module('@ogi-sdk/client-kit', () => ({
 }));
 
 let ipc: typeof import('../src/frontend/lib/core/ipc.js');
+let installAddonsAndReconnect: typeof import('../src/frontend/lib/core/addons.js').installAddonsAndReconnect;
 
 beforeAll(async () => {
   let markCloseStarted: () => void;
@@ -63,6 +76,9 @@ beforeAll(async () => {
     new MockConnection([{ id: 'new' }]),
   ];
   ipc = await import('../src/frontend/lib/core/ipc.js');
+  ({ installAddonsAndReconnect } = await import(
+    '../src/frontend/lib/core/addons.js'
+  ));
 });
 
 describe('addon client reconnect', () => {
@@ -75,5 +91,16 @@ describe('addon client reconnect', () => {
 
     await reconnect;
     expect(await query).toEqual([{ id: 'new' }]);
+  });
+
+  test('install completion returns addons from the restarted server', async () => {
+    connections = [new MockConnection([{ id: 'installed' }])];
+
+    const connectedAddons = await Effect.runPromise(
+      installAddonsAndReconnect(['https://example.com/installed'])
+    );
+
+    expect(installedAddonUrls).toEqual(['https://example.com/installed']);
+    expect(connectedAddons).toEqual([{ id: 'installed' }]);
   });
 });

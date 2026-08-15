@@ -1,8 +1,22 @@
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import { AddonError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { supportsStorefront } from '@/lib/storefronts';
-import { type AddonInfo, addonServer, queryConnectedAddons } from './ipc';
+import {
+  type AddonInfo,
+  addonServer,
+  queryConnectedAddons,
+  reconnectClientSdk,
+} from './ipc';
+
+export function installAddonsAndReconnect<T = AddonInfo>(addons: string[]) {
+  return Effect.gen(function* () {
+    yield* electronRpc.installAddons(addons);
+    yield* reconnectClientSdk();
+    return yield* queryConnectedAddons<T>();
+  });
+}
 
 export function isAddonEventAvailable(
   addon: Pick<AddonInfo, 'eventsAvailable'> | undefined,

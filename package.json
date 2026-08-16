@@ -8,7 +8,7 @@
     "dev": "bun run --filter 'opengameinstaller-gui' dev",
     "format": "biome check --write package.json packages application/src application/package.json updater web/src web/scripts web/package.json test-addon --files-ignore-unknown=true",
     "lint": "biome check package.json packages application/src application/package.json updater web/src web/scripts web/package.json test-addon --files-ignore-unknown=true",
-    "typecheck": "bun run --filter './packages/*' build && bun run --filter '*' typecheck"
+    "typecheck": "bun run --filter './packages/*' build && bun run --filter '*' --elide-lines=0 typecheck"
   },
   "workspaces": [
     "packages/*",

@@ -15,6 +15,7 @@ import {
   DEFAULT_MARKETPLACE_SOURCES,
   oobeLog,
 } from '@/frontend/store.svelte';
+import { installAddonsAndReconnect } from '@/frontend/utils';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -385,7 +386,6 @@ function sendDownloadLocation(event: MouseEvent) {
   stage = 4;
 }
 
-let completedSetup = false;
 let currentOS = $state('');
 let isSteamDeck = $state(false);
 
@@ -455,30 +455,21 @@ async function finishSetup() {
     './config/option/general.json',
     JSON.stringify(generalConfig)
   );
+  await runFrontendEffect(installAddonsAndReconnect(allAddons));
   window.electronAPI.fs.write(
     './config/option/installed.json',
     JSON.stringify({ installed: true })
   );
-  await runFrontendEffect(electronRpc.installAddons(allAddons));
-  completedSetup = true;
+  document.getElementById('oobe')?.animate([{ opacity: 1 }, { opacity: 0 }], {
+    duration: 500,
+    fill: 'forwards',
+  });
+
+  Effect.sync(finishedSetup).pipe(Effect.delay('500 millis'), Effect.runSync);
 }
 
 function waitForSetup() {
   stage = 7;
-  const waitFor = setInterval(() => {
-    if (completedSetup) {
-      document
-        .getElementById('oobe')
-        ?.animate([{ opacity: 1 }, { opacity: 0 }], {
-          duration: 500,
-          fill: 'forwards',
-        });
-      setTimeout(() => {
-        finishedSetup();
-      }, 500);
-      clearInterval(waitFor);
-    }
-  }, 200);
 }
 
 function toggleAddon(addon: ListedCommunityAddon) {

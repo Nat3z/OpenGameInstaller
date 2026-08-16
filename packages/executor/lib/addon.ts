@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { AddonError, FileSystemError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Deferred, Effect, Exit, Schema, Scope } from 'effect';
@@ -60,7 +60,11 @@ export class Addon {
     }
 
     return Effect.try({
-      try: () => execFileSync('which', ['bun'], { encoding: 'utf-8' }).trim(),
+      try: () =>
+        execFileSync('which', ['bun'], {
+          encoding: 'utf-8',
+          env: process.env,
+        }).trim(),
       catch: () =>
         new AddonError({ message: 'Unable to find bun through which' }),
     }).pipe(
@@ -71,6 +75,21 @@ export class Addon {
       Effect.catchAll(() =>
         Effect.succeed(join(process.env.HOME || '', '.bun', 'bin', 'bun'))
       )
+    );
+  }
+
+  public static getEnvironmentWithBun(): Effect.Effect<
+    NodeJS.ProcessEnv,
+    AddonError
+  > {
+    return Addon.getBunPath().pipe(
+      Effect.map((bunPath) => {
+        const currentPath = process.env.PATH ?? process.env.Path;
+        return {
+          ...process.env,
+          PATH: [dirname(bunPath), currentPath].filter(Boolean).join(delimiter),
+        };
+      })
     );
   }
 

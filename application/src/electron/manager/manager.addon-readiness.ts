@@ -10,18 +10,18 @@ function addonFolderName(addonPath: string): string {
   return addonPath.replace(/\/$/, '').split(/[/\\]/).pop() ?? addonPath;
 }
 
-function configuredRunningConnections(): AddonConnection[] {
-  const configured: AddonConnection[] = [];
+function manifestReadyConnections(): AddonConnection[] {
+  const ready: AddonConnection[] = [];
   for (const addonPath of Addon.running.keys()) {
     const client = addonServer.getClient(addonFolderName(addonPath));
     if (client?.addonInfo && client.configTemplate !== undefined) {
-      configured.push(client);
+      ready.push(client);
     }
   }
-  return configured;
+  return ready;
 }
 
-export function waitForAddonsConfigured(
+export function waitForAddonManifests(
   options: { timeoutMs?: number; pollIntervalMs?: number } = {}
 ): Effect.Effect<AddonConnection[]> {
   return Effect.gen(function* () {
@@ -35,16 +35,16 @@ export function waitForAddonsConfigured(
     const deadline = Date.now() + timeoutMs;
 
     while (Date.now() < deadline) {
-      const ready = configuredRunningConnections();
+      const ready = manifestReadyConnections();
       if (ready.length >= expectedCount) {
         return ready;
       }
       yield* Effect.sleep(`${pollIntervalMs} millis`);
     }
 
-    const ready = configuredRunningConnections();
+    const ready = manifestReadyConnections();
     logger.sync.warn(
-      `[addon-readiness] Timed out waiting for addons to send configure (${ready.length}/${expectedCount} ready)`
+      `[addon-readiness] Timed out waiting for addon manifests (${ready.length}/${expectedCount} ready)`
     );
     return ready;
   });

@@ -2,7 +2,7 @@ import type { DeferredTaskSnapshot } from '@ogi-sdk/client-kit';
 import { AddonError, formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
-import { addonServer } from '@/frontend/lib/core/ipc';
+import { getAddonServer } from '@/frontend/lib/core/ipc';
 import {
   type DeferredTask,
   deferredTasks,
@@ -12,13 +12,16 @@ import {
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 export function loadDeferredTasks(tasksToRemove: string[] = []) {
-  return Effect.tryPromise({
-    try: () => addonServer.getDeferredTasks(),
-    catch: (cause) =>
-      new AddonError({
-        message: `Failed to load deferred tasks: ${formatError(cause)}`,
-      }),
-  }).pipe(
+  return getAddonServer().pipe(
+    Effect.flatMap((addonServer) =>
+      Effect.tryPromise({
+        try: () => addonServer.getDeferredTasks(),
+        catch: (cause) =>
+          new AddonError({
+            message: `Failed to load deferred tasks: ${formatError(cause)}`,
+          }),
+      })
+    ),
     Effect.tap((tasks) =>
       Effect.sync(() => {
         deferredTasks.set(

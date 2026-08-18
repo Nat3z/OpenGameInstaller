@@ -469,6 +469,7 @@ export const ElectronRpc = {
     setActive: rpc('powerSave.setActive', [Schema.Boolean], Void),
   },
   installAddons: rpc('installAddons', [StringArray], StringArray),
+  ensureAddonsSpawned: rpc('ensureAddonsSpawned', [], Void),
   restartAddonServer: rpc('restartAddonServer', [], Void),
   deleteInstalledAddon: rpc(
     'deleteInstalledAddon',

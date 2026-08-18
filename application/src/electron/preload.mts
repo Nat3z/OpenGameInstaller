@@ -272,13 +272,6 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
-  'addon-connected',
-  wrap((_, arg) => {
-    document.dispatchEvent(new CustomEvent('addon-connected', { detail: arg }));
-  })
-);
-
-ipcRenderer.on(
   'migration:event',
   wrap((_, arg) => {
     document.dispatchEvent(
@@ -314,10 +307,10 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
-  'addon-runtime-ready',
+  'addon-manifests-ready',
   wrap(() => {
-    logger.sync.info('ADDON RUNTIME READY');
-    document.dispatchEvent(new CustomEvent('addon-runtime-ready'));
+    logger.sync.info('ADDON MANIFESTS READY');
+    document.dispatchEvent(new CustomEvent('addon-manifests-ready'));
   })
 );
 

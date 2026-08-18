@@ -35,8 +35,8 @@ import {
   setHeaderBackButton,
 } from '@/frontend/store.svelte';
 import {
-  addonServer,
   fetchAddonsWithConfigure,
+  getAddonServerPromise,
   isAddonEventAvailable,
   runLaunchAppAddons,
   runTask,
@@ -408,6 +408,7 @@ onMount(async () => {
   );
 
   if (addonsWithStorefront.length === 0) return;
+  const addonServer = await getAddonServerPromise();
   for (const addon of addonsWithStorefront) {
     searchingAddons[addon.id] = undefined;
     (

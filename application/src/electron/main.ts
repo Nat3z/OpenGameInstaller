@@ -13,6 +13,7 @@ import {
 } from '@/electron/handlers/handler.library.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
+import { RendererEventReadiness } from '@/electron/lib/renderer-event-readiness.js';
 import {
   createSingleInstanceData,
   type LaunchForwardPayload,
@@ -22,7 +23,7 @@ import {
   parseWrapperAfterSeparator,
 } from '@/electron/lib/single-instance-launch.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
-import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
+import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
 import { stopClient } from '@/electron/manager/manager.webtorrent.js';
 import { createElectronRouter } from '@/electron/rpc/router.js';
@@ -195,10 +196,8 @@ export function sendNotification(notification: Notification) {
   sendIPCMessage('notification', notification);
 }
 
-let isReadyForEvents = false;
-
-let readyForEventWaiters: (() => void)[] = [];
 let clientReadyListenerRegistered = false;
+const rendererEventReadiness = new RendererEventReadiness();
 
 const IPC_READY_TIMEOUT_MS = 15000;
 
@@ -208,28 +207,14 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
     return;
   }
 
-  if (!isReadyForEvents) {
-    let resolverRef: (() => void) | null = null;
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        logger.sync.info('waiting for events');
-        resolverRef = resolve;
-        readyForEventWaiters.push(resolve);
-      }),
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          if (resolverRef !== null) {
-            const idx = readyForEventWaiters.indexOf(resolverRef);
-            if (idx !== -1) readyForEventWaiters.splice(idx, 1);
-          }
-          logger.sync.warn(
-            '[sendIPCMessage] client-ready-for-events not received within timeout, proceeding'
-          );
-          resolve();
-        }, IPC_READY_TIMEOUT_MS);
-      }),
-    ]);
-    if (isReadyForEvents) logger.sync.info('events ready');
+  if (!rendererEventReadiness.isReady()) {
+    logger.sync.info('waiting for events');
+    await rendererEventReadiness.wait(IPC_READY_TIMEOUT_MS, () =>
+      logger.sync.warn(
+        '[sendIPCMessage] client-ready-for-events not received within timeout, proceeding'
+      )
+    );
+    if (rendererEventReadiness.isReady()) logger.sync.info('events ready');
   }
   mainWindow?.webContents.send(channel, ...args);
 }
@@ -288,12 +273,8 @@ function registerClientReadyListener() {
   if (clientReadyListenerRegistered) return;
   clientReadyListenerRegistered = true;
 
-  ipcMain.on('client-ready-for-events', async () => {
-    isReadyForEvents = true;
-    for (const waiter of readyForEventWaiters) {
-      waiter();
-    }
-    readyForEventWaiters = [];
+  ipcMain.on('client-ready-for-events', () => {
+    rendererEventReadiness.markReady();
   });
 }
 
@@ -336,11 +317,8 @@ async function onMainAppReady() {
     await runElectronEffect(checkForAddonUpdates(mainWindow));
   }
   await sendIPCMessage('all-addons-started');
-  const configuredAddons = await runElectronEffect(waitForAddonsConfigured());
-  for (const connection of configuredAddons) {
-    await sendIPCMessage('addon-connected', connection.addonInfo!.id);
-  }
-  await sendIPCMessage('addon-runtime-ready');
+  await runElectronEffect(waitForAddonManifests());
+  await sendIPCMessage('addon-manifests-ready');
 
   // Register process-wide listeners only once
   if (!listenersRegistered) {
@@ -432,6 +410,13 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
       logger.sync.warn(`Blocked navigation to: ${navigationUrl}`);
     }
   });
+
+  mainWindow.webContents.on(
+    'did-start-navigation',
+    (_event, _url, _isInPlace, isMainFrame) => {
+      if (isMainFrame) rendererEventReadiness.reset();
+    }
+  );
 
   if (!isDev() && !ogiDebug()) mainWindow.removeMenu();
 

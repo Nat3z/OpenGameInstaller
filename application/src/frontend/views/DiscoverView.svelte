@@ -6,6 +6,7 @@ import type {
   CatalogSection,
   ConfigurationFile,
   OGIAddonConfiguration,
+  OGIAddonSDKEventListener,
 } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onMount } from 'svelte';
@@ -18,12 +19,13 @@ import {
   selectedView,
   viewOpenedWhenChanged,
 } from '@/frontend/store.svelte';
-import { addonServer, queryConnectedAddons } from '@/frontend/utils';
+import { getAddonServerPromise, queryConnectedAddons } from '@/frontend/utils';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 interface ConfigTemplateAndInfo extends OGIAddonConfiguration {
   configTemplate: ConfigurationFile;
+  eventsAvailable: OGIAddonSDKEventListener[];
 }
 
 interface AddonCatalog {
@@ -224,10 +226,11 @@ async function loadCatalogs() {
     addons = await runFrontendEffect(
       queryConnectedAddons<ConfigTemplateAndInfo>()
     );
+    const addonServer = await getAddonServerPromise();
 
     const catalogPromises = addons.map(async (addonInfo) => {
       const addon = addonServer.addon(addonInfo.id);
-      if (!addon.eventsAvailable.includes('catalog')) {
+      if (!addonInfo.eventsAvailable.includes('catalog')) {
         return null;
       }
       try {

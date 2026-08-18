@@ -47,14 +47,13 @@ import {
   viewOpenedWhenChanged,
 } from '@/frontend/store.svelte';
 import {
-  addonServer,
   fetchAddonsWithConfigure,
+  getAddonServerPromise,
   getConfigClientOption,
   initDownloadPersistence,
   initSleepLock,
   isAddonEventAvailable,
   queryConnectedAddons,
-  reconnectClientSdk,
 } from '@/frontend/utils';
 import ClientOptionsView from '@/frontend/views/ClientOptionsView.svelte';
 import ConfigView from '@/frontend/views/ConfigView.svelte';
@@ -232,6 +231,7 @@ async function performSearch(query: string) {
     emptyAddons = new Set();
 
     // Search through addons and organize results by addon
+    const addonServer = await getAddonServerPromise();
     let promises: Promise<void>[] = [];
     for (const addon of searchAddons) {
       promises.push(
@@ -419,25 +419,6 @@ document.addEventListener('all-addons-started', async () => {
       type: 'success',
     });
     addonUpdates.set([]);
-    // restart the addon server
-    await runFrontendEffect(electronRpc.restartAddonServer());
-    await runFrontendEffect(
-      reconnectClientSdk().pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            logger.sync.error(
-              'Failed to reconnect to the addon server:',
-              error
-            );
-            createNotification({
-              id: Math.random().toString(36).substring(7),
-              message: 'Failed to reconnect to the addon server',
-              type: 'error',
-            });
-          })
-        )
-      )
-    );
   }
 });
 document.addEventListener('addon:updated', (event) => {
@@ -447,14 +428,6 @@ document.addEventListener('addon:updated', (event) => {
       value = value.filter((addon) => addon !== detail);
       return value;
     });
-  }
-});
-document.addEventListener('addon-connected', (event) => {
-  if (event instanceof CustomEvent) {
-    runDetached(
-      fetchAddonsWithConfigure().pipe(Effect.asVoid),
-      'Failed to refresh addons'
-    );
   }
 });
 currentStorePageOpened.subscribe((value) => {

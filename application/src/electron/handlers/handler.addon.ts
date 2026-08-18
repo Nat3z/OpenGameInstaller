@@ -15,7 +15,7 @@ import {
 import { AddonMarketplace } from '@/electron/lib/marketplace.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
-import { waitForAddonsConfigured } from '@/electron/manager/manager.addon-readiness.js';
+import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
@@ -110,6 +110,10 @@ export function startAddons(): Effect.Effect<void, AddonError> {
             return;
           }
 
+          const runningAddon = Addon.running.get(addonPath);
+          if (runningAddon?.getChildProcess()) return;
+          if (runningAddon) Addon.running.delete(addonPath);
+
           logger.sync.info(`Starting addon ${addonPath}`);
           const instance = yield* Addon.load(addonPath).pipe(
             Effect.catchAll(() => Effect.succeed(null))
@@ -186,18 +190,9 @@ export function restartAddonServer(): Effect.Effect<void, AddonError> {
     logger.sync.info(`Addon Server is running on http://localhost:${port}`);
     logger.sync.info(`Server is being executed by electron!`);
     yield* startAddons();
-    const configuredAddons = yield* waitForAddonsConfigured();
-    for (const connection of configuredAddons) {
-      yield* Effect.tryPromise({
-        try: () => sendIPCMessage('addon-connected', connection.addonInfo!.id),
-        catch: (cause) =>
-          new AddonError({
-            message: `Failed to notify renderer: ${String(cause)}`,
-          }),
-      });
-    }
+    yield* waitForAddonManifests();
     yield* Effect.tryPromise({
-      try: () => sendIPCMessage('addon-runtime-ready'),
+      try: () => sendIPCMessage('addon-manifests-ready'),
       catch: (cause) =>
         new AddonError({
           message: `Failed to notify renderer: ${String(cause)}`,
@@ -624,6 +619,16 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
     ipcBoundary(() => restartAddonServer())
   );
 
+  const ensureAddonsSpawnedProcedure = ipcProcedure(
+    ElectronRpc.ensureAddonsSpawned,
+    ipcBoundary(() =>
+      startAddons().pipe(
+        Effect.zipRight(waitForAddonManifests()),
+        Effect.asVoid
+      )
+    )
+  );
+
   const deleteInstalledAddonProcedure = ipcProcedure(
     ElectronRpc.deleteInstalledAddon,
     ipcBoundary((_, addonID: string) =>
@@ -1034,6 +1039,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
   return router(
     installAddons,
+    ensureAddonsSpawnedProcedure,
     restartAddonServerProcedure,
     deleteInstalledAddonProcedure,
     cleanAddons,

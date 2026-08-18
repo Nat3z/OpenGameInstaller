@@ -29,7 +29,7 @@ import {
   marketplaceSources,
   saveMarketplaceSources,
 } from '@/frontend/store.svelte';
-import { queryConnectedAddons, reconnectClientSdk } from '@/frontend/utils';
+import { queryConnectedAddons } from '@/frontend/utils';
 import CommunityAddonsList from '@/frontend/views/CommunityAddonsList.svelte';
 import FocusedAddonView from '@/frontend/views/FocusedAddonView.svelte';
 
@@ -92,8 +92,6 @@ async function updateAddons() {
     Effect.gen(function* () {
       yield* electronRpc.updateAddons();
       addonUpdates.set([]);
-      yield* electronRpc.restartAddonServer();
-      yield* reconnectClientSdk();
       createNotification({
         id: Math.random().toString(36).substring(7),
         message: 'Addons updated successfully',
@@ -132,7 +130,6 @@ async function addAddon() {
     Effect.gen(function* () {
       yield* electronRpc.installAddons([addonUrl]);
       addonUrl = '';
-      yield* reconnectClientSdk();
     }).pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {

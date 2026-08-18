@@ -16,7 +16,6 @@ import ThemePicker from '@/frontend/components/ThemePicker.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
-import { fetchAddonsWithConfigure, reconnectClientSdk } from '@/frontend/utils';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -542,10 +541,7 @@ async function updateAddons() {
 async function restartAddonServer() {
   isRestartingServer = true;
   await runFrontendEffect(
-    Effect.gen(function* () {
-      yield* electronRpc.restartAddonServer();
-      yield* reconnectClientSdk();
-    }).pipe(
+    electronRpc.restartAddonServer().pipe(
       Effect.catchAll((error) =>
         logger.error('Failed to restart addon server:', error)
       ),
@@ -704,26 +700,10 @@ onMount(() => {
     doSteamGridDBReconfigure = true;
     reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
   }
-  async function handleAddonConnected() {
-    await runFrontendEffect(
-      fetchAddonsWithConfigure().pipe(
-        Effect.catchAll((error) =>
-          logger.error('Failed to configure addons after reconnect:', error)
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            isRestartingServer = false;
-          })
-        )
-      )
-    );
-  }
   document.addEventListener('steamgriddb-launch', steamgriddbLaunch);
-  document.addEventListener('addon-connected', handleAddonConnected);
 
   return () => {
     document.removeEventListener('steamgriddb-launch', steamgriddbLaunch);
-    document.removeEventListener('addon-connected', handleAddonConnected);
   };
 });
 </script>

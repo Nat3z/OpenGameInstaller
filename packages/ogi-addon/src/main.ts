@@ -847,10 +847,6 @@ class OGIAddonWSListener {
                 message: `Invalid addon configuration: ${formatError(cause)}`,
               }),
           });
-          yield* this.respondToMessage(
-            id,
-            result[0] ? { success: true } : { success: false, error: result[1] }
-          );
           if (!this.configConnected) {
             this.configConnected = true;
             const connectEvent = this.makeEventResponse<void>();
@@ -858,6 +854,10 @@ class OGIAddonWSListener {
             this.schedule(this.runDeferredEffect(connectEvent));
             yield* this.addon.sendEventsAvailable();
           }
+          yield* this.respondToMessage(
+            id,
+            result[0] ? { success: true } : { success: false, error: result[1] }
+          );
           return;
         }
         case 'search':

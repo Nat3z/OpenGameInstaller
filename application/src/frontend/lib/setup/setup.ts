@@ -12,7 +12,7 @@ import {
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
-import { addonServer } from '@/frontend/lib/core/ipc';
+import { getAddonServer } from '@/frontend/lib/core/ipc';
 import { getApp } from '@/frontend/lib/core/library';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
@@ -163,16 +163,19 @@ function runAddonSetup(
   callbacks: ReturnType<typeof createSetupCallbacks>
 ) {
   const { addonID, ...setupArgs } = setupPayload;
-  return Effect.tryPromise({
-    try: () =>
-      addonServer
-        .addon(addonID, callbacks)
-        .setup(setupArgs) as Promise<SetupEventResponse>,
-    catch: (cause) =>
-      new AddonError({
-        message: formatError(cause),
-        addonName: addonID,
-      }),
+  return Effect.gen(function* () {
+    const addonServer = yield* getAddonServer();
+    return yield* Effect.tryPromise({
+      try: () =>
+        addonServer
+          .addon(addonID, callbacks)
+          .setup(setupArgs) as Promise<SetupEventResponse>,
+      catch: (cause) =>
+        new AddonError({
+          message: formatError(cause),
+          addonName: addonID,
+        }),
+    });
   });
 }
 

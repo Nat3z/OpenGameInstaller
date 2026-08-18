@@ -1,20 +1,15 @@
 import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import { AddonError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
+import { fetchAddonsWithConfigure } from '@/frontend/lib/config/client';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { supportsStorefront } from '@/lib/storefronts';
-import {
-  type AddonInfo,
-  addonServer,
-  queryConnectedAddons,
-  reconnectClientSdk,
-} from './ipc';
+import { type AddonInfo, getAddonServer, queryConnectedAddons } from './ipc';
 
-export function installAddonsAndReconnect<T = AddonInfo>(addons: string[]) {
+export function installAddonsAndReconnect(addons: string[]) {
   return Effect.gen(function* () {
     yield* electronRpc.installAddons(addons);
-    yield* reconnectClientSdk();
-    return yield* queryConnectedAddons<T>();
+    return yield* fetchAddonsWithConfigure();
   });
 }
 
@@ -43,9 +38,11 @@ function runLaunchAppAddonsOnce(
   launchType: 'pre' | 'post'
 ) {
   return Effect.gen(function* () {
-    const addons = (yield* queryConnectedAddons()).filter((addon) =>
+    yield* electronRpc.ensureAddonsSpawned();
+    const addons = (yield* fetchAddonsWithConfigure()).filter((addon) =>
       isAddonEventAvailable(addon, 'launch-app')
     );
+    const addonServer = yield* getAddonServer();
     const results = yield* Effect.forEach(
       addons,
       (addon) =>
@@ -75,7 +72,6 @@ export function runLaunchAppAddons(
     Effect.catchTag('AddonError', () =>
       Effect.gen(function* () {
         yield* electronRpc.restartAddonServer();
-        yield* reconnectClientSdk();
         return yield* runLaunchAppAddonsOnce(libraryInfo, launchType);
       }).pipe(
         Effect.mapError(

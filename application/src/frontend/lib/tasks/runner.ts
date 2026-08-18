@@ -2,7 +2,7 @@ import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
 import { AddonError, formatError } from '@ogi-sdk/errors';
 import { Effect, Exit } from 'effect';
 import { get } from 'svelte/store';
-import { addonServer } from '@/frontend/lib/core/ipc';
+import { getAddonServer } from '@/frontend/lib/core/ipc';
 import { createNotification, deferredTasks } from '@/frontend/store.svelte';
 
 export type SearchResultWithAddon = SearchResult & {
@@ -42,6 +42,7 @@ export function runTask(
       ...(libraryInfo ? { libraryInfo: structuredClone(libraryInfo) } : {}),
     };
 
+    const addonServer = yield* getAddonServer();
     const response = yield* Effect.tryPromise({
       try: () =>
         addonServer

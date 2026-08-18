@@ -38,7 +38,7 @@ export function getAddonIfEventAvailable(
   );
 }
 
-export function runLaunchAppAddons(
+function runLaunchAppAddonsOnce(
   libraryInfo: LibraryInfo,
   launchType: 'pre' | 'post'
 ) {
@@ -65,6 +65,28 @@ export function runLaunchAppAddons(
       ? ({ success: false, error: failure.left } as const)
       : ({ success: true } as const);
   });
+}
+
+export function runLaunchAppAddons(
+  libraryInfo: LibraryInfo,
+  launchType: 'pre' | 'post'
+) {
+  return runLaunchAppAddonsOnce(libraryInfo, launchType).pipe(
+    Effect.catchTag('AddonError', () =>
+      Effect.gen(function* () {
+        yield* electronRpc.restartAddonServer();
+        yield* reconnectClientSdk();
+        return yield* runLaunchAppAddonsOnce(libraryInfo, launchType);
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new AddonError({
+              message: `Failed to recover the addon runtime: ${formatError(cause)}`,
+            })
+        )
+      )
+    )
+  );
 }
 
 export function findAddonsSupportingStorefront(

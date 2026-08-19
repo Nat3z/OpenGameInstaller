@@ -49,6 +49,7 @@ import { generateNotificationId } from '@/electron/handlers/helpers.app/notifica
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendNotification } from '@/electron/main.js';
+import { afterUpdateRecovery } from '@/electron/update-system/readiness.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -78,170 +79,175 @@ export function launchGameFromLibrary(
   mainWindow?: Electron.BrowserWindow | null,
   launchEnv?: Record<string, string>
 ): Effect.Effect<LaunchGameResult, LibraryError> {
-  return Effect.gen(function* () {
-    logger.sync.info('[launch] Launching game', appid);
-    ensureLibraryDir();
-    ensureInternalsDir();
+  return afterUpdateRecovery(
+    Effect.gen(function* () {
+      logger.sync.info('[launch] Launching game', appid);
+      ensureLibraryDir();
+      ensureInternalsDir();
 
-    const parsedAppId =
-      typeof appid === 'number' ? appid : parseInt(String(appid), 10);
-    if (Number.isNaN(parsedAppId)) {
-      return { success: false, error: 'Invalid app ID' };
-    }
+      const parsedAppId =
+        typeof appid === 'number' ? appid : parseInt(String(appid), 10);
+      if (Number.isNaN(parsedAppId)) {
+        return { success: false, error: 'Invalid app ID' };
+      }
 
-    let appInfo = loadLibraryInfo(parsedAppId);
-    if (!appInfo) {
-      logger.sync.info('[launch] Game not found');
-      return { success: false, error: 'Game not found' };
-    }
+      let appInfo = loadLibraryInfo(parsedAppId);
+      if (!appInfo) {
+        logger.sync.info('[launch] Game not found');
+        return { success: false, error: 'Game not found' };
+      }
 
-    if (
-      isLinux() &&
-      !appInfo.umu &&
-      appInfo.launchExecutable.toLowerCase().endsWith('.exe')
-    ) {
-      const oldSteamAppId = yield* findSteamAppIdForGame(parsedAppId).pipe(
-        Effect.mapError(
-          (cause) =>
-            new LibraryError({
-              message: `Failed to inspect Steam shortcut: ${cause.message}`,
-              gameId: parsedAppId,
-            })
-        )
-      );
-      const migration = yield* Effect.tryPromise({
-        try: () => migrateToUmu(parsedAppId, oldSteamAppId),
-        catch: (cause) =>
-          new LibraryError({
-            message: `Failed to migrate legacy game to UMU: ${String(cause)}`,
-            gameId: parsedAppId,
-          }),
-      });
-      if (!migration.success) return migration;
-      appInfo = loadLibraryInfo(parsedAppId);
-      if (!appInfo)
-        return { success: false, error: 'Game disappeared during migration' };
-
-      if (mainWindow && oldSteamAppId !== undefined) {
-        const shortcutResult = yield* addUmuGameToSteam(mainWindow, {
-          appID: parsedAppId,
-          oldSteamAppId,
-        }).pipe(
+      if (
+        isLinux() &&
+        !appInfo.umu &&
+        appInfo.launchExecutable.toLowerCase().endsWith('.exe')
+      ) {
+        const oldSteamAppId = yield* findSteamAppIdForGame(parsedAppId).pipe(
           Effect.mapError(
             (cause) =>
               new LibraryError({
-                message: `Failed to migrate Steam shortcut: ${cause.message}`,
+                message: `Failed to inspect Steam shortcut: ${cause.message}`,
                 gameId: parsedAppId,
               })
           )
         );
-        if (shortcutResult.status === 'cancelled') {
-          logger.sync.warn(
-            '[launch] Steam shortcut migration was cancelled; continuing with direct UMU launch'
+        const migration = yield* Effect.tryPromise({
+          try: () => migrateToUmu(parsedAppId, oldSteamAppId),
+          catch: (cause) =>
+            new LibraryError({
+              message: `Failed to migrate legacy game to UMU: ${String(cause)}`,
+              gameId: parsedAppId,
+            }),
+        });
+        if (!migration.success) return migration;
+        appInfo = loadLibraryInfo(parsedAppId);
+        if (!appInfo)
+          return { success: false, error: 'Game disappeared during migration' };
+
+        if (mainWindow && oldSteamAppId !== undefined) {
+          const shortcutResult = yield* addUmuGameToSteam(mainWindow, {
+            appID: parsedAppId,
+            oldSteamAppId,
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new LibraryError({
+                  message: `Failed to migrate Steam shortcut: ${cause.message}`,
+                  gameId: parsedAppId,
+                })
+            )
           );
+          if (shortcutResult.status === 'cancelled') {
+            logger.sync.warn(
+              '[launch] Steam shortcut migration was cancelled; continuing with direct UMU launch'
+            );
+          }
         }
       }
-    }
 
-    // Check if we should use UMU mode
-    const useUmu = yield* shouldUseUmuMode(appInfo);
+      // Check if we should use UMU mode
+      const useUmu = yield* shouldUseUmuMode(appInfo);
 
-    if (useUmu) {
-      logger.sync.info(`[launch] Using UMU mode for ${appInfo.name}`);
+      if (useUmu) {
+        logger.sync.info(`[launch] Using UMU mode for ${appInfo.name}`);
 
-      const appID = appInfo.appID;
-      const result = yield* Effect.tryPromise({
-        try: () =>
-          launchWithUmu(appInfo, {
-            onExit: () => {
-              mainWindow?.webContents.send('game:exit', { id: appID });
-            },
-          }),
-        catch: (cause) =>
-          new LibraryError({
-            message: `Failed to launch game with UMU: ${String(cause)}`,
-            gameId: parsedAppId,
-          }),
-      });
+        const appID = appInfo.appID;
+        const result = yield* Effect.tryPromise({
+          try: () =>
+            launchWithUmu(appInfo, {
+              onExit: () => {
+                mainWindow?.webContents.send('game:exit', { id: appID });
+              },
+            }),
+          catch: (cause) =>
+            new LibraryError({
+              message: `Failed to launch game with UMU: ${String(cause)}`,
+              gameId: parsedAppId,
+            }),
+        });
 
-      if (!result.success) {
-        logger.sync.error('[launch] UMU launch failed:', result.error);
+        if (!result.success) {
+          logger.sync.error('[launch] UMU launch failed:', result.error);
+          sendNotification({
+            message: `Failed to launch game: ${result.error}`,
+            id: generateNotificationId(),
+            type: 'error',
+          });
+          mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+          return {
+            success: false,
+            error: result.error ?? 'Failed to launch game with UMU',
+          };
+        }
+
+        mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+        return { success: true };
+      }
+
+      // Legacy mode
+      const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
+      const {
+        command: launchExecutable,
+        args: otherLaunchArguments,
+        tokens: launchTokens,
+      } = resolveLaunchCommand(
+        appInfo.launchExecutable,
+        appInfo.launchArguments
+      );
+      logger.sync.info(
+        'Launching game:',
+        launchExecutable,
+        otherLaunchArguments,
+        'in cwd:',
+        appInfo.cwd
+      );
+
+      const spawnInvocation = resolveSpawnInvocation(
+        launchExecutable,
+        otherLaunchArguments,
+        launchTokens
+      );
+      const spawnOptions: SpawnOptions = {
+        cwd: appInfo.cwd,
+        shell: spawnInvocation.shell,
+        env: {
+          ...process.env,
+          ...(launchEnv ?? {}),
+          ...effectiveLaunchEnv,
+        },
+      };
+      const spawnedItem: ChildProcess = spawnInvocation.args
+        ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
+        : spawn(spawnInvocation.command, spawnOptions);
+      spawnedItem.on('error', (error) => {
+        logger.sync.error(error);
         sendNotification({
-          message: `Failed to launch game: ${result.error}`,
+          message: 'Failed to launch game',
           id: generateNotificationId(),
           type: 'error',
         });
         mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-        return {
-          success: false,
-          error: result.error ?? 'Failed to launch game with UMU',
-        };
-      }
+      });
+      spawnedItem.on('exit', (exitCode, signal) => {
+        logger.sync.info(
+          'Game exited with code: ' +
+            exitCode +
+            (signal ? ` signal: ${signal}` : '')
+        );
+        if (exitCode !== 0 && exitCode != null) {
+          sendNotification({
+            message: 'Game Crashed',
+            id: generateNotificationId(),
+            type: 'error',
+          });
+        }
+        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      });
 
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
       return { success: true };
-    }
-
-    // Legacy mode
-    const effectiveLaunchEnv = getEffectiveLaunchEnv(appInfo);
-    const {
-      command: launchExecutable,
-      args: otherLaunchArguments,
-      tokens: launchTokens,
-    } = resolveLaunchCommand(appInfo.launchExecutable, appInfo.launchArguments);
-    logger.sync.info(
-      'Launching game:',
-      launchExecutable,
-      otherLaunchArguments,
-      'in cwd:',
-      appInfo.cwd
-    );
-
-    const spawnInvocation = resolveSpawnInvocation(
-      launchExecutable,
-      otherLaunchArguments,
-      launchTokens
-    );
-    const spawnOptions: SpawnOptions = {
-      cwd: appInfo.cwd,
-      shell: spawnInvocation.shell,
-      env: {
-        ...process.env,
-        ...(launchEnv ?? {}),
-        ...effectiveLaunchEnv,
-      },
-    };
-    const spawnedItem: ChildProcess = spawnInvocation.args
-      ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
-      : spawn(spawnInvocation.command, spawnOptions);
-    spawnedItem.on('error', (error) => {
-      logger.sync.error(error);
-      sendNotification({
-        message: 'Failed to launch game',
-        id: generateNotificationId(),
-        type: 'error',
-      });
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-    });
-    spawnedItem.on('exit', (exitCode, signal) => {
-      logger.sync.info(
-        'Game exited with code: ' +
-          exitCode +
-          (signal ? ` signal: ${signal}` : '')
-      );
-      if (exitCode !== 0 && exitCode != null) {
-        sendNotification({
-          message: 'Game Crashed',
-          id: generateNotificationId(),
-          type: 'error',
-        });
-      }
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
-    });
-
-    mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
-    return { success: true };
-  });
+    })
+  );
 }
 
 export function executeWrapperCommandForApp(

@@ -446,7 +446,8 @@ export function runSetupAppUpdate(
   downloadedItem: DownloadStatusAndInfo,
   outputDir: string,
   isTorrent: boolean,
-  additionalData: AdditionalSetupData = {}
+  additionalData: AdditionalSetupData = {},
+  deferLibraryUpdate: boolean = false
 ) {
   const currentLibraryInfo = getApp(downloadedItem.appID);
   if (!currentLibraryInfo) {
@@ -470,6 +471,25 @@ export function runSetupAppUpdate(
     );
     markSetupLogInactive(downloadedItem.id);
 
+    if (deferLibraryUpdate) return data;
+
+    yield* finalizeSetupAppUpdate(downloadedItem, isTorrent, data);
+    return data;
+  }).pipe(
+    Effect.mapError((error) =>
+      error instanceof GameNotFound || error instanceof UpdateError
+        ? error
+        : new UpdateError({ message: formatError(error), cause: error })
+    )
+  );
+}
+
+export function finalizeSetupAppUpdate(
+  downloadedItem: DownloadStatusAndInfo,
+  isTorrent: boolean,
+  data: SetupEventResponse
+) {
+  return Effect.gen(function* () {
     const result = yield* electronRpc.app
       .updateAppVersion(
         downloadedItem.appID,
@@ -521,12 +541,5 @@ export function runSetupAppUpdate(
       status: isTorrent ? 'seeding' : 'setup-complete',
       downloadPath: downloadedItem.downloadPath,
     });
-    return data;
-  }).pipe(
-    Effect.mapError((error) =>
-      error instanceof GameNotFound || error instanceof UpdateError
-        ? error
-        : new UpdateError({ message: formatError(error), cause: error })
-    )
-  );
+  });
 }

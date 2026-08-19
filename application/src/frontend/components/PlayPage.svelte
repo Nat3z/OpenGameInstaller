@@ -53,8 +53,8 @@ let hasActiveUpdateDownload = $derived(
   !!$currentDownloads.find(
     (download) =>
       download.appID === libraryInfo.appID &&
+      download.isUpdate === true &&
       download.status !== 'error' &&
-      download.status !== 'completed' &&
       download.status !== 'seeding' &&
       download.status !== 'setup-complete'
   )
@@ -111,7 +111,7 @@ let playButton: HTMLButtonElement | undefined = $state(undefined);
 let openedGameConfiguration = $state(false);
 
 async function launchGame() {
-  if ($gamesLaunched[libraryInfo.appID]) return;
+  if ($gamesLaunched[libraryInfo.appID] || hasActiveUpdateDownload) return;
   if (!playButton) return;
   logger.sync.info('Launching game with appID: ' + libraryInfo.appID);
   playButton.setAttribute('data-error', 'false');

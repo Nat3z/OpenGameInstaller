@@ -1,7 +1,9 @@
 import { DownloadError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
+import { get } from 'svelte/store';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { getApp } from '@/frontend/lib/core/library';
 import {
   cardStatusFromHandshake,
   finalizeDownloadCard,
@@ -13,7 +15,7 @@ import {
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
-import { currentDownloads } from '@/frontend/store.svelte';
+import { currentDownloads, gamesLaunched } from '@/frontend/store.svelte';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -69,6 +71,55 @@ export class DirectService extends BaseService {
 
       button.textContent = 'Downloading...';
       button.disabled = true;
+
+      const currentApp = result.isUpdate ? getApp(appID) : undefined;
+      if (result.isUpdate && currentApp && get(gamesLaunched)[appID]) {
+        return yield* Effect.fail(
+          new DownloadError({
+            message: `Close ${result.name} before updating it.`,
+          })
+        );
+      }
+      if (result.isUpdate && currentApp) {
+        const optimized = yield* electronRpc.update
+          .prepareDirect({
+            appID,
+            installationPath: currentApp.cwd,
+            sources: persistedFiles.map((file) => ({
+              url: file.downloadURL,
+              localPath: file.path,
+              ...(file.headers ? { headers: file.headers } : {}),
+            })),
+          })
+          .pipe(
+            Effect.catchAll(() => Effect.succeed({ kind: 'fallback' as const }))
+          );
+        if (optimized.kind === 'optimized') {
+          const id = crypto.randomUUID();
+          currentDownloads.update((downloads) => [
+            ...downloads,
+            {
+              id,
+              status: 'downloading',
+              downloadPath: safeDownloadPath(baseDir, sanitizedName),
+              downloadSpeed: 0,
+              progress: 1,
+              appID,
+              downloadSize: 0,
+              ...result,
+              files: persistedFiles,
+              managedUpdate: {
+                extractedPath: optimized.extractedPath,
+                manifest: optimized.manifest,
+              },
+            },
+          ]);
+          document.dispatchEvent(
+            new CustomEvent('ddl:download-complete', { detail: { id } })
+          );
+          return;
+        }
+      }
 
       const handshake = yield* electronRpc.ddl.download(collectedFiles).pipe(
         Effect.mapError(

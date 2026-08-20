@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ValidationError } from '@ogi-sdk/errors';
+import { formatError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Either, Schema } from 'effect';
 import { onDestroy, onMount } from 'svelte';
@@ -225,7 +225,20 @@ async function downloadTools() {
     logs: [],
   }));
 
-  const result = await runFrontendEffect(electronRpc.oobe.downloadTools());
+  let result: readonly [boolean, boolean];
+  try {
+    result = await runFrontendEffect(electronRpc.oobe.downloadTools());
+  } catch (error: unknown) {
+    const message = formatError(error);
+    logger.sync.error('Failed to download tools:', error);
+    oobeLog.update((currentLog) => ({
+      ...currentLog,
+      status: 'failed',
+      logs: [...currentLog.logs, `Error: ${message}`],
+    }));
+    return;
+  }
+
   if (!result[0]) {
     oobeLog.update((currentLog) => ({
       ...currentLog,

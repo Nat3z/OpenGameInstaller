@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ValidationError } from '@ogi-sdk/errors';
+import { formatError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Either, Schema } from 'effect';
 import { onDestroy, onMount } from 'svelte';
@@ -219,18 +219,30 @@ async function resetMarketplaceSources() {
 
 async function downloadTools() {
   logger.sync.info('Downloading tools');
-  // Activate OOBE logging
   oobeLog.update((currentLog) => ({
     ...currentLog,
-    isActive: true,
+    status: 'running',
     logs: [],
   }));
 
-  const result = await runFrontendEffect(electronRpc.oobe.downloadTools());
+  let result: readonly [boolean, boolean];
+  try {
+    result = await runFrontendEffect(electronRpc.oobe.downloadTools());
+  } catch (error: unknown) {
+    const message = formatError(error);
+    logger.sync.error('Failed to download tools:', error);
+    oobeLog.update((currentLog) => ({
+      ...currentLog,
+      status: 'failed',
+      logs: [...currentLog.logs, `Error: ${message}`],
+    }));
+    return;
+  }
+
   if (!result[0]) {
     oobeLog.update((currentLog) => ({
       ...currentLog,
-      isActive: false,
+      status: 'failed',
     }));
     return;
   }
@@ -507,7 +519,7 @@ function handleOOBELog(event: Event) {
   oobeLog.update((currentLog) => ({
     ...currentLog,
     logs: [...currentLog.logs, logContent],
-    isActive: true,
+    status: 'running',
   }));
 }
 
@@ -607,7 +619,7 @@ onDestroy(() => {
         These tools are required for launching and running OpenGameInstaller
         services.
       </h2>
-      {#if !$oobeLog.isActive}
+      {#if $oobeLog.status === 'idle'}
         <div class="oobe-tools-shell">
           <div
             class="oobe-tools-table"
@@ -649,33 +661,67 @@ onDestroy(() => {
       {/if}
 
       <!-- OOBE Terminal Log Display -->
-      {#if $oobeLog.isActive && $oobeLog.logs.length > 0}
-        <div class="oobe-terminal w-full max-w-3xl mt-6 h-64">
+      {#if $oobeLog.status !== 'idle'}
+        <div
+          class:oobe-terminal-error={$oobeLog.status === 'failed'}
+          class="oobe-terminal w-full max-w-3xl mt-6"
+        >
           <div class="terminal-header">
             <div class="flex items-center gap-2">
-              <span class="text-xs text-text-muted font-mono"
-                >Installation Console</span
-              >
+              <span class="terminal-title">
+                {$oobeLog.status === 'failed'
+                  ? 'Installation failed'
+                  : 'Installation console'}
+              </span>
             </div>
           </div>
 
-          <div bind:this={logContainer} class="terminal-content">
+          <div
+            bind:this={logContainer}
+            class="terminal-content"
+            role="log"
+            aria-live="polite"
+            aria-busy={$oobeLog.status === 'running'}
+          >
+            {#if $oobeLog.logs.length === 0}
+              <div class="terminal-line">
+                <span class="terminal-output">
+                  {$oobeLog.status === 'failed'
+                    ? 'Installation failed before command output was available.'
+                    : 'Checking installed tools...'}
+                </span>
+              </div>
+            {/if}
             {#each $oobeLog.logs as log, index}
               <div
                 class="terminal-line"
                 in:fade={{ duration: 150, delay: index * 20 }}
               >
-                <span class="text-green-400 font-mono text-sm leading-relaxed">
+                <span
+                  class:terminal-output-error={log.trimStart().startsWith(
+                    'Error:'
+                  )}
+                  class="terminal-output"
+                >
                   {log}
                 </span>
               </div>
             {/each}
-            <div class="terminal-cursor">
-              <span class="text-green-400 font-mono text-sm animate-pulse"
-                >▋</span
-              >
-            </div>
+            {#if $oobeLog.status === 'running'}
+              <div class="terminal-cursor" aria-hidden="true">
+                <span class="terminal-output animate-pulse">▋</span>
+              </div>
+            {/if}
           </div>
+
+          {#if $oobeLog.status === 'failed'}
+            <div class="terminal-failure" role="alert">
+              <p>
+                Review the error above, fix the reported issue, then try again.
+              </p>
+              <button type="button" onclick={downloadTools}>Try again</button>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -1269,9 +1315,13 @@ onDestroy(() => {
   }
 
   .oobe-terminal {
-    @apply rounded-lg overflow-hidden border;
+    @apply rounded-lg overflow-hidden border flex flex-col;
     background-color: var(--color-bg-secondary);
     border-color: var(--color-border);
+  }
+
+  .oobe-terminal-error {
+    border-color: var(--color-error);
   }
 
   .terminal-header {
@@ -1280,8 +1330,26 @@ onDestroy(() => {
     border-color: var(--color-border);
   }
 
+  .oobe-terminal-error .terminal-header {
+    border-color: var(--color-error);
+  }
+
+  .terminal-title {
+    @apply text-xs text-text-muted font-mono;
+  }
+
+  .oobe-terminal-error .terminal-title {
+    color: color-mix(
+      in srgb,
+      var(--color-error) 72%,
+      var(--color-text-primary)
+    );
+  }
+
   .terminal-content {
-    @apply p-4 max-h-48 overflow-y-auto;
+    @apply p-4 overflow-y-auto;
+    min-height: 12rem;
+    max-height: 16rem;
     scrollbar-width: thin;
     scrollbar-color: var(--color-scrollbar) var(--color-bg-secondary);
   }
@@ -1309,8 +1377,46 @@ onDestroy(() => {
     white-space: pre-wrap;
   }
 
+  .terminal-output {
+    @apply font-mono text-sm leading-relaxed;
+    color: color-mix(
+      in srgb,
+      var(--color-success) 72%,
+      var(--color-text-primary)
+    );
+  }
+
+  .terminal-output-error {
+    color: color-mix(
+      in srgb,
+      var(--color-error) 72%,
+      var(--color-text-primary)
+    );
+  }
+
   .terminal-cursor {
     @apply mt-2;
+  }
+
+  .terminal-failure {
+    @apply flex items-center justify-between gap-4 border-t px-4 py-3 font-open-sans text-sm text-text-secondary flex-wrap;
+    border-color: var(--color-error);
+    background-color: color-mix(in srgb, var(--color-error) 8%, transparent);
+  }
+
+  .terminal-failure button {
+    @apply shrink-0 rounded-lg px-4 py-2 font-semibold text-white cursor-pointer;
+    background-color: var(--color-error-hover);
+    transition: filter 200ms ease;
+  }
+
+  .terminal-failure button:hover {
+    filter: brightness(0.88);
+  }
+
+  .terminal-failure button:focus-visible {
+    outline: 2px solid var(--color-text-primary);
+    outline-offset: 2px;
   }
 
   .oobe-community-stage {

@@ -11,6 +11,7 @@ import {
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
+import { getBunSetupAction } from '@/electron/lib/bun-setup.js';
 import {
   getSteamGridDbConfigPath,
   writeSteamGridDbKey,
@@ -167,36 +168,40 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
         );
         if (result._tag === 'Right') restart = true;
       } else {
+        const message =
+          'Git is not installed, and OpenGameInstaller cannot install it automatically on this platform. Install Git manually, then try again.';
         clean = false;
-        notify(
-          'Missing Git and automatic installation is not supported.',
-          'error'
-        );
+        log(`Error: ${message}`);
+        notify(message, 'error');
       }
     }
 
-    if (!(yield* commandExists('bun --version'))) {
-      const install =
-        process.platform === 'win32'
-          ? command('powershell -c "irm bun.sh/install.ps1 | iex"')
-          : process.platform === 'linux' && !IS_NIXOS
-            ? command('curl -fsSL https://bun.sh/install | bash').pipe(
-                Effect.zipRight(
-                  command(
-                    `echo "export PATH=$PATH:/home/${os.userInfo().username}/.bun/bin" >> ~/.bashrc`
-                  )
-                )
-              )
-            : Effect.fail(
-                new PlatformError({
-                  message: 'Automatic Bun installation is unsupported',
-                  platform: process.platform,
-                })
-              );
-      const result = yield* attempt(install.pipe(Effect.asVoid));
+    const bunSetup = getBunSetupAction({
+      installed: yield* commandExists('bun --version'),
+      isNixOS: IS_NIXOS,
+      platform: process.platform,
+      username: os.userInfo().username,
+    });
+    if (bunSetup.type === 'install') {
+      const install = Effect.forEach(
+        bunSetup.commands,
+        (executable) => command(executable),
+        { discard: true }
+      );
+      const result = yield* attempt(install);
       if (result._tag === 'Right') restart = true;
-    } else if (!IS_NIXOS) {
+    } else if (bunSetup.type === 'upgrade') {
       yield* command('bun upgrade').pipe(Effect.ignore);
+    } else if (bunSetup.type === 'unsupported') {
+      yield* attempt(
+        Effect.fail(
+          new PlatformError({
+            message:
+              'Bun is not installed, and OpenGameInstaller cannot install it automatically on this platform. Install Bun manually, then try again.',
+            platform: process.platform,
+          })
+        )
+      );
     }
     return [clean, restart] as const;
   });

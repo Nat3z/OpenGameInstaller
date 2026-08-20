@@ -161,12 +161,12 @@ export const redistributableInstalls: Writable<
 // OOBE logs for the out-of-box experience
 export type OOBELog = {
   logs: string[];
-  isActive: boolean;
+  status: 'idle' | 'running' | 'failed';
 };
 
 export const oobeLog: Writable<OOBELog> = writable({
   logs: [],
-  isActive: false,
+  status: 'idle',
 });
 
 export const currentStorePageOpened: Writable<number | undefined> = writable();

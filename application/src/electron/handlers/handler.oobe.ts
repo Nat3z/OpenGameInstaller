@@ -196,8 +196,9 @@ const downloadTools = (): Effect.Effect<readonly [boolean, boolean]> =>
       yield* attempt(
         Effect.fail(
           new PlatformError({
-            message:
-              'Bun is not installed, and OpenGameInstaller cannot install it automatically on this platform. Install Bun manually, then try again.',
+            message: IS_NIXOS
+              ? 'Bun is not installed. Automatic installation is disabled on NixOS. Install Bun with your system package manager, then try again.'
+              : 'Bun is not installed, and OpenGameInstaller cannot install it automatically on this platform. Install Bun manually, then try again.',
             platform: process.platform,
           })
         )

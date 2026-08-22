@@ -1,4 +1,4 @@
-export type UnrarType = 'unrar-free' | 'unrar-nonfree' | 'unknown';
+export type UnrarType = 'unrar-free' | 'unrar-nonfree' | 'unar' | 'unknown';
 
 export const isSupportedArchivePath = (
   platform: NodeJS.Platform,
@@ -29,6 +29,10 @@ export const detectUnrarTypeFromOutput = (output: string): UnrarType => {
     : 'unknown';
 };
 
+// unar -version prints either "unar v1.10.8, ..." or a bare "v1.10.8".
+export const detectUnarFromVersionOutput = (output: string): boolean =>
+  /\bunar\b/i.test(output) || /^v?\d+(\.\d+)+\s*$/.test(output.trim());
+
 export const parseSevenZipTotal = (output: string): number | undefined =>
   safeTotal(
     [...output.matchAll(/^Size = (\d+)\s*$/gm)].map((match) => match[1])
@@ -48,4 +52,10 @@ export const parseUnrarFreeTotal = (output: string): number | undefined => {
 export const parseUnrarNonFreeTotal = (output: string): number | undefined =>
   safeTotal(
     [...output.matchAll(/^\s*Size:\s*(\d+)\s*$/gm)].map((match) => match[1])
+  );
+
+// lsar -l lines look like: "  0. -----         500   0.0%  None  2026-08-22 06:20  a.txt"
+export const parseLsarTotal = (output: string): number | undefined =>
+  safeTotal(
+    [...output.matchAll(/^\s*\d+\.\s+\S+\s+(\d+)\s/gm)].map((match) => match[1])
   );

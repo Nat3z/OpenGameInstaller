@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { FileSystemError, PlatformError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import {
+  detectUnarFromVersionOutput,
   detectUnrarTypeFromOutput,
   isSupportedArchivePath,
+  parseLsarTotal,
   parseSevenZipTotal,
   parseUnrarFreeTotal,
   parseUnrarNonFreeTotal,
@@ -113,7 +115,19 @@ const collectProcessOutput = (
 const detectUnrarType = (): Effect.Effect<UnrarType, FileSystemError> =>
   collectProcessOutput('unrar', [], undefined, true).pipe(
     Effect.catchAll(() => Effect.succeed('')),
-    Effect.map(detectUnrarTypeFromOutput)
+    Effect.map(detectUnrarTypeFromOutput),
+    Effect.flatMap((unrarType) => {
+      if (unrarType !== 'unknown') return Effect.succeed(unrarType);
+      // No unrar on PATH: fall back to unar (The Unarchiver), which also
+      // extracts RAR archives and is packaged on most distributions.
+      return collectProcessOutput('unar', ['-version'], undefined, true).pipe(
+        Effect.catchAll(() => Effect.succeed('')),
+        Effect.map(
+          (output): UnrarType =>
+            detectUnarFromVersionOutput(output) ? 'unar' : 'unknown'
+        )
+      );
+    })
   );
 
 const getArchiveSize = (
@@ -150,6 +164,15 @@ const getArchiveSize = (
       env: { ...process.env, LC_ALL: 'C' },
     }).pipe(
       Effect.map(parseUnrarNonFreeTotal),
+      Effect.catchAll(() => Effect.succeed(undefined))
+    );
+  }
+
+  if (unrarType === 'unar') {
+    return collectProcessOutput('lsar', ['-l', filePath], {
+      env: { ...process.env, LC_ALL: 'C' },
+    }).pipe(
+      Effect.map(parseLsarTotal),
       Effect.catchAll(() => Effect.succeed(undefined))
     );
   }
@@ -247,7 +270,8 @@ export const extraction = (
     ) {
       return yield* Effect.fail(
         new FileSystemError({
-          message: 'Unknown unrar implementation',
+          message:
+            'No RAR extractor found in PATH. Install unrar (unrar-nonfree) or unar with your package manager.',
           path: filePath,
         })
       );
@@ -299,6 +323,13 @@ export const extraction = (
           }
         );
         failureMessage = 'Failed to unzip file';
+      } else if (unrarType === 'unar') {
+        child = yield* spawnProcess(
+          'unar',
+          ['-f', '-D', '-o', stagingDir, filePath],
+          { stdio: 'ignore' }
+        );
+        failureMessage = 'Failed to unar file';
       } else {
         const args =
           unrarType === 'unrar-free'

@@ -102,6 +102,9 @@ export const systemSubtrees = (): string[] => {
       process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)',
     ];
   }
+  if (process.platform === 'darwin') {
+    return ['/Applications', '/Library', '/System', '/Volumes', '/private'];
+  }
   return [
     '/etc',
     '/usr',

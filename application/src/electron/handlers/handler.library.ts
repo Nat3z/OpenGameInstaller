@@ -59,6 +59,7 @@ import {
 } from '@/electron/lib/delete-guards.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendNotification } from '@/electron/main.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -190,16 +191,18 @@ export function launchGameFromLibrary(
       logger.sync.info(`[launch] Using UMU mode for ${appInfo.name}`);
 
       const appID = appInfo.appID;
-      // Track before awaiting so a fast crash cannot out-race the add;
+      // Register inside the queue so a concurrent removal cannot interleave;
       // onError cleans up if the launch promise itself rejects.
-      runningGames.add(appInfo.appID);
       const result = yield* Effect.tryPromise({
         try: () =>
-          launchWithUmu(appInfo, {
-            onExit: () => {
-              runningGames.delete(appID);
-              mainWindow?.webContents.send('game:exit', { id: appID });
-            },
+          enqueueGameOperation(parsedAppId, async () => {
+            runningGames.add(appInfo.appID);
+            return launchWithUmu(appInfo, {
+              onExit: () => {
+                runningGames.delete(appID);
+                mainWindow?.webContents.send('game:exit', { id: appID });
+              },
+            });
           }),
         catch: (cause) =>
           new LibraryError({
@@ -262,17 +265,22 @@ export function launchGameFromLibrary(
         ...effectiveLaunchEnv,
       },
     };
-    // Register before spawning so no launch can begin untracked
-    runningGames.add(appInfo.appID);
-    let spawnedItem: ChildProcess;
-    try {
-      spawnedItem = spawnInvocation.args
-        ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
-        : spawn(spawnInvocation.command, spawnOptions);
-    } catch (cause) {
-      runningGames.delete(appInfo.appID);
-      throw cause;
-    }
+    // Register + spawn inside the queue so a concurrent removal cannot
+    // interleave with the launch.
+    const spawnedItem: ChildProcess = yield* Effect.tryPromise({
+      try: () =>
+        enqueueGameOperation(parsedAppId, async () => {
+          runningGames.add(appInfo.appID);
+          return spawnInvocation.args
+            ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
+            : spawn(spawnInvocation.command, spawnOptions);
+        }),
+      catch: (cause) =>
+        new LibraryError({
+          message: `Failed to launch game: ${String(cause)}`,
+          gameId: parsedAppId,
+        }),
+    });
     spawnedItem.on('error', (error) => {
       logger.sync.error(error);
       runningGames.delete(appInfo.appID);

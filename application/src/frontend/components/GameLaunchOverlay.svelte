@@ -124,11 +124,12 @@ onMount(async () => {
           '[GameLaunchOverlay] Pre-launch hooks failed:',
           error
         );
-        errorMessage = formatError(error) || 'Pre-launch failed';
+        const failureText = formatError(error) || 'Pre-launch failed';
         // Ask the user whether to continue launching despite the addon failure
-        const proceed = await addonFailurePrompt.request(errorMessage);
+        const proceed = await addonFailurePrompt.request(failureText);
         if (!proceed) {
           status = 'error';
+          errorMessage = failureText;
           onError(errorMessage);
           if (isMounted) runFrontendEffect(electronRpc.app.quit());
           return;
@@ -136,6 +137,7 @@ onMount(async () => {
         logger.sync.warn(
           '[GameLaunchOverlay] Continuing wrapped launch despite pre-launch hook failure'
         );
+        errorMessage = '';
         status = 'running';
       }
 

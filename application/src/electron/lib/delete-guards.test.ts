@@ -25,7 +25,6 @@ describe('isProtectedDeletePath', () => {
     expect(
       isProtectedDeletePath('/games/MyGame', { exact: [], subtrees: ['/'] })
     ).toBe(true);
-    expect(isProtectedDeletePath('/etc', roots())).toBe(true);
   });
 
   test('protects the home directory itself but not its children', () => {

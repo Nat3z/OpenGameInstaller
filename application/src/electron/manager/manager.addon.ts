@@ -13,6 +13,7 @@ import {
 } from '@ogi-sdk/executor';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schema } from 'effect';
+import { isGameSpecificLaunch } from '@/electron/lib/single-instance-launch.js';
 import { sendNotification } from '@/electron/main.js';
 import { addonServer, port } from '@/electron/server/addon-server.js';
 
@@ -49,6 +50,7 @@ export class Addon extends ExecutorAddon {
         path: addonPath,
         name: addonName,
         scripts: parsed.scripts,
+        gameLaunch: isGameSpecificLaunch(),
       });
     }).pipe(
       Effect.tapError((error) =>

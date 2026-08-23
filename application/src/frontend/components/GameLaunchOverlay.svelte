@@ -3,6 +3,7 @@ import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
+import AddonFailurePromptModal from '@/frontend/components/built/AddonFailurePromptModal.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
@@ -136,10 +137,10 @@ onMount(async () => {
         );
         status = 'error';
         errorMessage = formatError(error) || 'Pre-launch failed';
-        onError(errorMessage);
         // Ask the user whether to continue launching despite the addon failure
         const proceed = await requestLaunchDespiteAddonFailure(errorMessage);
         if (!proceed) {
+          onError(errorMessage);
           if (isMounted) runFrontendEffect(electronRpc.app.quit());
           return;
         }
@@ -246,6 +247,8 @@ onDestroy(() => {
   isMounted = false;
   for (const id of timeouts) clearTimeout(id);
   timeouts.length = 0;
+  // Never leave the launch flow hanging if the overlay unmounts mid-prompt
+  answerAddonFailurePrompt(false);
 });
 </script>
 
@@ -337,20 +340,11 @@ onDestroy(() => {
 
       {#if isHookOnly || isWrapperLaunch}
         {#if addonFailureMessage !== null}
-          <div class="mt-4 flex justify-center gap-3">
-            <button
-              class="rounded-lg border-none bg-[#4CAF50] px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#43a047]"
-              onclick={() => answerAddonFailurePrompt(true)}
-            >
-              Launch Anyway
-            </button>
-            <button
-              class="rounded-lg border-none bg-[#333] px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#444]"
-              onclick={() => answerAddonFailurePrompt(false)}
-            >
-              Cancel
-            </button>
-          </div>
+          <AddonFailurePromptModal
+            gameName={gameName}
+            message={addonFailureMessage}
+            onAnswer={answerAddonFailurePrompt}
+          />
         {:else}
           <p class="text-sm text-gray-400 mt-4">Closing application...</p>
         {/if}

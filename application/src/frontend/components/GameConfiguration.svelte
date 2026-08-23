@@ -23,7 +23,11 @@ import {
   completeRequiredReadd,
   getRequiredReadd,
 } from '@/frontend/states.svelte';
-import { createNotification, currentDownloads } from '@/frontend/store.svelte';
+import {
+  createNotification,
+  currentDownloads,
+  gamesLaunched,
+} from '@/frontend/store.svelte';
 
 interface Props {
   exitPlayPage: () => void;
@@ -124,6 +128,31 @@ let dllOverridesCount = $derived.by(() => {
 });
 
 async function removeFromList() {
+  if ($gamesLaunched[gameInfo.appID]) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Cannot remove a game while it is running.',
+      type: 'error',
+    });
+    return;
+  }
+  const activeDownload = $currentDownloads.find(
+    (download) =>
+      download.appID === gameInfo.appID &&
+      !['error', 'completed', 'seeding', 'setup-complete'].includes(
+        download.status
+      )
+  );
+  if (activeDownload) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message:
+        'Cannot remove a game while a download or install is in progress.',
+      type: 'error',
+    });
+    return;
+  }
+
   showRemoveConfirm = false;
   const result = await runFrontendEffect(
     electronRpc.app.removeApp(gameInfo.appID)

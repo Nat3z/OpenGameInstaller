@@ -8,12 +8,10 @@ import { onDestroy, onMount, tick } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { fly, slide } from 'svelte/transition';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import AddonFailurePromptModal from '@/frontend/components/built/AddonFailurePromptModal.svelte';
 import UpdateAppModal from '@/frontend/components/built/UpdateAppModal.svelte';
 import GameConfiguration from '@/frontend/components/GameConfiguration.svelte';
 import Image from '@/frontend/components/Image.svelte';
-import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
-import Modal from '@/frontend/components/modal/Modal.svelte';
-import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
@@ -270,6 +268,8 @@ function onFinish(data: any) {
 onDestroy(() => {
   unsubscribe();
   unsubscribe2();
+  // Never leave the launch flow hanging if the page unmounts mid-prompt
+  answerAddonFailurePrompt(false);
   clearHeaderBackButton();
 });
 
@@ -484,30 +484,11 @@ function handleRunTask(task: SearchResult, addonID: string) {
 {/if}
 
 {#if addonFailureMessage !== null}
-  <Modal
-    open={true}
-    size="small"
-    closeOnOverlayClick={false}
-    onClose={() => answerAddonFailurePrompt(false)}
-  >
-    <TitleModal title="Addon launch step failed" />
-    <p class="mb-2 text-sm text-accent-dark">{addonFailureMessage}</p>
-    <p class="mb-4 text-sm text-accent-dark">
-      Launch {libraryInfo.name} anyway?
-    </p>
-    <div class="flex flex-row gap-3">
-      <ButtonModal
-        text="Launch Anyway"
-        variant="primary"
-        onclick={() => answerAddonFailurePrompt(true)}
-      />
-      <ButtonModal
-        text="Cancel"
-        variant="secondary"
-        onclick={() => answerAddonFailurePrompt(false)}
-      />
-    </div>
-  </Modal>
+  <AddonFailurePromptModal
+    gameName={libraryInfo.name}
+    message={addonFailureMessage}
+    onAnswer={answerAddonFailurePrompt}
+  />
 {/if}
 
 {#if showUpdateModal && updateInfo}

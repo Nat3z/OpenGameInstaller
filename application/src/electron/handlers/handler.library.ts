@@ -18,7 +18,7 @@ import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { homedir } from 'os';
-import { parse, resolve } from 'path';
+import { parse, resolve, sep } from 'path';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   addDeckGameToSteam,
@@ -58,12 +58,27 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
 
 /**
  * Paths we will never recursively delete when removing a game, so a
- * mistyped/misconfigured cwd cannot nuke unrelated data.
+ * mistyped/misconfigured cwd cannot nuke unrelated data. Uses realpath +
+ * case normalization (win32) and subtree containment so symlinks, drive
+ * letter casing, and app-owned subdirectories cannot bypass the guard.
  */
 const isProtectedDeletePath = (target: string): boolean => {
-  const resolved = resolve(target);
-  return [parse(homedir()).root, homedir(), __dirname].some(
-    (protectedPath) => resolve(protectedPath) === resolved
+  const normalize = (value: string): string => {
+    let normalized: string;
+    try {
+      normalized = fs.realpathSync(value);
+    } catch {
+      normalized = resolve(value);
+    }
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  };
+
+  const resolved = normalize(target);
+  const protectedRoots = [parse(homedir()).root, homedir(), __dirname].map(
+    normalize
+  );
+  return protectedRoots.some(
+    (base) => resolved === base || resolved.startsWith(base + sep)
   );
 };
 

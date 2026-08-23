@@ -30,7 +30,7 @@ export type AddonConfig = {
   readonly path: string;
   readonly name: string;
   /** True when this session was launched for a specific game (Steam shortcut). */
-  readonly gameLaunch?: boolean;
+  readonly gameSpecificLaunch?: boolean;
   scripts: AddonFileConfiguration['scripts'];
 };
 
@@ -158,7 +158,7 @@ export class Addon {
           // Flag game-specific launches so the addon SDK can expose it on connect
           env: {
             ...process.env,
-            ...(this.config.gameLaunch ? { OGI_GAME_LAUNCH: '1' } : {}),
+            ...(this.config.gameSpecificLaunch ? { OGI_GAME_LAUNCH: '1' } : {}),
           },
           stdio: ['ignore', 'pipe', 'pipe'],
         }),

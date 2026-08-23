@@ -54,7 +54,7 @@ export class Addon extends ExecutorAddon {
         path: addonPath,
         name: addonName,
         scripts: parsed.scripts,
-        gameLaunch: isGameSpecificLaunch(),
+        gameSpecificLaunch: isGameSpecificLaunch(),
       });
     }).pipe(
       Effect.tapError((error) =>

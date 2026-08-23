@@ -204,7 +204,7 @@ export const ElectronRpc = {
     installRedistributables: rpc(
       'app.installRedistributables',
       [Schema.Number, OptionalString],
-      Schema.Literal('success', 'failed', 'not-found')
+      Schema.Literal('success', 'partial', 'failed', 'not-found')
     ),
     checkUmuInstalled: rpc('app.checkUmuInstalled', [], Schema.Boolean),
     installUmu: rpc(
@@ -220,7 +220,7 @@ export const ElectronRpc = {
     installRedistributablesUmu: rpc(
       'app.installRedistributablesUmu',
       [Schema.Number],
-      Schema.Literal('success', 'failed', 'not-found')
+      Schema.Literal('success', 'partial', 'failed', 'not-found')
     ),
     migrateToUmu: rpc(
       'app.migrateToUmu',

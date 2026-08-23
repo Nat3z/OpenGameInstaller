@@ -15,6 +15,7 @@ import Image from '@/frontend/components/Image.svelte';
 import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
+import { createLaunchPrompt } from '@/frontend/lib/core/launch-prompt.svelte';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { addToSteam } from '@/frontend/lib/core/steam';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
@@ -113,21 +114,7 @@ let playButton: HTMLButtonElement | undefined = $state(undefined);
 let openedGameConfiguration = $state(false);
 
 // Prompt state: lets the user launch even when the addon pre-launch step failed
-let addonFailureMessage = $state<string | null>(null);
-let resolveAddonFailurePrompt: ((proceed: boolean) => void) | null = null;
-
-function requestLaunchDespiteAddonFailure(error: string): Promise<boolean> {
-  addonFailureMessage = error;
-  return new Promise((resolve) => {
-    resolveAddonFailurePrompt = resolve;
-  });
-}
-
-function answerAddonFailurePrompt(proceed: boolean) {
-  addonFailureMessage = null;
-  resolveAddonFailurePrompt?.(proceed);
-  resolveAddonFailurePrompt = null;
-}
+const addonFailurePrompt = createLaunchPrompt();
 
 async function launchGame() {
   if ($gamesLaunched[libraryInfo.appID]) return;
@@ -152,7 +139,7 @@ async function launchGame() {
   } catch (error) {
     logger.sync.error(error);
     // Ask the user whether to continue launching despite the addon failure
-    const proceed = await requestLaunchDespiteAddonFailure(
+    const proceed = await addonFailurePrompt.request(
       formatError(error) || 'The addon pre-launch step failed.'
     );
     if (!proceed) {
@@ -269,7 +256,7 @@ onDestroy(() => {
   unsubscribe();
   unsubscribe2();
   // Never leave the launch flow hanging if the page unmounts mid-prompt
-  answerAddonFailurePrompt(false);
+  addonFailurePrompt.answer(false);
   clearHeaderBackButton();
 });
 
@@ -483,11 +470,11 @@ function handleRunTask(task: SearchResult, addonID: string) {
   <GameConfiguration gameInfo={libraryInfo} {onFinish} {exitPlayPage} />
 {/if}
 
-{#if addonFailureMessage !== null}
+{#if addonFailurePrompt.message !== null}
   <AddonFailurePromptModal
     gameName={libraryInfo.name}
-    message={addonFailureMessage}
-    onAnswer={answerAddonFailurePrompt}
+    message={addonFailurePrompt.message}
+    onAnswer={addonFailurePrompt.answer}
   />
 {/if}
 

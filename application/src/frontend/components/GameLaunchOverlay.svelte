@@ -4,6 +4,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import AddonFailurePromptModal from '@/frontend/components/built/AddonFailurePromptModal.svelte';
+import { createLaunchPrompt } from '@/frontend/lib/core/launch-prompt.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
@@ -35,21 +36,7 @@ const timeouts: ReturnType<typeof setTimeout>[] = [];
 let isMounted = false;
 
 // Prompt state: lets the user launch even when the addon pre-launch step failed
-let addonFailureMessage = $state<string | null>(null);
-let resolveAddonFailurePrompt: ((proceed: boolean) => void) | null = null;
-
-function requestLaunchDespiteAddonFailure(error: string): Promise<boolean> {
-  addonFailureMessage = error;
-  return new Promise((resolve) => {
-    resolveAddonFailurePrompt = resolve;
-  });
-}
-
-function answerAddonFailurePrompt(proceed: boolean) {
-  addonFailureMessage = null;
-  resolveAddonFailurePrompt?.(proceed);
-  resolveAddonFailurePrompt = null;
-}
+const addonFailurePrompt = createLaunchPrompt();
 
 onMount(async () => {
   isMounted = true;
@@ -135,11 +122,11 @@ onMount(async () => {
           '[GameLaunchOverlay] Pre-launch hooks failed:',
           error
         );
-        status = 'error';
         errorMessage = formatError(error) || 'Pre-launch failed';
         // Ask the user whether to continue launching despite the addon failure
-        const proceed = await requestLaunchDespiteAddonFailure(errorMessage);
+        const proceed = await addonFailurePrompt.request(errorMessage);
         if (!proceed) {
+          status = 'error';
           onError(errorMessage);
           if (isMounted) runFrontendEffect(electronRpc.app.quit());
           return;
@@ -248,7 +235,7 @@ onDestroy(() => {
   for (const id of timeouts) clearTimeout(id);
   timeouts.length = 0;
   // Never leave the launch flow hanging if the overlay unmounts mid-prompt
-  answerAddonFailurePrompt(false);
+  addonFailurePrompt.answer(false);
 });
 </script>
 
@@ -339,11 +326,11 @@ onDestroy(() => {
       {/if}
 
       {#if isHookOnly || isWrapperLaunch}
-        {#if addonFailureMessage !== null}
+        {#if addonFailurePrompt.message !== null}
           <AddonFailurePromptModal
             gameName={gameName}
-            message={addonFailureMessage}
-            onAnswer={answerAddonFailurePrompt}
+            message={addonFailurePrompt.message}
+            onAnswer={addonFailurePrompt.answer}
           />
         {:else}
           <p class="text-sm text-gray-400 mt-4">Closing application...</p>

@@ -312,12 +312,37 @@ export function startRedistributableInstallation(
         const { [downloadId]: _, ...remaining } = setups;
         return remaining;
       });
-      // Partial redistributable failures were already surfaced as warnings
-      // by the backend during installation.
       createNotification({
         id: Math.random().toString(36).substring(2, 9),
         type: 'success',
         message: `Setup complete for ${setup.gameName}!`,
+      });
+      return;
+    }
+
+    if (result === 'partial' || result === 'failed') {
+      // The game itself is installed; keep the install entry around so the
+      // redistributables can be retried from the downloads view.
+      updateDownloadStatus(downloadId, { status: 'setup-complete' });
+      redistributableInstalls.update((setups) => {
+        const current = setups[downloadId];
+        if (!current) return setups;
+        return {
+          ...setups,
+          [downloadId]: {
+            ...current,
+            overallProgress: 100,
+            isComplete: true,
+            error:
+              current.error ??
+              'Some redistributables failed to install and can be retried.',
+          },
+        };
+      });
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'warning',
+        message: `Setup complete for ${setup.gameName}, but redistributable installation ${result === 'partial' ? 'partially failed' : 'failed'}.`,
       });
       return;
     }

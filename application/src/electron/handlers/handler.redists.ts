@@ -121,7 +121,7 @@ const installRedistributables = (
         new LibraryError({ message: 'Game not found', gameId: appID })
       );
     }
-    return 'success' as const;
+    return result;
   });
 
 export function registerRedistributableHandlers(mainWindow: BrowserWindow) {

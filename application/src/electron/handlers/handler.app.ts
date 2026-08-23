@@ -1,6 +1,5 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { join } from 'node:path';
 import {
@@ -17,7 +16,7 @@ import { registerRedistributableHandlers } from '@/electron/handlers/handler.red
 import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
-import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 import {
   ipcProcedure,
   mergeRouters,
@@ -28,6 +27,7 @@ import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { addonServer } from '@/electron/server/addon-server.js';
 import type { OperatingSystem } from '@/lib/electron-rpc.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
+import { addToDesktop } from './helpers.app/desktop-shortcut.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
 
 export function escapeShellArg(arg: string): string {
@@ -37,71 +37,6 @@ export function escapeShellArg(arg: string): string {
     .replace(/\$/g, '\\$')
     .replace(/`/g, '\\`');
 }
-
-export const addToDesktop = (): Effect.Effect<
-  { success: true; path: string } | { success: false; error: string },
-  FileSystemError
-> => {
-  if (process.platform === 'win32') {
-    return Effect.succeed({
-      success: false,
-      error: 'This feature is only available on Linux',
-    });
-  }
-  return Effect.gen(function* () {
-    let appDirPath = isDev()
-      ? `${app.getAppPath()}/../`
-      : path.dirname(process.execPath);
-    if (process.platform === 'linux') appDirPath = './';
-    let execPath = path.resolve(
-      appDirPath,
-      fs.readdirSync(appDirPath).find((file) => file.endsWith('.AppImage')) ??
-        './OpenGameInstaller.AppImage'
-    );
-    const desktopDir = path.join(os.homedir(), 'Desktop');
-    const desktopFilePath = path.join(desktopDir, 'OpenGameInstaller.desktop');
-    yield* Effect.tryPromise({
-      try: () => fsAsync.mkdir(desktopDir, { recursive: true }),
-      catch: (cause) =>
-        new FileSystemError({
-          message: formatError(cause),
-          path: desktopDir,
-          cause,
-        }),
-    });
-    const setupPath = path.resolve(
-      path.resolve(appDirPath, '..'),
-      'OpenGameInstaller-Setup.AppImage'
-    );
-    if (fs.existsSync(setupPath)) execPath = setupPath;
-    const sourceIcon = app.isPackaged
-      ? path.join(app.getPath('exe'), '..', 'opengameinstaller-gui.png')
-      : path.join(__dirname, '..', '..', 'public', 'favicon.png');
-    const targetIcon = path.join(appDirPath, 'favicon.png');
-    yield* Effect.tryPromise({
-      try: () => fsAsync.copyFile(sourceIcon, targetIcon),
-      catch: (cause) =>
-        new FileSystemError({
-          message: formatError(cause),
-          path: sourceIcon,
-          cause,
-        }),
-    });
-    const absoluteIcon = path.resolve(targetIcon);
-    const desktopContent = `[Desktop Entry]\nType=Application\nName=OpenGameInstaller\nExec=${execPath}\nPath=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirPath, '..') : path.resolve(appDirPath)}\nIcon=${absoluteIcon}\nTerminal=false\nCategories=Game;\nStartupNotify=true\n`;
-    yield* Effect.tryPromise({
-      try: () =>
-        fsAsync.writeFile(desktopFilePath, desktopContent, { mode: 0o755 }),
-      catch: (cause) =>
-        new FileSystemError({
-          message: formatError(cause),
-          path: desktopFilePath,
-          cause,
-        }),
-    });
-    return { success: true as const, path: desktopFilePath };
-  });
-};
 
 const axiosRequest = (
   options: AxiosRequestConfig

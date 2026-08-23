@@ -18,7 +18,7 @@ import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { homedir } from 'os';
-import { parse, resolve, sep } from 'path';
+import { join, parse, resolve, sep } from 'path';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   addDeckGameToSteam,
@@ -56,30 +56,58 @@ import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
+/** Realpath + case-normalize (win32) so symlinks and drive casing can't bypass guards. */
+const normalizeDeletePath = (value: string): string => {
+  let normalized: string;
+  try {
+    normalized = fs.realpathSync(value);
+  } catch {
+    normalized = resolve(value);
+  }
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+};
+
 /**
  * Paths we will never recursively delete when removing a game, so a
- * mistyped/misconfigured cwd cannot nuke unrelated data. Uses realpath +
- * case normalization (win32) and subtree containment so symlinks, drive
- * letter casing, and app-owned subdirectories cannot bypass the guard.
+ * mistyped/misconfigured cwd cannot nuke unrelated data. Subtree containment
+ * protects app-owned metadata; note that `__dirname/downloads` stays deletable
+ * since that is where game installs live by default.
  */
 const isProtectedDeletePath = (target: string): boolean => {
-  const normalize = (value: string): string => {
-    let normalized: string;
-    try {
-      normalized = fs.realpathSync(value);
-    } catch {
-      normalized = resolve(value);
-    }
-    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
-  };
-
-  const resolved = normalize(target);
-  const protectedRoots = [parse(homedir()).root, homedir(), __dirname].map(
-    normalize
-  );
-  return protectedRoots.some(
+  const resolved = normalizeDeletePath(target);
+  const protectedPaths = [
+    parse(homedir()).root,
+    homedir(),
+    __dirname,
+    join(__dirname, 'config'),
+    join(__dirname, 'internals'),
+    join(__dirname, 'addons'),
+    join(__dirname, 'library'),
+  ].map(normalizeDeletePath);
+  return protectedPaths.some(
     (base) => resolved === base || resolved.startsWith(base + sep)
   );
+};
+
+/**
+ * Refuse deletion when the target directory overlaps another game's install
+ * directory (either one containing the other), so removing one game cannot
+ * wipe a sibling's files in a shared folder.
+ */
+const sharesDirectoryWithOtherGames = (
+  appID: number,
+  target: string
+): boolean => {
+  const resolvedTarget = normalizeDeletePath(target);
+  return getAllLibraryFiles().some((other) => {
+    if (other.appID === appID || !other.cwd) return false;
+    const otherCwd = normalizeDeletePath(other.cwd);
+    return (
+      resolvedTarget === otherCwd ||
+      resolvedTarget.startsWith(otherCwd + sep) ||
+      otherCwd.startsWith(resolvedTarget + sep)
+    );
+  });
 };
 
 /**
@@ -595,6 +623,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 if (isProtectedDeletePath(appInfo.cwd)) {
                   fileWarning =
                     'The game was removed from the library, but its files were not deleted because the path is a protected directory.';
+                } else if (sharesDirectoryWithOtherGames(appid, appInfo.cwd)) {
+                  fileWarning =
+                    'The game was removed from the library, but its files were not deleted because the directory contains other games.';
                 } else if (fs.existsSync(appInfo.cwd)) {
                   const deletion = yield* Effect.either(
                     Effect.tryPromise({

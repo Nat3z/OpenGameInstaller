@@ -75,13 +75,16 @@ function enqueueGameOperation<T>(
 ): Promise<T> {
   const previous = gameOperationQueues.get(appID) ?? Promise.resolve();
   const result = previous.then(operation, operation);
-  gameOperationQueues.set(
-    appID,
-    result.then(
-      () => undefined,
-      () => undefined
-    )
+  const settled = result.then(
+    () => undefined,
+    () => undefined
   );
+  gameOperationQueues.set(appID, settled);
+  void settled.then(() => {
+    if (gameOperationQueues.get(appID) === settled) {
+      gameOperationQueues.delete(appID);
+    }
+  });
   return result;
 }
 
@@ -187,7 +190,8 @@ export function launchGameFromLibrary(
       logger.sync.info(`[launch] Using UMU mode for ${appInfo.name}`);
 
       const appID = appInfo.appID;
-      // Track before awaiting so a fast crash cannot out-race the add
+      // Track before awaiting so a fast crash cannot out-race the add;
+      // onError cleans up if the launch promise itself rejects.
       runningGames.add(appInfo.appID);
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -202,7 +206,11 @@ export function launchGameFromLibrary(
             message: `Failed to launch game with UMU: ${String(cause)}`,
             gameId: parsedAppId,
           }),
-      });
+      }).pipe(
+        Effect.onError(() =>
+          Effect.sync(() => runningGames.delete(appInfo.appID))
+        )
+      );
 
       if (!result.success) {
         runningGames.delete(appInfo.appID);
@@ -256,9 +264,15 @@ export function launchGameFromLibrary(
     };
     // Register before spawning so no launch can begin untracked
     runningGames.add(appInfo.appID);
-    const spawnedItem: ChildProcess = spawnInvocation.args
-      ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
-      : spawn(spawnInvocation.command, spawnOptions);
+    let spawnedItem: ChildProcess;
+    try {
+      spawnedItem = spawnInvocation.args
+        ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
+        : spawn(spawnInvocation.command, spawnOptions);
+    } catch (cause) {
+      runningGames.delete(appInfo.appID);
+      throw cause;
+    }
     spawnedItem.on('error', (error) => {
       logger.sync.error(error);
       runningGames.delete(appInfo.appID);

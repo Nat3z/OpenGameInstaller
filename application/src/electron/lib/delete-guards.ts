@@ -10,7 +10,8 @@ export const normalizeDeletePath = (value: string): string => {
   } catch {
     normalized = resolve(value);
   }
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  // win32 and macOS default to case-insensitive filesystems
+  return process.platform !== 'linux' ? normalized.toLowerCase() : normalized;
 };
 
 const withTrailingSep = (base: string): string =>

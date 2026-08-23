@@ -171,6 +171,21 @@ async function runDownloadAction<A, E>(
   );
 }
 
+/** The failed redistributable setup for a finished download, if any. */
+function redistFailureFor(
+  download: { id: string; status: string }
+) {
+  const setup = $redistributableInstalls[download.id];
+  if (
+    (download.status === 'setup-complete' || download.status === 'seeding') &&
+    setup?.isComplete === true &&
+    setup.error
+  ) {
+    return setup;
+  }
+  return undefined;
+}
+
 function handleRetryRedistributables(downloadId: string, appID: number) {
   redistributableInstalls.update((setups) => {
     const current = setups[downloadId];
@@ -673,9 +688,7 @@ onDestroy(() => {
                   <div class="spinner"></div>
                   Installing Dependencies
                 </div>
-              {:else if download.status === 'setup-complete' &&
-                $redistributableInstalls[download.id]?.isComplete &&
-                $redistributableInstalls[download.id]?.error}
+              {:else if redistFailureFor(download)}
                 <div class="status-badge installing-redistributables">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                     <path
@@ -687,7 +700,7 @@ onDestroy(() => {
                   Redistributables Need Attention
                 </div>
                 <p class="text-sm text-error mt-2 break-words">
-                  {$redistributableInstalls[download.id]!!.error}
+                  {redistFailureFor(download)?.error}
                 </p>
               {:else if download.status === 'setup-complete'}
                 <div class="status-badge complete">
@@ -783,16 +796,11 @@ onDestroy(() => {
             </div>
 
             <div class="download-actions">
-              {#if download.status === 'setup-complete' &&
-                $redistributableInstalls[download.id]?.isComplete &&
-                $redistributableInstalls[download.id]?.error}
+              {#if redistFailureFor(download)}
                 <button
                   class="btn btn-primary btn-sm"
                   onclick={() =>
-                    handleRetryRedistributables(
-                      download.id,
-                      download.appID
-                    )}
+                    handleRetryRedistributables(download.id, download.appID)}
                 >
                   Retry Redistributables
                 </button>
@@ -920,10 +928,8 @@ onDestroy(() => {
             />
           </div>
         {/if}
-        {#if ((download.status === 'installing-redistributables' || (download.status === 'paused' && $redistributableInstalls[download.id] && !$redistributableInstalls[download.id].isComplete)) ||
-          (download.status === 'setup-complete' &&
-            $redistributableInstalls[download.id]?.isComplete &&
-            $redistributableInstalls[download.id]?.error)) &&
+        {#if (download.status === 'installing-redistributables' || (download.status === 'paused' && $redistributableInstalls[download.id] && !$redistributableInstalls[download.id].isComplete) ||
+          redistFailureFor(download)) &&
           $redistributableInstalls[download.id]}
           <div class="mt-4 w-full">
             <RedistributablesProgress

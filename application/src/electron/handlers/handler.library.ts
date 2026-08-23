@@ -556,7 +556,28 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               }
 
               yield* Effect.sync(removal.commit);
-              return { status: 'success' as const, warning };
+
+              // Delete the game files from disk; a failed deletion is a warning,
+              // not a failed removal (the library entry is already gone).
+              let fileWarning: string | undefined;
+              if (appInfo.cwd && fs.existsSync(appInfo.cwd)) {
+                const deletion = yield* Effect.either(
+                  Effect.try({
+                    try: () =>
+                      fs.rmSync(appInfo.cwd, { recursive: true, force: true }),
+                    catch: (cause: unknown) => String(cause),
+                  })
+                );
+                if (deletion._tag === 'Left') {
+                  fileWarning = `The game was removed from the library, but its files could not be deleted: ${deletion.left}`;
+                }
+              }
+
+              return {
+                status: 'success' as const,
+                warning:
+                  [warning, fileWarning].filter(Boolean).join(' ') || undefined,
+              };
             }),
           (removal) =>
             Effect.try({
@@ -733,7 +754,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 }
               }
               if (redistributableFailed) {
-                return 'setup-redistributables-failed';
+                // A failed redistributable should not fail the whole setup;
+                // the game is installed either way.
+                sendNotification({
+                  message: `Some redistributables failed to install for ${data.name}. The game was still added.`,
+                  id: generateNotificationId(),
+                  type: 'warning',
+                });
               }
             }
           }

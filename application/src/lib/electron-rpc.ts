@@ -263,6 +263,13 @@ export const ElectronRpc = {
         | { status: 'error'; error: string }
       >()
     ),
+    getSteamCompatibilityTools: rpc(
+      'app.getSteamCompatibilityTools',
+      [],
+      Schema.mutable(
+        Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String }))
+      )
+    ),
     removeFromSteam: rpc(
       'app.removeFromSteam',
       [Schema.Number],

@@ -122,9 +122,10 @@ let options: OptionsCategory[] = [
       steamCompatibilityTool: {
         displayName: 'Steam Compatibility Tool',
         description:
-          "Steam's internal compatibility tool name, such as proton_experimental or a GE-Proton identifier. Leave blank to clear the forced tool when updating a shortcut.",
+          'The Proton version Steam uses for shortcuts, read from your installed compatibility tools.',
         defaultValue: 'proton_experimental',
         value: 'proton_experimental',
+        choice: [],
         type: 'string',
         condition: async () =>
           (await runFrontendEffect(electronRpc.app.getOS())) === 'linux',
@@ -383,6 +384,8 @@ function updateConfig() {
           config[key] = selectedTorrentClientId;
         } else if (key === 'theme') {
           config[key] = selectedTheme;
+        } else if (key === 'steamCompatibilityTool') {
+          config[key] = selectedCompatibilityTool;
         } else {
           config[key] = element.value;
         }
@@ -576,6 +579,8 @@ async function saveSteamGridDbKey(): Promise<void> {
 }
 let selectedTorrentClientId: string = $state('webtorrent'); // Track selection reactively
 let selectedTheme: string = $state('light');
+let selectedCompatibilityTool: string = $state('proton_experimental');
+let compatibilityTools: { id: string; name: string }[] = $state([]);
 
 // Loading states for addon management buttons
 let isInstallingAddons = $state(false);
@@ -659,6 +664,36 @@ function handleThemeChange(detail: { selectedId: string }) {
   document.documentElement.setAttribute('data-theme', detail.selectedId);
 }
 
+function handleCompatibilityToolChange(detail: { selectedId: string }) {
+  selectedCompatibilityTool = detail.selectedId;
+  updateConfig();
+}
+
+async function loadCompatibilityTools() {
+  const tools = await runFrontendEffect(
+    electronRpc.app
+      .getSteamCompatibilityTools()
+      .pipe(
+        Effect.catchAll((error) =>
+          logger
+            .error('Failed to list Steam compatibility tools:', error)
+            .pipe(Effect.as([] as { id: string; name: string }[]))
+        )
+      )
+  );
+  // Keep a stored tool selectable even if its directory is gone.
+  if (
+    selectedCompatibilityTool &&
+    !tools.some((tool) => tool.id === selectedCompatibilityTool)
+  ) {
+    tools.push({
+      id: selectedCompatibilityTool,
+      name: `${selectedCompatibilityTool} (not installed)`,
+    });
+  }
+  compatibilityTools = tools;
+}
+
 $effect(() => {
   if (mainContent && selectedOption) {
     mainContent.scrollTo({ top: 0, behavior: 'smooth' });
@@ -677,6 +712,12 @@ $effect(() => {
     if (storedTheme && storedTheme !== selectedTheme) {
       selectedTheme = storedTheme as string;
     }
+
+    const storedTool = getStoredOrDefaultValue('steamCompatibilityTool');
+    if (storedTool && storedTool !== selectedCompatibilityTool) {
+      selectedCompatibilityTool = storedTool as string;
+    }
+    loadCompatibilityTools();
   }
 });
 
@@ -1062,6 +1103,20 @@ onMount(() => {
                                 selectedId={selectedTheme}
                                 onchange={handleThemeChange}
                               />
+                            {:else if key === 'steamCompatibilityTool'}
+                              {#if compatibilityTools.length > 0}
+                                <CustomDropdown
+                                  id={key}
+                                  options={compatibilityTools}
+                                  selectedId={selectedCompatibilityTool}
+                                  onchange={handleCompatibilityToolChange}
+                                />
+                              {:else}
+                                <p class="option-description mb-0!">
+                                  No Steam compatibility tools were found.
+                                  Install Proton through Steam first.
+                                </p>
+                              {/if}
                             {:else}
                               <!-- Regular select for other options -->
                               <select

@@ -30,7 +30,10 @@ import {
   SteamServiceLive,
   type SteamShortcutLookup,
 } from '@/electron/handlers/helpers.app/steam.js';
-import { SteamRepositoryLive } from '@/electron/lib/steam-installation.js';
+import {
+  listSteamCompatibilityTools,
+  SteamRepositoryLive,
+} from '@/electron/lib/steam-installation.js';
 import {
   getSteamCommandCandidates,
   type SteamInstallationKind,
@@ -438,6 +441,11 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
     )
   );
 
+  const getSteamCompatibilityTools = ipcProcedure(
+    ElectronRpc.app.getSteamCompatibilityTools,
+    () => (isLinux() ? listSteamCompatibilityTools() : [])
+  );
+
   const removeFromSteam = ipcProcedure(
     ElectronRpc.app.removeFromSteam,
     ipcBoundary((_, appID: number) => {
@@ -455,6 +463,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
     launchSteamApp,
     checkPrefixExists,
     addToSteam,
+    getSteamCompatibilityTools,
     removeFromSteam
   );
 }

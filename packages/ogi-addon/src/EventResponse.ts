@@ -98,6 +98,7 @@ export default class EventResponse<T> {
         new AddonError({ message: 'No input callback is registered' })
       );
     }
-    return Promise.resolve(this.onInputAsked(screen, name, description));
+    const callback = this.onInputAsked;
+    return Promise.resolve().then(() => callback(screen, name, description));
   }
 }

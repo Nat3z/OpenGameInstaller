@@ -18,10 +18,15 @@ const withTrailingSep = (base: string): string =>
 
 /** Containment match that also handles filesystem roots (`/`, `C:\`). */
 const containsOrEquals = (base: string, target: string): boolean => {
-  const normalizedBase = base.replace(/[\\/]$/, '');
+  // A filesystem root must never collapse to an empty prefix (which would
+  // match every path via startsWith).
+  if (base === sep || /^[a-zA-Z]:\\?$/.test(base)) {
+    const trimmed = base.endsWith(sep) ? base.slice(0, -1) : base;
+    return target === trimmed || target.startsWith(withTrailingSep(trimmed));
+  }
+  const normalizedBase = base.replace(/[\\/]+$/, '');
   return (
     target === normalizedBase ||
-    target === base ||
     target.startsWith(withTrailingSep(normalizedBase))
   );
 };

@@ -7,6 +7,7 @@ import RedistributablesProgress from '@/frontend/components/RedistributablesProg
 import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+import { startRedistributableInstallation } from '@/frontend/lib/setup/setup';
 import {
   createNotification,
   currentDownloads,
@@ -166,6 +167,26 @@ async function runDownloadAction<A, E>(
         })
       )
     )
+  );
+}
+
+function handleRetryRedistributables(downloadId: string, appID: number) {
+  redistributableInstalls.update((setups) => {
+    const current = setups[downloadId];
+    if (!current) return setups;
+    return {
+      ...setups,
+      [downloadId]: {
+        ...current,
+        overallProgress: 0,
+        isComplete: false,
+        error: undefined,
+      },
+    };
+  });
+  runDetached(
+    startRedistributableInstallation(downloadId, appID),
+    'Failed to retry redistributable installation'
   );
 }
 
@@ -650,6 +671,22 @@ onDestroy(() => {
                   <div class="spinner"></div>
                   Installing Dependencies
                 </div>
+              {:else if download.status === 'setup-complete' &&
+                $redistributableInstalls[download.id]?.isComplete &&
+                $redistributableInstalls[download.id]?.error}
+                <div class="status-badge installing-redistributables">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fill-rule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                      clip-rule="evenodd"
+                    ></path>
+                  </svg>
+                  Redistributables Need Attention
+                </div>
+                <p class="text-sm text-error mt-2 break-words">
+                  {$redistributableInstalls[download.id]!!.error}
+                </p>
               {:else if download.status === 'setup-complete'}
                 <div class="status-badge complete">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -744,6 +781,20 @@ onDestroy(() => {
             </div>
 
             <div class="download-actions">
+              {#if download.status === 'setup-complete' &&
+                $redistributableInstalls[download.id]?.isComplete &&
+                $redistributableInstalls[download.id]?.error}
+                <button
+                  class="btn btn-primary btn-sm"
+                  onclick={() =>
+                    handleRetryRedistributables(
+                      download.id,
+                      download.appID
+                    )}
+                >
+                  Retry Redistributables
+                </button>
+              {/if}
               {#if download.status === 'setup-complete'}
                 <button
                   class="btn btn-primary btn-sm"
@@ -867,7 +918,11 @@ onDestroy(() => {
             />
           </div>
         {/if}
-        {#if (download.status === 'installing-redistributables' || (download.status === 'paused' && $redistributableInstalls[download.id] && !$redistributableInstalls[download.id].isComplete)) && $redistributableInstalls[download.id]}
+        {#if ((download.status === 'installing-redistributables' || (download.status === 'paused' && $redistributableInstalls[download.id] && !$redistributableInstalls[download.id].isComplete)) ||
+          (download.status === 'setup-complete' &&
+            $redistributableInstalls[download.id]?.isComplete &&
+            $redistributableInstalls[download.id]?.error)) &&
+          $redistributableInstalls[download.id]}
           <div class="mt-4 w-full">
             <RedistributablesProgress
               setup={$redistributableInstalls[download.id]}

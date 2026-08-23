@@ -71,7 +71,9 @@ onMount(async () => {
     status = 'running';
 
     if (isHookOnly && hookType) {
-      // Hook-only mode: run addon event without launching game
+      // Hook-only mode: run addon event without launching game.
+      // No Launch Anyway prompt here — there is nothing to launch on
+      // failure, so the app just reports and quits.
       logger.sync.info(
         `[GameLaunchOverlay] Running ${hookType}-launch hooks for ${gameName}`
       );

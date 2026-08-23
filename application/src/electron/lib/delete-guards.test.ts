@@ -21,6 +21,11 @@ describe('isProtectedDeletePath', () => {
     expect(isProtectedDeletePath('/', roots())).toBe(true);
     expect(isProtectedDeletePath('/etc', roots())).toBe(true);
     expect(isProtectedDeletePath('/usr/share', roots())).toBe(true);
+    // Root containment must not silently match everything via an empty prefix
+    expect(
+      isProtectedDeletePath('/games/MyGame', { exact: [], subtrees: ['/'] })
+    ).toBe(true);
+    expect(isProtectedDeletePath('/etc', roots())).toBe(true);
   });
 
   test('protects the home directory itself but not its children', () => {

@@ -167,6 +167,8 @@ export function launchGameFromLibrary(
       logger.sync.info(`[launch] Using UMU mode for ${appInfo.name}`);
 
       const appID = appInfo.appID;
+      // Track before awaiting so a fast crash cannot out-race the add
+      runningGames.add(appInfo.appID);
       const result = yield* Effect.tryPromise({
         try: () =>
           launchWithUmu(appInfo, {
@@ -183,6 +185,7 @@ export function launchGameFromLibrary(
       });
 
       if (!result.success) {
+        runningGames.delete(appInfo.appID);
         logger.sync.error('[launch] UMU launch failed:', result.error);
         sendNotification({
           message: `Failed to launch game: ${result.error}`,
@@ -608,8 +611,16 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 } else if (fs.existsSync(appInfo.cwd)) {
                   const deletion = yield* Effect.either(
                     Effect.tryPromise({
-                      try: () =>
-                        fsp.rm(appInfo.cwd, { recursive: true, force: true }),
+                      try: async () => {
+                        // Re-check at rm time to close the launch race window
+                        if (runningGames.has(appid)) {
+                          throw new Error('the game is currently running');
+                        }
+                        await fsp.rm(appInfo.cwd, {
+                          recursive: true,
+                          force: true,
+                        });
+                      },
                       catch: (cause: unknown) => String(cause),
                     })
                   );

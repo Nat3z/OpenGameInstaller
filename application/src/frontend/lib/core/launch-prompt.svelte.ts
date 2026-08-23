@@ -11,6 +11,8 @@ export function createLaunchPrompt() {
       return message;
     },
     request(error: string): Promise<boolean> {
+      // Settle any previous pending request so its flow never hangs
+      resolver?.(false);
       message = error;
       return new Promise((resolve) => {
         resolver = resolve;

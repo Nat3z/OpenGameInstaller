@@ -107,6 +107,8 @@ export function getSteamRootCandidates(
 export interface SteamCompatibilityTool {
   id: string;
   name: string;
+  /** Absolute path to the tool's install directory, usable as umu's PROTONPATH. */
+  installPath: string;
 }
 
 /**
@@ -147,11 +149,15 @@ export function listSteamCompatibilityTools(
 ): SteamCompatibilityTool[] {
   const tools = new Map<string, SteamCompatibilityTool>();
   for (const root of candidates) {
-    for (const directory of listDirectories(
-      path.join(root, 'steamapps', 'common')
-    )) {
+    const commonDir = path.join(root, 'steamapps', 'common');
+    for (const directory of listDirectories(commonDir)) {
       const id = officialProtonToolId(directory);
-      if (id && !tools.has(id)) tools.set(id, { id, name: directory });
+      if (id && !tools.has(id))
+        tools.set(id, {
+          id,
+          name: directory,
+          installPath: path.join(commonDir, directory),
+        });
     }
     const customDir = path.join(root, 'compatibilitytools.d');
     for (const directory of listDirectories(customDir)) {
@@ -174,9 +180,19 @@ export function listSteamCompatibilityTools(
             definition instanceof Map
               ? definition.get('display_name')
               : undefined;
+          const installPath =
+            definition instanceof Map
+              ? definition.get('install_path')
+              : undefined;
           tools.set(id, {
             id,
             name: typeof displayName === 'string' ? displayName : id,
+            // install_path in the manifest is relative to the manifest's directory.
+            installPath: path.resolve(
+              customDir,
+              directory,
+              typeof installPath === 'string' ? installPath : '.'
+            ),
           });
         }
       } catch {

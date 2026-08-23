@@ -4,6 +4,7 @@ import type {
   ConfigurationOptionWire,
   LibraryInfo,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import {
   ConfigurationBuilder,
   isBooleanOption,
@@ -33,13 +34,45 @@ interface Props {
 
 let { exitPlayPage, gameInfo, onFinish }: Props = $props();
 
+// umu treats this PROTONPATH placeholder as "use its bundled default Proton".
+const UMU_PROTON_DEFAULT = 'umu-proton';
+
 let platform = $state<string>('');
 let showDllOverridesModal = $state(false);
+let protonOptions = $state<{ id: string; name: string }[]>([]);
 
 // Get OS platform
 $effect(() => {
   runFrontendEffect(electronRpc.app.getOS()).then((os) => {
     platform = os;
+  });
+});
+
+// Installed compat tools for the per-game Proton picker. Option ids are the
+// tool install paths, which umu consumes directly through PROTONPATH.
+$effect(() => {
+  if (!canEditDllOverrides) return;
+  runFrontendEffect(
+    electronRpc.app
+      .getSteamCompatibilityTools()
+      .pipe(
+        Effect.catchAll(() =>
+          Effect.succeed(
+            [] as { id: string; name: string; installPath: string }[]
+          )
+        )
+      )
+  ).then((tools) => {
+    const options = [
+      { id: UMU_PROTON_DEFAULT, name: 'UMU Default (Proton-GE)' },
+      ...tools.map((tool) => ({ id: tool.installPath, name: tool.name })),
+    ];
+    // Keep a stored version selectable even if its directory is gone.
+    const stored = gameInfo.umu?.protonVersion;
+    if (stored && !options.some((option) => option.id === stored)) {
+      options.push({ id: stored, name: `${stored} (not installed)` });
+    }
+    protonOptions = options;
   });
 });
 
@@ -90,6 +123,7 @@ $effect(() => {
   });
 
   formData.dllOverrides = [...(gameInfo.umu?.dllOverrides ?? [])];
+  formData.protonVersion = gameInfo.umu?.protonVersion ?? UMU_PROTON_DEFAULT;
 });
 
 function handleInputChange(id: string, value: string | number | boolean) {
@@ -229,6 +263,18 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
         />
         {#if key === 'launchArguments'}
           {#if platform === 'linux' || platform === 'darwin'}
+            {#if canEditDllOverrides && protonOptions.length > 0}
+              <InputModal
+                id="protonVersion"
+                label="Proton Version"
+                description="The Proton build umu launches this game with."
+                type="select"
+                value={formData.protonVersion}
+                options={protonOptions}
+                class="mb-4"
+                onchange={handleInputChange}
+              />
+            {/if}
             <ButtonModal
               text={dllOverridesCount > 0
                 ? `DLL Overrides (${dllOverridesCount})`

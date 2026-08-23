@@ -267,7 +267,13 @@ export const ElectronRpc = {
       'app.getSteamCompatibilityTools',
       [],
       Schema.mutable(
-        Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String }))
+        Schema.Array(
+          Schema.Struct({
+            id: Schema.String,
+            name: Schema.String,
+            installPath: Schema.String,
+          })
+        )
       )
     ),
     removeFromSteam: rpc(

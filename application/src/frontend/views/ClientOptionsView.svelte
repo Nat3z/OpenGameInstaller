@@ -670,14 +670,14 @@ function handleCompatibilityToolChange(detail: { selectedId: string }) {
 }
 
 async function loadCompatibilityTools() {
-  const tools = await runFrontendEffect(
+  const tools: { id: string; name: string }[] = await runFrontendEffect(
     electronRpc.app
       .getSteamCompatibilityTools()
       .pipe(
         Effect.catchAll((error) =>
           logger
             .error('Failed to list Steam compatibility tools:', error)
-            .pipe(Effect.as([] as { id: string; name: string }[]))
+            .pipe(Effect.as([]))
         )
       )
   );

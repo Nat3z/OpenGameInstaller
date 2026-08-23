@@ -1,60 +1,57 @@
 import { describe, expect, test } from 'bun:test';
-import { AddonError } from '@ogi-sdk/errors';
-import { Effect } from 'effect';
 import EventResponse from './EventResponse';
 
-describe('EventResponse deferred effects', () => {
+describe('EventResponse deferred work', () => {
   test('provides deferred work registered before supervision starts', async () => {
     const event = new EventResponse<void>();
-    event.defer(() => Effect.sync(() => event.complete()));
+    event.defer(() => event.complete());
 
-    const deferred = await Effect.runPromise(event.awaitDeferredEffect());
-    expect(deferred).toBeDefined();
-    await Effect.runPromise(deferred!);
+    const work = await event.nextDeferred();
+    expect(work).toBeDefined();
+    await work!();
     expect(event.resolved).toBe(true);
   });
 
   test('waits for deferred work registered asynchronously', async () => {
     const event = new EventResponse<string>();
-    const deferredPromise = Effect.runPromise(event.awaitDeferredEffect());
+    const workPromise = event.nextDeferred();
 
     await Promise.resolve();
-    event.defer(() => Effect.sync(() => event.resolve('done')));
+    event.defer(() => event.resolve('done'));
 
-    const deferred = await deferredPromise;
-    expect(deferred).toBeDefined();
-    await Effect.runPromise(deferred!);
+    const work = await workPromise;
+    expect(work).toBeDefined();
+    await work!();
     expect(event.data).toBe('done');
   });
 
-  test('maps a rejected deferred promise to AddonError', async () => {
+  test('surfaces a rejected deferred promise to the supervisor', async () => {
     const event = new EventResponse<void>();
     event.defer(() => Promise.reject(new Error('deferred failure')));
 
-    const deferred = await Effect.runPromise(event.awaitDeferredEffect());
-    expect(deferred).toBeDefined();
-    const result = await Effect.runPromise(deferred!.pipe(Effect.either));
-    expect(result._tag).toBe('Left');
-    if (result._tag === 'Left') expect(result.left).toBeInstanceOf(AddonError);
+    const work = await event.nextDeferred();
+    expect(work).toBeDefined();
+    await expect(work!()).rejects.toThrow('deferred failure');
+    expect(event.resolved).toBe(false);
   });
 
   test('releases a waiting supervisor when the event resolves directly', async () => {
     const event = new EventResponse<string>();
-    const deferredPromise = Effect.runPromise(event.awaitDeferredEffect());
+    const workPromise = event.nextDeferred();
 
     event.resolve('done');
 
-    expect(await deferredPromise).toBeUndefined();
+    expect(await workPromise).toBeUndefined();
     expect(event.data).toBe('done');
   });
 
   test('releases a waiting supervisor when the event fails', async () => {
     const event = new EventResponse<string>();
-    const deferredPromise = Effect.runPromise(event.awaitDeferredEffect());
+    const workPromise = event.nextDeferred();
 
     event.fail('failed');
 
-    expect(await deferredPromise).toBeUndefined();
+    expect(await workPromise).toBeUndefined();
     expect(event.failed).toBe('failed');
   });
 });

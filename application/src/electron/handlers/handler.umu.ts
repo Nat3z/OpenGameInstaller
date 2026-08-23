@@ -297,7 +297,7 @@ export type RedistributableInstallProgress = {
   redistributablePath?: string;
   index?: number;
   status?: 'installing' | 'completed' | 'failed';
-  result?: 'success' | 'failed' | 'not-found';
+  result?: 'success' | 'partial' | 'failed' | 'not-found';
   error?: string;
 };
 
@@ -911,7 +911,7 @@ export async function installRedistributablesWithUmu(
     completedCount,
     failedCount: anyFailed ? failedCount + unresolvedCount : failedCount,
     overallProgress: 100,
-    result: anyFailed ? 'failed' : 'success',
+    result: !anyFailed ? 'success' : completedCount > 0 ? 'partial' : 'failed',
   });
 
   // Partial failure is distinct from total failure so the UI can warn without

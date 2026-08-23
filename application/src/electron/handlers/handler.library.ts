@@ -667,7 +667,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                             force: true,
                           });
                         }),
-                      catch: (cause: unknown) => String(cause),
+                      catch: (cause) =>
+                        cause instanceof Error ? cause.message : String(cause),
                     })
                   );
                   if (deletion._tag === 'Left') {

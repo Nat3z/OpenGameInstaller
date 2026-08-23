@@ -150,8 +150,9 @@ export const VERSION = app.getVersion();
 
 // Embedded gamescope only shows XWayland windows it can classify, so pin
 // Chromium to X11 there; must run before app 'ready' to take effect.
+// (ozone-platform-hint was removed in Electron 40 — use ozone-platform.)
 if (isGamescopeSession()) {
-  app.commandLine.appendSwitch('ozone-platform-hint', 'x11');
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
 }
 
 // check if NixOS using command -v nixos-rebuild

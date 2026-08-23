@@ -466,16 +466,17 @@ function updateConfig() {
   );
 }
 
+// Returns the persisted value only, undefined when nothing was saved yet.
+function getStoredValue(key: string) {
+  if (!selectedOption) return undefined;
+  const configPath = './config/option/' + selectedOption.id + '.json';
+  if (!fs.exists(configPath)) return undefined;
+  return JSON.parse(fs.read(configPath))[key];
+}
+
 function getStoredOrDefaultValue(key: string) {
   if (!selectedOption) return;
-  if (!fs.exists('./config/option/' + selectedOption.id + '.json')) {
-    return selectedOption.options[key].defaultValue;
-  } else {
-    const storedConfig = JSON.parse(
-      fs.read('./config/option/' + selectedOption.id + '.json')
-    );
-    return storedConfig[key] ?? selectedOption.options[key].defaultValue;
-  }
+  return getStoredValue(key) ?? selectedOption.options[key].defaultValue;
 }
 
 function browseForFolder(event: MouseEvent) {
@@ -681,15 +682,15 @@ async function loadCompatibilityTools() {
         )
       )
   );
-  // Keep a stored tool selectable even if its directory is gone.
+  // Keep an explicitly saved tool selectable even if its directory is gone.
+  // The unsaved default is skipped so an empty scan shows the no-tools hint.
+  const storedTool = getStoredValue('steamCompatibilityTool');
   if (
-    selectedCompatibilityTool &&
-    !tools.some((tool) => tool.id === selectedCompatibilityTool)
+    typeof storedTool === 'string' &&
+    storedTool &&
+    !tools.some((tool) => tool.id === storedTool)
   ) {
-    tools.push({
-      id: selectedCompatibilityTool,
-      name: `${selectedCompatibilityTool} (not installed)`,
-    });
+    tools.push({ id: storedTool, name: `${storedTool} (not installed)` });
   }
   compatibilityTools = tools;
 }

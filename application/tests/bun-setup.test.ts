@@ -18,4 +18,15 @@ describe('Bun setup', () => {
       ],
     });
   });
+
+  test('does not run the generic installer on NixOS', () => {
+    expect(
+      getBunSetupAction({
+        installed: false,
+        isNixOS: true,
+        platform: 'linux',
+        username: 'test-user',
+      })
+    ).toEqual({ type: 'unsupported' });
+  });
 });

@@ -172,9 +172,7 @@ async function runDownloadAction<A, E>(
 }
 
 /** The failed redistributable setup for a finished download, if any. */
-function redistFailureFor(
-  download: { id: string; status: string }
-) {
+function redistFailureFor(download: { id: string; status: string }) {
   const setup = $redistributableInstalls[download.id];
   if (
     (download.status === 'setup-complete' || download.status === 'seeding') &&

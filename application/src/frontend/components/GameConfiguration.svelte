@@ -138,14 +138,19 @@ async function removeFromList() {
   completeRequiredReadd(gameInfo.appID);
   createNotification({
     id: Math.random().toString(36).substring(7),
-    message:
-      result.warning ?? 'Game removed from library. (Not deleted from disk)',
+    message: result.warning ?? 'Game removed from library and files deleted',
     type: result.warning ? 'info' : 'success',
   });
   currentDownloads.update((downloads) =>
     downloads.filter((download) => download.appID !== gameInfo.appID)
   );
   exitPlayPage();
+}
+
+function showInFolder() {
+  if (gameInfo.cwd) {
+    window.electronAPI.fs.showFileLoc(gameInfo.cwd);
+  }
 }
 
 async function addToSteam(button: HTMLButtonElement) {
@@ -253,6 +258,12 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
           }}
         />
       {/if}
+      <ButtonModal
+        text="Show in Folder"
+        variant="secondary"
+        onclick={showInFolder}
+        disabled={!gameInfo.cwd}
+      />
       <ButtonModal
         text="Remove Game"
         variant="danger"

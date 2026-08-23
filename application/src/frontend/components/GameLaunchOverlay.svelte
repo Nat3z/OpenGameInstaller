@@ -33,6 +33,23 @@ let isWrapperLaunch = $state(false);
 const timeouts: ReturnType<typeof setTimeout>[] = [];
 let isMounted = false;
 
+// Prompt state: lets the user launch even when the addon pre-launch step failed
+let addonFailureMessage = $state<string | null>(null);
+let resolveAddonFailurePrompt: ((proceed: boolean) => void) | null = null;
+
+function requestLaunchDespiteAddonFailure(error: string): Promise<boolean> {
+  addonFailureMessage = error;
+  return new Promise((resolve) => {
+    resolveAddonFailurePrompt = resolve;
+  });
+}
+
+function answerAddonFailurePrompt(proceed: boolean) {
+  addonFailureMessage = null;
+  resolveAddonFailurePrompt?.(proceed);
+  resolveAddonFailurePrompt = null;
+}
+
 onMount(async () => {
   isMounted = true;
   // Parse query parameters
@@ -120,11 +137,16 @@ onMount(async () => {
         status = 'error';
         errorMessage = formatError(error) || 'Pre-launch failed';
         onError(errorMessage);
-        const t = setTimeout(() => {
+        // Ask the user whether to continue launching despite the addon failure
+        const proceed = await requestLaunchDespiteAddonFailure(errorMessage);
+        if (!proceed) {
           if (isMounted) runFrontendEffect(electronRpc.app.quit());
-        }, 5000);
-        timeouts.push(t);
-        return;
+          return;
+        }
+        logger.sync.warn(
+          '[GameLaunchOverlay] Continuing wrapped launch despite pre-launch hook failure'
+        );
+        status = 'running';
       }
 
       let wrapperError: string | null = null;
@@ -314,7 +336,24 @@ onDestroy(() => {
       {/if}
 
       {#if isHookOnly || isWrapperLaunch}
-        <p class="text-sm text-gray-400 mt-4">Closing application...</p>
+        {#if addonFailureMessage !== null}
+          <div class="mt-4 flex justify-center gap-3">
+            <button
+              class="rounded-lg border-none bg-[#4CAF50] px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#43a047]"
+              onclick={() => answerAddonFailurePrompt(true)}
+            >
+              Launch Anyway
+            </button>
+            <button
+              class="rounded-lg border-none bg-[#333] px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#444]"
+              onclick={() => answerAddonFailurePrompt(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        {:else}
+          <p class="text-sm text-gray-400 mt-4">Closing application...</p>
+        {/if}
       {/if}
     </div>
   </div>

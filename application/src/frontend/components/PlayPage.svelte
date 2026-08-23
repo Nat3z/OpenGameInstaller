@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
+import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { ConfigurationBuilder } from 'ogi-addon/config';
@@ -10,6 +11,9 @@ import AddonPicture from '@/frontend/components/AddonPicture.svelte';
 import UpdateAppModal from '@/frontend/components/built/UpdateAppModal.svelte';
 import GameConfiguration from '@/frontend/components/GameConfiguration.svelte';
 import Image from '@/frontend/components/Image.svelte';
+import ButtonModal from '@/frontend/components/modal/ButtonModal.svelte';
+import Modal from '@/frontend/components/modal/Modal.svelte';
+import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
@@ -110,6 +114,23 @@ async function doesLinkExist(url: string | undefined) {
 let playButton: HTMLButtonElement | undefined = $state(undefined);
 let openedGameConfiguration = $state(false);
 
+// Prompt state: lets the user launch even when the addon pre-launch step failed
+let addonFailureMessage = $state<string | null>(null);
+let resolveAddonFailurePrompt: ((proceed: boolean) => void) | null = null;
+
+function requestLaunchDespiteAddonFailure(error: string): Promise<boolean> {
+  addonFailureMessage = error;
+  return new Promise((resolve) => {
+    resolveAddonFailurePrompt = resolve;
+  });
+}
+
+function answerAddonFailurePrompt(proceed: boolean) {
+  addonFailureMessage = null;
+  resolveAddonFailurePrompt?.(proceed);
+  resolveAddonFailurePrompt = null;
+}
+
 async function launchGame() {
   if ($gamesLaunched[libraryInfo.appID]) return;
   if (!playButton) return;
@@ -132,17 +153,24 @@ async function launchGame() {
     await runFrontendEffect(runLaunchAppAddons(libraryInfo, 'pre'));
   } catch (error) {
     logger.sync.error(error);
-    // remove the game from the gamesLaunched state first so the play button is restored
-    gamesLaunched.update((games) => {
-      delete games[libraryInfo.appID];
-      return games;
-    });
-    // wait for the DOM to update so playButton is restored
-    await tick();
-    if (playButton) {
-      playButton.setAttribute('data-error', 'true');
+    // Ask the user whether to continue launching despite the addon failure
+    const proceed = await requestLaunchDespiteAddonFailure(
+      formatError(error) || 'The addon pre-launch step failed.'
+    );
+    if (!proceed) {
+      // remove the game from the gamesLaunched state first so the play button is restored
+      gamesLaunched.update((games) => {
+        delete games[libraryInfo.appID];
+        return games;
+      });
+      // wait for the DOM to update so playButton is restored
+      await tick();
+      if (playButton) {
+        playButton.setAttribute('data-error', 'true');
+      }
+      return;
     }
-    return;
+    logger.sync.warn('Launching game despite addon pre-launch failure');
   }
 
   logger.sync.info('pre-launch complete');
@@ -453,6 +481,33 @@ function handleRunTask(task: SearchResult, addonID: string) {
 
 {#if openedGameConfiguration}
   <GameConfiguration gameInfo={libraryInfo} {onFinish} {exitPlayPage} />
+{/if}
+
+{#if addonFailureMessage !== null}
+  <Modal
+    open={true}
+    size="small"
+    closeOnOverlayClick={false}
+    onClose={() => answerAddonFailurePrompt(false)}
+  >
+    <TitleModal title="Addon launch step failed" />
+    <p class="mb-2 text-sm text-accent-dark">{addonFailureMessage}</p>
+    <p class="mb-4 text-sm text-accent-dark">
+      Launch {libraryInfo.name} anyway?
+    </p>
+    <div class="flex flex-row gap-3">
+      <ButtonModal
+        text="Launch Anyway"
+        variant="primary"
+        onclick={() => answerAddonFailurePrompt(true)}
+      />
+      <ButtonModal
+        text="Cancel"
+        variant="secondary"
+        onclick={() => answerAddonFailurePrompt(false)}
+      />
+    </div>
+  </Modal>
 {/if}
 
 {#if showUpdateModal && updateInfo}

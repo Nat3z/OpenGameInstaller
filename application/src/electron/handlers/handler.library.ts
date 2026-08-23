@@ -55,6 +55,7 @@ import {
   filesystemRoot,
   isProtectedDeletePath,
   sharesDirectoryWithOtherGames,
+  systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendNotification } from '@/electron/main.js';
@@ -65,9 +66,28 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
 /** Library appIDs with a game process currently launched by OGI. */
 const runningGames = new Set<number>();
 
+/** Per-game serial queues so launches and removals cannot interleave mid-flight. */
+const gameOperationQueues = new Map<number, Promise<unknown>>();
+
+function enqueueGameOperation<T>(
+  appID: number,
+  operation: () => Promise<T>
+): Promise<T> {
+  const previous = gameOperationQueues.get(appID) ?? Promise.resolve();
+  const result = previous.then(operation, operation);
+  gameOperationQueues.set(
+    appID,
+    result.then(
+      () => undefined,
+      () => undefined
+    )
+  );
+  return result;
+}
+
 const deleteGuardRoots = (): DeleteGuardRoots => ({
   exact: [filesystemRoot(), homedir(), __dirname],
-  subtrees: appMetadataSubtrees(__dirname),
+  subtrees: [...appMetadataSubtrees(__dirname), ...systemSubtrees()],
 });
 
 /**
@@ -199,7 +219,8 @@ export function launchGameFromLibrary(
         };
       }
 
-      runningGames.add(appInfo.appID);
+      // Already tracked by the pre-await add above; do not re-add here or a
+      // fast crash's onExit delete would be resurrected.
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
       return { success: true };
     }
@@ -233,6 +254,8 @@ export function launchGameFromLibrary(
         ...effectiveLaunchEnv,
       },
     };
+    // Register before spawning so no launch can begin untracked
+    runningGames.add(appInfo.appID);
     const spawnedItem: ChildProcess = spawnInvocation.args
       ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
       : spawn(spawnInvocation.command, spawnOptions);
@@ -263,7 +286,6 @@ export function launchGameFromLibrary(
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
     });
 
-    runningGames.add(appInfo.appID);
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
     return { success: true };
   });
@@ -611,16 +633,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 } else if (fs.existsSync(appInfo.cwd)) {
                   const deletion = yield* Effect.either(
                     Effect.tryPromise({
-                      try: async () => {
-                        // Re-check at rm time to close the launch race window
-                        if (runningGames.has(appid)) {
-                          throw new Error('the game is currently running');
-                        }
-                        await fsp.rm(appInfo.cwd, {
-                          recursive: true,
-                          force: true,
-                        });
-                      },
+                      try: () =>
+                        // Serialize against other per-game operations so a
+                        // launch cannot interleave with the recursive rm
+                        enqueueGameOperation(appid, async () => {
+                          if (runningGames.has(appid)) {
+                            throw new Error('the game is currently running');
+                          }
+                          await fsp.rm(appInfo.cwd, {
+                            recursive: true,
+                            force: true,
+                          });
+                        }),
                       catch: (cause: unknown) => String(cause),
                     })
                   );

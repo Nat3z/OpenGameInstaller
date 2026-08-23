@@ -6,6 +6,7 @@ import { onDestroy, onMount } from 'svelte';
 import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
 import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { startRedistributableInstallation } from '@/frontend/lib/setup/setup';
 import {
@@ -184,6 +185,7 @@ function handleRetryRedistributables(downloadId: string, appID: number) {
       },
     };
   });
+  updateDownloadStatus(downloadId, { status: 'installing-redistributables' });
   runDetached(
     startRedistributableInstallation(downloadId, appID),
     'Failed to retry redistributable installation'

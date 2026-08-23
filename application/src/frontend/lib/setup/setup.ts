@@ -20,6 +20,7 @@ import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
   createNotification,
+  currentDownloads,
   type DownloadStatusAndInfo,
   redistributableInstalls,
   setupLogs,
@@ -45,6 +46,16 @@ type RedistributableProgressDetail = {
   result?: 'success' | 'failed' | 'not-found';
   error?: string;
 };
+
+/** Redistributables finish into the same terminal status the download had. */
+function settledDownloadStatus(
+  downloadId: string
+): 'seeding' | 'setup-complete' {
+  const download = get(currentDownloads).find(
+    (candidate) => candidate.id === downloadId
+  );
+  return download?.downloadType === 'torrent' ? 'seeding' : 'setup-complete';
+}
 
 function dispatchSetupEvent(
   eventType: 'log' | 'progress',
@@ -307,7 +318,9 @@ export function startRedistributableInstallation(
     }
 
     if (result === 'success') {
-      updateDownloadStatus(downloadId, { status: 'setup-complete' });
+      updateDownloadStatus(downloadId, {
+        status: settledDownloadStatus(downloadId),
+      });
       redistributableInstalls.update((setups) => {
         const { [downloadId]: _, ...remaining } = setups;
         return remaining;
@@ -323,7 +336,9 @@ export function startRedistributableInstallation(
     if (result === 'partial' || result === 'failed') {
       // The game itself is installed; keep the install entry around so the
       // redistributables can be retried from the downloads view.
-      updateDownloadStatus(downloadId, { status: 'setup-complete' });
+      updateDownloadStatus(downloadId, {
+        status: settledDownloadStatus(downloadId),
+      });
       redistributableInstalls.update((setups) => {
         const current = setups[downloadId];
         if (!current) return setups;

@@ -154,7 +154,11 @@ export const ElectronRpc = {
       'app.removeApp',
       [Schema.Number],
       opaque<
-        | { status: 'success'; warning?: string }
+        | {
+            status: 'success';
+            warning?: string;
+            filesDeleted?: boolean;
+          }
         | { status: 'cancelled'; message: string }
         | { status: 'error'; error: string }
       >()
@@ -169,7 +173,6 @@ export const ElectronRpc = {
       Schema.Literal(
         'setup-failed',
         'setup-success',
-        'setup-redistributables-failed',
         'setup-redistributables-success',
         'setup-prefix-required'
       )

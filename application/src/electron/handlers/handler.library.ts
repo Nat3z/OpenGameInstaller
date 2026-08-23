@@ -16,6 +16,9 @@ import {
 } from 'child_process';
 import { Effect } from 'effect';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import { homedir } from 'os';
+import { parse, resolve } from 'path';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   addDeckGameToSteam,
@@ -52,6 +55,17 @@ import { sendNotification } from '@/electron/main.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
+
+/**
+ * Paths we will never recursively delete when removing a game, so a
+ * mistyped/misconfigured cwd cannot nuke unrelated data.
+ */
+const isProtectedDeletePath = (target: string): boolean => {
+  const resolved = resolve(target);
+  return [parse(homedir()).root, homedir(), __dirname].some(
+    (protectedPath) => resolve(protectedPath) === resolved
+  );
+};
 
 /**
  * Determine if a game should use UMU mode
@@ -557,19 +571,28 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
               yield* Effect.sync(removal.commit);
 
-              // Delete the game files from disk; a failed deletion is a warning,
-              // not a failed removal (the library entry is already gone).
+              // Delete the game files from disk; a failed, skipped, or
+              // refused deletion is a warning, not a failed removal (the
+              // library entry is already gone).
               let fileWarning: string | undefined;
-              if (appInfo.cwd && fs.existsSync(appInfo.cwd)) {
-                const deletion = yield* Effect.either(
-                  Effect.try({
-                    try: () =>
-                      fs.rmSync(appInfo.cwd, { recursive: true, force: true }),
-                    catch: (cause: unknown) => String(cause),
-                  })
-                );
-                if (deletion._tag === 'Left') {
-                  fileWarning = `The game was removed from the library, but its files could not be deleted: ${deletion.left}`;
+              let filesDeleted = false;
+              if (appInfo.cwd) {
+                if (isProtectedDeletePath(appInfo.cwd)) {
+                  fileWarning =
+                    'The game was removed from the library, but its files were not deleted because the path is a protected directory.';
+                } else if (fs.existsSync(appInfo.cwd)) {
+                  const deletion = yield* Effect.either(
+                    Effect.tryPromise({
+                      try: () =>
+                        fsp.rm(appInfo.cwd, { recursive: true, force: true }),
+                      catch: (cause: unknown) => String(cause),
+                    })
+                  );
+                  if (deletion._tag === 'Left') {
+                    fileWarning = `The game was removed from the library, but its files could not be deleted: ${deletion.left}`;
+                  } else {
+                    filesDeleted = true;
+                  }
                 }
               }
 
@@ -577,6 +600,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 status: 'success' as const,
                 warning:
                   [warning, fileWarning].filter(Boolean).join(' ') || undefined,
+                filesDeleted,
               };
             }),
           (removal) =>

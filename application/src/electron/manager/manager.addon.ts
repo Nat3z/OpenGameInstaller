@@ -44,6 +44,10 @@ export class Addon extends ExecutorAddon {
         Effect.mapError((cause) => new AddonLoadError({ addonName, cause }))
       );
       const secret = addonServer.getSecret();
+      // gameLaunch describes the session type, not individual launches: a
+      // dedicated Steam-shortcut session spawns addons with the flag set,
+      // while forwarded launches into a running full-app session correctly
+      // report false (the addon learns per-launch detail from launch-app).
       return new Addon({
         port,
         secret,

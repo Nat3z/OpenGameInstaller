@@ -307,15 +307,21 @@ export function startRedistributableInstallation(
     }
 
     if (result === 'success') {
-      updateDownloadStatus(downloadId, { status: 'setup-complete' });
+      // Redistributable failures are non-fatal, so surface them as a
+      // partial-success warning instead of a plain "complete".
+      let partialError: string | undefined;
       redistributableInstalls.update((setups) => {
+        partialError = setups[downloadId]?.error;
         const { [downloadId]: _, ...remaining } = setups;
         return remaining;
       });
+      updateDownloadStatus(downloadId, { status: 'setup-complete' });
       createNotification({
         id: Math.random().toString(36).substring(2, 9),
-        type: 'success',
-        message: `Setup complete for ${setup.gameName}!`,
+        type: partialError ? 'warning' : 'success',
+        message: partialError
+          ? `Setup complete for ${setup.gameName}, but some redistributables failed.`
+          : `Setup complete for ${setup.gameName}!`,
       });
       return;
     }
@@ -392,10 +398,7 @@ export function runSetupApp(
         )
       );
 
-    if (
-      result === 'setup-failed' ||
-      result === 'setup-redistributables-failed'
-    ) {
+    if (result === 'setup-failed') {
       updateDownloadStatus(downloadedItem.id, {
         status: 'error',
         error: result,

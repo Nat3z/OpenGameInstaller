@@ -35,6 +35,7 @@ let { exitPlayPage, gameInfo, onFinish }: Props = $props();
 
 let platform = $state<string>('');
 let showDllOverridesModal = $state(false);
+let showRemoveConfirm = $state(false);
 
 // Get OS platform
 $effect(() => {
@@ -123,6 +124,7 @@ let dllOverridesCount = $derived.by(() => {
 });
 
 async function removeFromList() {
+  showRemoveConfirm = false;
   const result = await runFrontendEffect(
     electronRpc.app.removeApp(gameInfo.appID)
   );
@@ -138,7 +140,11 @@ async function removeFromList() {
   completeRequiredReadd(gameInfo.appID);
   createNotification({
     id: Math.random().toString(36).substring(7),
-    message: result.warning ?? 'Game removed from library and files deleted',
+    message:
+      result.warning ??
+      (result.filesDeleted
+        ? 'Game removed from library and files deleted'
+        : 'Game removed from library'),
     type: result.warning ? 'info' : 'success',
   });
   currentDownloads.update((downloads) =>
@@ -267,11 +273,39 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
       <ButtonModal
         text="Remove Game"
         variant="danger"
-        onclick={removeFromList}
+        onclick={() => (showRemoveConfirm = true)}
       />
       <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
     </div>
   </Modal>
+
+  {#if showRemoveConfirm}
+    <Modal
+      open={true}
+      size="small"
+      closeOnOverlayClick={false}
+      onClose={() => (showRemoveConfirm = false)}
+    >
+      <TitleModal title={`Remove ${gameInfo.name}?`} />
+      <p class="mb-4 text-sm text-accent-dark">
+        This removes the game from your library and permanently deletes its
+        files{gameInfo.cwd ? ` in ${gameInfo.cwd}` : ''}. This cannot be
+        undone.
+      </p>
+      <div class="flex flex-row gap-3">
+        <ButtonModal
+          text="Delete Game"
+          variant="danger"
+          onclick={removeFromList}
+        />
+        <ButtonModal
+          text="Cancel"
+          variant="secondary"
+          onclick={() => (showRemoveConfirm = false)}
+        />
+      </div>
+    </Modal>
+  {/if}
 
   <WineDllOverridesModal
     open={showDllOverridesModal}

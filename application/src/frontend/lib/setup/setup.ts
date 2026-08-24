@@ -403,6 +403,34 @@ export function runSetupApp(
       return yield* Effect.fail(new AddonError({ message: result }));
     }
 
+    if (result === 'setup-steam-login-required') {
+      // macOS Sikarugir: game is installed but Windows Steam needs a first login
+      createNotification({
+        message: `Sign in to Windows Steam to finish setting up ${downloadedItem.name}. Launching the game will finish setup automatically once you're signed in.`,
+        id: Math.random().toString(36).substring(7),
+        type: 'info',
+      });
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: result,
+      });
+      return data;
+    }
+
+    if (result === 'setup-windows-support-required') {
+      // macOS Sikarugir: the shared wrapper is not provisioned yet
+      createNotification({
+        message: `Finish Windows-game support setup to run ${downloadedItem.name}: install Sikarugir and Windows Steam, then launch the game from your library.`,
+        id: Math.random().toString(36).substring(7),
+        type: 'info',
+      });
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: result,
+      });
+      return data;
+    }
+
     if (result === 'setup-prefix-required') {
       redistributableInstalls.update((setups) => ({
         ...setups,

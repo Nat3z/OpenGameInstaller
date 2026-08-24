@@ -16,6 +16,10 @@ import {
   oobeLog,
 } from '@/frontend/store.svelte';
 import { installAddonsAndReconnect } from '@/frontend/utils';
+import type {
+  SikarugirProvisionState,
+  WindowsSupportStatus,
+} from '@/lib/electron-rpc';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -255,7 +259,148 @@ async function downloadTools() {
       './config/option/installed.json',
       JSON.stringify({ restartRequired: true, installed: false })
     );
+  } else if (currentOS === 'darwin') {
+    // Optional Windows-game support step (Homebrew, Rosetta, Sikarugir)
+    await refreshWindowsSupport();
+    stage = 1.75;
   } else stage = 2;
+}
+
+let windowsSupport = $state<WindowsSupportStatus | null>(null);
+let homebrewHandoffActive = $state(false);
+let homebrewPollTimer: ReturnType<typeof setInterval> | null = null;
+let rosettaBusy = $state(false);
+let sikarugirBusy = $state(false);
+let sikarugirError = $state('');
+let provisionState = $state<SikarugirProvisionState | null>(null);
+let provisionBusy = $state(false);
+let provisionError = $state('');
+// Fully provisioned: wrapper, prefix, Windows Steam, login, and account chosen.
+const provisionReady = $derived(
+  provisionState?.state === 'ready' &&
+    !provisionState.steamAccountSelectionRequired
+);
+
+async function refreshWindowsSupport() {
+  try {
+    windowsSupport = await runFrontendEffect(
+      electronRpc.oobe.getWindowsSupportStatus()
+    );
+  } catch (error: unknown) {
+    logger.sync.error('Failed to query Windows support status:', error);
+  }
+  await refreshProvisionState();
+}
+
+async function refreshProvisionState() {
+  if (windowsSupport?.sikarugir.status !== 'ready') {
+    provisionState = null;
+    return;
+  }
+  try {
+    provisionState = await runFrontendEffect(
+      electronRpc.oobe.getSikarugirSetupState()
+    );
+  } catch (error: unknown) {
+    logger.sync.error('Failed to query Sikarugir setup state:', error);
+  }
+}
+
+// Runs one provisioning RPC, surfaces its message on failure, then re-queries state.
+async function runProvisionAction(
+  action: () => Promise<{ success: boolean; message: string }>
+) {
+  provisionBusy = true;
+  provisionError = '';
+  try {
+    const result = await action();
+    if (!result.success) provisionError = result.message;
+  } catch (error: unknown) {
+    provisionError = formatError(error);
+  }
+  await refreshProvisionState();
+  provisionBusy = false;
+}
+
+function stopHomebrewPoll() {
+  if (homebrewPollTimer) {
+    clearInterval(homebrewPollTimer);
+    homebrewPollTimer = null;
+  }
+  homebrewHandoffActive = false;
+}
+
+async function beginHomebrewInstall() {
+  let launched = false;
+  try {
+    launched = await runFrontendEffect(electronRpc.oobe.startHomebrewInstall());
+  } catch (error: unknown) {
+    logger.sync.error('Failed to start Homebrew install:', error);
+  }
+  if (!launched) {
+    stopHomebrewPoll();
+    createNotification({
+      message: 'Could not open Terminal to install Homebrew',
+      id: Math.random().toString(36).substring(7),
+      type: 'error',
+    });
+    return;
+  }
+  homebrewHandoffActive = true;
+  homebrewPollTimer = setInterval(async () => {
+    try {
+      const result = await runFrontendEffect(electronRpc.oobe.pollHomebrew());
+      if (result.status === 'ready') {
+        stopHomebrewPoll();
+        await refreshWindowsSupport();
+      }
+    } catch (error: unknown) {
+      logger.sync.error('Homebrew poll failed:', error);
+    }
+  }, 3000);
+}
+
+async function beginRosettaInstall() {
+  rosettaBusy = true;
+  try {
+    await runFrontendEffect(electronRpc.oobe.installRosetta());
+    await refreshWindowsSupport();
+  } catch (error: unknown) {
+    logger.sync.error('Failed to install Rosetta:', error);
+  } finally {
+    rosettaBusy = false;
+  }
+}
+
+async function beginSikarugirInstall() {
+  sikarugirBusy = true;
+  sikarugirError = '';
+  oobeLog.update((currentLog) => ({
+    ...currentLog,
+    status: 'running',
+    logs: [],
+  }));
+  try {
+    const result = await runFrontendEffect(electronRpc.oobe.installSikarugir());
+    if (!result.success) {
+      sikarugirError = result.message;
+      oobeLog.update((currentLog) => ({ ...currentLog, status: 'failed' }));
+    } else {
+      oobeLog.update((currentLog) => ({ ...currentLog, status: 'idle' }));
+    }
+    await refreshWindowsSupport();
+  } catch (error: unknown) {
+    sikarugirError = formatError(error);
+    oobeLog.update((currentLog) => ({ ...currentLog, status: 'failed' }));
+  } finally {
+    sikarugirBusy = false;
+  }
+}
+
+function finishWindowsSupport() {
+  stopHomebrewPoll();
+  oobeLog.update((currentLog) => ({ ...currentLog, status: 'idle', logs: [] }));
+  stage = 2;
 }
 
 function submitTorrenter() {
@@ -553,6 +698,7 @@ onMount(async () => {
 onDestroy(() => {
   // Clean up event listener
   document.removeEventListener('oobe:log', handleOOBELog);
+  stopHomebrewPoll();
 });
 </script>
 
@@ -741,6 +887,305 @@ onDestroy(() => {
         class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
         >Close</button
       >
+    </div>
+  {:else if stage === 1.75}
+    <div class="animate-fade-in-pop oobe-tools-stage">
+      <h1 class="text-3xl font-archivo font-semibold text-text-primary mt-2">
+        Windows-Game Support
+      </h1>
+      <h2 class="font-open-sans text-text-secondary text-center mb-6 max-w-xl">
+        Optional: install the tools OpenGameInstaller uses to run Windows games
+        on your Mac. You can skip this and set it up later in settings.
+      </h2>
+
+      <div class="oobe-tools-shell">
+        <div class="oobe-tools-table" role="table" aria-label="Windows-game support tools">
+          <!-- Homebrew -->
+          <div class="oobe-tool-row oobe-capability-row" role="row">
+            <div class="oobe-tool-name">
+              <span class="oobe-tool-mark" aria-hidden="true">
+                <span class="oobe-tool-monogram">Brew</span>
+              </span>
+              <span class="oobe-tool-label">Homebrew</span>
+            </div>
+            <span class="oobe-tool-purpose">
+              Package manager used to install Sikarugir.
+            </span>
+            <div class="oobe-capability-action">
+              {#if windowsSupport?.homebrew.status === 'ready'}
+                <span class="oobe-capability-badge is-ready">Installed</span>
+              {:else if homebrewHandoffActive}
+                <span class="oobe-capability-badge is-waiting">
+                  Waiting for Terminal…
+                </span>
+              {:else}
+                <button
+                  type="button"
+                  class="oobe-capability-button"
+                  onclick={beginHomebrewInstall}
+                >
+                  Install in Terminal
+                </button>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Rosetta -->
+          <div class="oobe-tool-row oobe-capability-row" role="row">
+            <div class="oobe-tool-name">
+              <span class="oobe-tool-mark" aria-hidden="true">
+                <span class="oobe-tool-monogram">R2</span>
+              </span>
+              <span class="oobe-tool-label">Rosetta 2</span>
+            </div>
+            <span class="oobe-tool-purpose">
+              Lets Apple Silicon Macs run Intel code that Windows games rely
+              on.
+            </span>
+            <div class="oobe-capability-action">
+              {#if windowsSupport?.rosetta.status === 'ready'}
+                <span class="oobe-capability-badge is-ready">Installed</span>
+              {:else}
+                <button
+                  type="button"
+                  class="oobe-capability-button"
+                  disabled={rosettaBusy}
+                  onclick={beginRosettaInstall}
+                >
+                  {rosettaBusy ? 'Installing…' : 'Install in Terminal'}
+                </button>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Sikarugir -->
+          <div class="oobe-tool-row oobe-capability-row" role="row">
+            <div class="oobe-tool-name">
+              <span class="oobe-tool-mark" aria-hidden="true">
+                <span class="oobe-tool-monogram">Sk</span>
+              </span>
+              <span class="oobe-tool-label">Sikarugir</span>
+            </div>
+            <span class="oobe-tool-purpose">
+              Wine wrapper that runs Windows Steam and your games.
+            </span>
+            <div class="oobe-capability-action">
+              {#if windowsSupport?.sikarugir.status === 'ready'}
+                <span class="oobe-capability-badge is-ready">Installed</span>
+              {:else}
+                <button
+                  type="button"
+                  class="oobe-capability-button"
+                  disabled={sikarugirBusy ||
+                    windowsSupport?.homebrew.status !== 'ready'}
+                  onclick={beginSikarugirInstall}
+                >
+                  {sikarugirBusy
+                    ? 'Installing…'
+                    : windowsSupport?.homebrew.status !== 'ready'
+                      ? 'Requires Homebrew'
+                      : 'Install'}
+                </button>
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        <p class="oobe-tools-note">
+          Sikarugir is installed from the third-party Homebrew tap
+          <code>Sikarugir-App/sikarugir</code>. macOS may ask you to approve
+          the app the first time it opens.
+        </p>
+
+        {#if sikarugirError}
+          <p class="oobe-capability-error" role="alert">{sikarugirError}</p>
+        {/if}
+
+        <!-- Sikarugir install console (reuses the oobe:log stream) -->
+        {#if sikarugirBusy || $oobeLog.status === 'failed'}
+          <div
+            class:oobe-terminal-error={$oobeLog.status === 'failed'}
+            class="oobe-terminal w-full"
+          >
+            <div class="terminal-header">
+              <span class="terminal-title">
+                {$oobeLog.status === 'failed'
+                  ? 'Installation failed'
+                  : 'Installation console'}
+              </span>
+            </div>
+            <div
+              bind:this={logContainer}
+              class="terminal-content"
+              role="log"
+              aria-live="polite"
+              aria-busy={sikarugirBusy}
+            >
+              {#if $oobeLog.logs.length === 0}
+                <div class="terminal-line">
+                  <span class="terminal-output">Starting installation...</span>
+                </div>
+              {/if}
+              {#each $oobeLog.logs as log, index}
+                <div
+                  class="terminal-line"
+                  in:fade={{ duration: 150, delay: index * 20 }}
+                >
+                  <span
+                    class:terminal-output-error={log.trimStart().startsWith(
+                      'Error:'
+                    )}
+                    class="terminal-output"
+                  >
+                    {log}
+                  </span>
+                </div>
+              {/each}
+              {#if sikarugirBusy}
+                <div class="terminal-cursor" aria-hidden="true">
+                  <span class="terminal-output animate-pulse">▋</span>
+                </div>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Windows Steam provisioning: appears once Sikarugir itself is installed -->
+        {#if windowsSupport?.sikarugir.status === 'ready' && provisionState && provisionState.state !== 'unsupported'}
+          <div class="oobe-provision-panel">
+            <div class="oobe-provision-header">
+              <span class="oobe-tool-label">Windows Steam setup</span>
+              <span class="oobe-tool-purpose">
+                One shared Steam wrapper runs all of your Windows games.
+              </span>
+            </div>
+
+            {#if provisionState.state === 'wrapper-missing'}
+              <p class="oobe-tool-purpose">
+                Create a wrapper named <code>Steam.app</code> with Sikarugir
+                Creator (in <code>~/Applications/Sikarugir</code>), then check
+                again.
+                {#if provisionState.message}
+                  <br />{provisionState.message}
+                {/if}
+              </p>
+              <button
+                type="button"
+                class="oobe-capability-button"
+                disabled={provisionBusy}
+                onclick={() => refreshProvisionState()}
+              >
+                Check Again
+              </button>
+            {:else if provisionState.state === 'prefix-missing'}
+              <p class="oobe-tool-purpose">
+                The wrapper needs a Wine prefix before Steam can be installed.
+              </p>
+              <button
+                type="button"
+                class="oobe-capability-button"
+                disabled={provisionBusy}
+                onclick={() =>
+                  runProvisionAction(() =>
+                    runFrontendEffect(electronRpc.oobe.createSikarugirPrefix())
+                  )}
+              >
+                {provisionBusy ? 'Creating Prefix…' : 'Create Prefix'}
+              </button>
+            {:else if provisionState.state === 'steam-not-installed'}
+              <p class="oobe-tool-purpose">
+                Downloads Valve's official installer and runs it inside the
+                wrapper. Follow the installer window when it appears.
+              </p>
+              <button
+                type="button"
+                class="oobe-capability-button"
+                disabled={provisionBusy}
+                onclick={() =>
+                  runProvisionAction(() =>
+                    runFrontendEffect(electronRpc.oobe.installWindowsSteam())
+                  )}
+              >
+                {provisionBusy ? 'Installing Steam…' : 'Install Windows Steam'}
+              </button>
+            {:else if provisionState.state === 'steam-login-required'}
+              <p class="oobe-tool-purpose">
+                Sign in to Steam once so games can be added to your account's
+                library. When you're done, check again.
+              </p>
+              <div class="oobe-provision-actions">
+                <button
+                  type="button"
+                  class="oobe-capability-button"
+                  disabled={provisionBusy}
+                  onclick={() =>
+                    runProvisionAction(() =>
+                      runFrontendEffect(electronRpc.oobe.launchWindowsSteam())
+                    )}
+                >
+                  Open Steam to Sign In
+                </button>
+                <button
+                  type="button"
+                  class="oobe-capability-button is-outline"
+                  disabled={provisionBusy}
+                  onclick={() => refreshProvisionState()}
+                >
+                  Check Again
+                </button>
+              </div>
+            {:else if provisionState.steamAccountSelectionRequired}
+              <p class="oobe-tool-purpose">
+                Multiple Steam accounts have signed in. Pick the one
+                OpenGameInstaller should add games to.
+              </p>
+              <div class="oobe-provision-actions">
+                {#each provisionState.steamAccountIds ?? [] as accountId}
+                  <button
+                    type="button"
+                    class="oobe-capability-button is-outline"
+                    disabled={provisionBusy}
+                    onclick={() =>
+                      runProvisionAction(() =>
+                        runFrontendEffect(
+                          electronRpc.oobe.selectSikarugirSteamAccount(
+                            accountId
+                          )
+                        )
+                      )}
+                  >
+                    Account {accountId}
+                  </button>
+                {/each}
+              </div>
+            {:else}
+              <span class="oobe-capability-badge is-ready">
+                Ready to run Windows games
+              </span>
+            {/if}
+
+            {#if provisionError}
+              <p class="oobe-capability-error" role="alert">{provisionError}</p>
+            {/if}
+          </div>
+        {/if}
+
+        <div class="oobe-tools-footer justify-end">
+          {#if provisionReady}
+            <button
+              onclick={finishWindowsSupport}
+              class="bg-accent hover:bg-accent-dark text-white font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+              >Continue</button
+            >
+          {:else}
+            <button
+              onclick={finishWindowsSupport}
+              class="border-accent border-2 text-accent hover:border-accent-dark font-open-sans font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+              >Skip for now</button
+            >
+          {/if}
+        </div>
+      </div>
     </div>
   {:else if stage === 2}
     <div
@@ -1484,6 +1929,76 @@ onDestroy(() => {
     max-width: 34rem;
   }
 
+  .oobe-tools-note code {
+    @apply font-mono text-xs;
+  }
+
+  .oobe-capability-row {
+    grid-template-columns: minmax(160px, 1fr) minmax(200px, 1.6fr) auto;
+  }
+
+  .oobe-capability-action {
+    @apply flex items-center justify-end;
+    min-width: 130px;
+  }
+
+  .oobe-capability-badge {
+    @apply font-open-sans text-sm font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap;
+  }
+
+  .oobe-capability-badge.is-ready {
+    color: color-mix(
+      in srgb,
+      var(--color-success) 80%,
+      var(--color-text-primary)
+    );
+    background-color: color-mix(in srgb, var(--color-success) 12%, transparent);
+  }
+
+  .oobe-capability-badge.is-waiting {
+    @apply text-text-secondary animate-pulse;
+    background-color: var(--color-accent-lighter);
+  }
+
+  .oobe-capability-button {
+    @apply bg-accent hover:bg-accent-dark text-white font-open-sans text-sm font-semibold px-4 py-2 rounded-lg transition-colors duration-200 cursor-pointer whitespace-nowrap;
+  }
+
+  .oobe-capability-button:disabled {
+    @apply bg-accent-light text-accent-dark cursor-not-allowed;
+  }
+
+  .oobe-provision-panel {
+    @apply w-full rounded-2xl border border-accent-light bg-surface flex flex-col items-start gap-3 px-4 py-4;
+  }
+
+  .oobe-provision-header {
+    @apply flex flex-col gap-0.5;
+  }
+
+  .oobe-provision-panel code {
+    @apply font-mono text-xs;
+  }
+
+  .oobe-provision-actions {
+    @apply flex items-center gap-3 flex-wrap;
+  }
+
+  .oobe-capability-button.is-outline {
+    @apply bg-transparent border-2 border-accent text-accent hover:border-accent-dark hover:bg-transparent;
+  }
+
+  .oobe-capability-error {
+    @apply font-open-sans text-sm rounded-lg px-4 py-3;
+    color: color-mix(
+      in srgb,
+      var(--color-error) 72%,
+      var(--color-text-primary)
+    );
+    background-color: color-mix(in srgb, var(--color-error) 8%, transparent);
+    border: 1px solid var(--color-error);
+  }
+
   .oobe-community-header {
     @apply flex flex-col items-center text-center gap-2;
   }
@@ -1698,6 +2213,14 @@ onDestroy(() => {
     .oobe-tool-row {
       grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.35fr);
       min-width: 0;
+    }
+
+    .oobe-capability-row {
+      grid-template-columns: 1fr;
+    }
+
+    .oobe-capability-action {
+      @apply justify-start;
     }
 
     .oobe-community-toolbar {

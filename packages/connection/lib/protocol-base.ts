@@ -135,6 +135,11 @@ export interface LibraryInfo {
     steamShortcutLegacyExecutable?: string;
     steamShortcutLegacyName?: string;
   };
+  sikarugir?: {
+    steamLaunchId?: string;
+    windowsExecutable: string;
+    windowsWorkingDirectory: string;
+  };
   redistributables?: {
     name: string;
     path: string;

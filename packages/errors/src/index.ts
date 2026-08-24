@@ -176,6 +176,12 @@ export class PlatformError extends Data.TaggedError('PlatformError')<{
   readonly platform?: string;
 }> {}
 
+export class SikarugirError extends Data.TaggedError('SikarugirError')<{
+  readonly message: string;
+  readonly step?: string;
+  readonly cause?: unknown;
+}> {}
+
 // =============================================================================
 // Steam Errors
 // =============================================================================
@@ -275,6 +281,7 @@ export type OgiError =
   | TorrentError
   | ValidationError
   | PlatformError
+  | SikarugirError
   | SteamNotFoundError
   | SteamUserNotFoundError
   | SteamRunningError

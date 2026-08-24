@@ -125,8 +125,16 @@ const installRedistributablesWithSikarugir = (
           finalError = `Could not insert the Windows Steam shortcut: ${formatError(shortcutResult.left)}`;
         } else {
           const withShortcut = shortcutResult.right;
-          delete withShortcut.redistributables;
-          saveLibraryInfo(appInfo.appID, withShortcut);
+          const saveResult = yield* Effect.either(
+            Effect.try(() => {
+              delete withShortcut.redistributables;
+              saveLibraryInfo(appInfo.appID, withShortcut);
+            })
+          );
+          if (saveResult._tag === 'Left') {
+            result = 'failed';
+            finalError = `Could not persist the game library metadata: ${formatError(saveResult.left)}`;
+          }
         }
       } else {
         result = 'failed';

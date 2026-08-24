@@ -1038,12 +1038,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 }).pipe(Effect.provide(SikarugirRuntimeLive))
               );
               if (shortcutRemoval._tag === 'Left') {
+                // Keep the metadata so removeApp or a later update retries
+                // the cleanup instead of orphaning the shortcut.
                 logger.sync.warn(
                   `[update] Could not remove the Windows Steam shortcut: ${formatError(shortcutRemoval.left)}`
                 );
+              } else {
+                delete appData.sikarugir;
+                saveLibraryInfo(data.appID, appData);
               }
-              delete appData.sikarugir;
-              saveLibraryInfo(data.appID, appData);
             }
           }
           return 'success';

@@ -270,6 +270,7 @@ let windowsSupport = $state<WindowsSupportStatus | null>(null);
 let homebrewHandoffActive = $state(false);
 let homebrewPollTimer: ReturnType<typeof setInterval> | null = null;
 let rosettaBusy = $state(false);
+let rosettaError = $state('');
 let rosettaPollTimer: ReturnType<typeof setInterval> | null = null;
 let sikarugirBusy = $state(false);
 let sikarugirError = $state('');
@@ -375,16 +376,24 @@ function stopRosettaPoll() {
 async function beginRosettaInstall() {
   if (rosettaBusy || rosettaPollTimer) return;
   rosettaBusy = true;
-  let result: 'ready' | 'action-required' | 'unsupported' = 'action-required';
+  rosettaError = '';
+  let result: 'ready' | 'installing' | 'launch-failed' | 'unsupported' =
+    'launch-failed';
   try {
     result = await runFrontendEffect(electronRpc.oobe.installRosetta());
     await refreshWindowsSupport();
   } catch (error: unknown) {
     logger.sync.error('Failed to install Rosetta:', error);
+    rosettaError = formatError(error);
     rosettaBusy = false;
     return;
   }
-  if (result !== 'action-required') {
+  if (result === 'launch-failed') {
+    rosettaError = 'Could not open Terminal to install Rosetta 2.';
+    rosettaBusy = false;
+    return;
+  }
+  if (result !== 'installing') {
     rosettaBusy = false;
     return;
   }
@@ -1026,6 +1035,10 @@ onDestroy(() => {
           <code>Sikarugir-App/sikarugir</code>. macOS may ask you to approve
           the app the first time it opens.
         </p>
+
+        {#if rosettaError}
+          <p class="oobe-capability-error" role="alert">{rosettaError}</p>
+        {/if}
 
         {#if sikarugirError}
           <p class="oobe-capability-error" role="alert">{sikarugirError}</p>

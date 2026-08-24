@@ -362,7 +362,7 @@ const pollHomebrew = (): HomebrewPollResult => {
 };
 
 const installRosetta = (): Effect.Effect<
-  'ready' | 'action-required' | 'unsupported'
+  'ready' | 'installing' | 'launch-failed' | 'unsupported'
 > =>
   Effect.gen(function* () {
     if (process.platform !== 'darwin') return 'unsupported' as const;
@@ -372,10 +372,14 @@ const installRosetta = (): Effect.Effect<
     const result = yield* launchTerminal(
       '/usr/sbin/softwareupdate --install-rosetta --agree-to-license'
     ).pipe(Effect.either);
-    if (result._tag === 'Left') log(`Error: ${formatError(result.left)}`);
+    if (result._tag === 'Left') {
+      log(`Error: ${formatError(result.left)}`);
+      return 'launch-failed' as const;
+    }
+    // The install continues in Terminal; the frontend polls for readiness.
     return (yield* probeRosetta())
       ? ('ready' as const)
-      : ('action-required' as const);
+      : ('installing' as const);
   });
 
 const installSikarugir = (): Effect.Effect<SikarugirInstallResult> => {

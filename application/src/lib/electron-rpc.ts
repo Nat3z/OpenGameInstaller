@@ -538,7 +538,7 @@ export const ElectronRpc = {
     installRosetta: rpc(
       'oobe.installRosetta',
       [],
-      Schema.Literal('ready', 'action-required', 'unsupported')
+      Schema.Literal('ready', 'installing', 'launch-failed', 'unsupported')
     ),
     installSikarugir: rpc(
       'oobe.installSikarugir',

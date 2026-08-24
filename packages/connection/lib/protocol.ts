@@ -603,10 +603,19 @@ export type AddonProtocolEventListenerTypes<
 
 /** Local SDK lifecycle hooks (not declared in `addonProtocol.serverToAddon`). */
 export type AddonSDKLifecycleEventListenerTypes<EventResponse> = {
-  connect: (event: EventResponse) => void;
+  connect: (event: EventResponse, context?: OGIAddonConnectContext) => void;
   disconnect: (reason: string) => void;
   exit: () => void;
   response: (response: unknown) => void;
+};
+
+/**
+ * Context passed to the addon SDK `connect` listener. `gameSpecificLaunch` is
+ * true when this session was started for a specific game (Steam shortcut
+ * launch), so addons can selectively start only the components they need.
+ */
+export type OGIAddonConnectContext = {
+  gameSpecificLaunch: boolean;
 };
 
 /** Host-side events emitted by `@ogi-sdk/addon-server`. */

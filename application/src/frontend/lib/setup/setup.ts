@@ -20,6 +20,7 @@ import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
   createNotification,
+  currentDownloads,
   type DownloadStatusAndInfo,
   redistributableInstalls,
   setupLogs,
@@ -45,6 +46,16 @@ type RedistributableProgressDetail = {
   result?: 'success' | 'failed' | 'not-found';
   error?: string;
 };
+
+/** Redistributables finish into the same terminal status the download had. */
+function settledDownloadStatus(
+  downloadId: string
+): 'seeding' | 'setup-complete' {
+  const download = get(currentDownloads).find(
+    (candidate) => candidate.id === downloadId
+  );
+  return download?.downloadType === 'torrent' ? 'seeding' : 'setup-complete';
+}
 
 function dispatchSetupEvent(
   eventType: 'log' | 'progress',
@@ -307,7 +318,9 @@ export function startRedistributableInstallation(
     }
 
     if (result === 'success') {
-      updateDownloadStatus(downloadId, { status: 'setup-complete' });
+      updateDownloadStatus(downloadId, {
+        status: settledDownloadStatus(downloadId),
+      });
       redistributableInstalls.update((setups) => {
         const { [downloadId]: _, ...remaining } = setups;
         return remaining;
@@ -320,12 +333,41 @@ export function startRedistributableInstallation(
       return;
     }
 
+    if (result === 'partial' || result === 'failed') {
+      // The game itself is installed; keep the install entry around so the
+      // redistributables can be retried from the downloads view.
+      updateDownloadStatus(downloadId, {
+        status: settledDownloadStatus(downloadId),
+      });
+      redistributableInstalls.update((setups) => {
+        const current = setups[downloadId];
+        if (!current) return setups;
+        return {
+          ...setups,
+          [downloadId]: {
+            ...current,
+            overallProgress: 100,
+            isComplete: true,
+            error:
+              current.error ??
+              'Some redistributables failed to install and can be retried.',
+          },
+        };
+      });
+      createNotification({
+        id: Math.random().toString(36).substring(2, 9),
+        type: 'warning',
+        message: `Setup complete for ${setup.gameName}, but redistributable installation ${result === 'partial' ? 'partially failed' : 'failed'}.`,
+      });
+      return;
+    }
+
     updateDownloadStatus(downloadId, {
       status: 'error',
       error:
         result === 'not-found'
           ? 'redistributables-app-not-found'
-          : 'setup-redistributables-failed',
+          : 'redistributables-failed',
     });
     createNotification({
       id: Math.random().toString(36).substring(2, 9),
@@ -392,10 +434,7 @@ export function runSetupApp(
         )
       );
 
-    if (
-      result === 'setup-failed' ||
-      result === 'setup-redistributables-failed'
-    ) {
+    if (result === 'setup-failed') {
       updateDownloadStatus(downloadedItem.id, {
         status: 'error',
         error: result,

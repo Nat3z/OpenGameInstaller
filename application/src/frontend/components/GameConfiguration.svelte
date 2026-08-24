@@ -24,7 +24,11 @@ import {
   completeRequiredReadd,
   getRequiredReadd,
 } from '@/frontend/states.svelte';
-import { createNotification, currentDownloads } from '@/frontend/store.svelte';
+import {
+  createNotification,
+  currentDownloads,
+  gamesLaunched,
+} from '@/frontend/store.svelte';
 
 interface Props {
   exitPlayPage: () => void;
@@ -39,6 +43,7 @@ const UMU_PROTON_DEFAULT = 'umu-proton';
 
 let platform = $state<string>('');
 let showDllOverridesModal = $state(false);
+let showRemoveConfirm = $state(false);
 let protonOptions = $state<{ id: string; name: string }[]>([]);
 
 // Get OS platform
@@ -157,6 +162,32 @@ let dllOverridesCount = $derived.by(() => {
 });
 
 async function removeFromList() {
+  if ($gamesLaunched[gameInfo.appID]) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Cannot remove a game while it is running.',
+      type: 'error',
+    });
+    return;
+  }
+  const activeDownload = $currentDownloads.find(
+    (download) =>
+      download.appID === gameInfo.appID &&
+      !['error', 'completed', 'seeding', 'setup-complete'].includes(
+        download.status
+      )
+  );
+  if (activeDownload) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message:
+        'Cannot remove a game while a download or install is in progress.',
+      type: 'error',
+    });
+    return;
+  }
+
+  showRemoveConfirm = false;
   const result = await runFrontendEffect(
     electronRpc.app.removeApp(gameInfo.appID)
   );
@@ -173,13 +204,22 @@ async function removeFromList() {
   createNotification({
     id: Math.random().toString(36).substring(7),
     message:
-      result.warning ?? 'Game removed from library. (Not deleted from disk)',
+      result.warning ??
+      (result.filesDeleted
+        ? 'Game removed from library and files deleted'
+        : 'Game removed from library'),
     type: result.warning ? 'info' : 'success',
   });
   currentDownloads.update((downloads) =>
     downloads.filter((download) => download.appID !== gameInfo.appID)
   );
   exitPlayPage();
+}
+
+function showInFolder() {
+  if (gameInfo.cwd) {
+    window.electronAPI.fs.showFileLoc(gameInfo.cwd);
+  }
 }
 
 async function addToSteam(button: HTMLButtonElement) {
@@ -300,13 +340,47 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
         />
       {/if}
       <ButtonModal
+        text="Show in Folder"
+        variant="secondary"
+        onclick={showInFolder}
+        disabled={!gameInfo.cwd}
+      />
+      <ButtonModal
         text="Remove Game"
         variant="danger"
-        onclick={removeFromList}
+        onclick={() => (showRemoveConfirm = true)}
       />
       <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
     </div>
   </Modal>
+
+  {#if showRemoveConfirm}
+    <Modal
+      open={true}
+      size="small"
+      closeOnOverlayClick={false}
+      onClose={() => (showRemoveConfirm = false)}
+    >
+      <TitleModal title={`Remove ${gameInfo.name}?`} />
+      <p class="mb-4 text-sm text-accent-dark">
+        This removes the game from your library and permanently deletes its
+        files{gameInfo.cwd ? ` in ${gameInfo.cwd}` : ''}. This cannot be
+        undone.
+      </p>
+      <div class="flex flex-row gap-3">
+        <ButtonModal
+          text="Delete Game"
+          variant="danger"
+          onclick={removeFromList}
+        />
+        <ButtonModal
+          text="Cancel"
+          variant="secondary"
+          onclick={() => (showRemoveConfirm = false)}
+        />
+      </div>
+    </Modal>
+  {/if}
 
   <WineDllOverridesModal
     open={showDllOverridesModal}

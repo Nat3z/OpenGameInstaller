@@ -16,6 +16,8 @@ import {
 } from 'child_process';
 import { Effect } from 'effect';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import { homedir } from 'os';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   addDeckGameToSteam,
@@ -47,11 +49,50 @@ import {
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
+import {
+  appMetadataSubtrees,
+  type DeleteGuardRoots,
+  filesystemRoot,
+  isProtectedDeletePath,
+  sharesDirectoryWithOtherGames,
+  systemSubtrees,
+} from '@/electron/lib/delete-guards.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendNotification } from '@/electron/main.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
+
+/** Library appIDs with a game process currently launched by OGI. */
+const runningGames = new Set<number>();
+
+/** Per-game serial queues so launches and removals cannot interleave mid-flight. */
+const gameOperationQueues = new Map<number, Promise<unknown>>();
+
+function enqueueGameOperation<T>(
+  appID: number,
+  operation: () => Promise<T>
+): Promise<T> {
+  const previous = gameOperationQueues.get(appID) ?? Promise.resolve();
+  const result = previous.then(operation, operation);
+  const settled = result.then(
+    () => undefined,
+    () => undefined
+  );
+  gameOperationQueues.set(appID, settled);
+  void settled.then(() => {
+    if (gameOperationQueues.get(appID) === settled) {
+      gameOperationQueues.delete(appID);
+    }
+  });
+  return result;
+}
+
+const deleteGuardRoots = (): DeleteGuardRoots => ({
+  exact: [filesystemRoot(), homedir(), __dirname],
+  subtrees: [...appMetadataSubtrees(__dirname), ...systemSubtrees()],
+});
 
 /**
  * Determine if a game should use UMU mode
@@ -150,21 +191,32 @@ export function launchGameFromLibrary(
       logger.sync.info(`[launch] Using UMU mode for ${appInfo.name}`);
 
       const appID = appInfo.appID;
+      // Register inside the queue so a concurrent removal cannot interleave;
+      // onError cleans up if the launch promise itself rejects.
       const result = yield* Effect.tryPromise({
         try: () =>
-          launchWithUmu(appInfo, {
-            onExit: () => {
-              mainWindow?.webContents.send('game:exit', { id: appID });
-            },
+          enqueueGameOperation(parsedAppId, async () => {
+            runningGames.add(appInfo.appID);
+            return launchWithUmu(appInfo, {
+              onExit: () => {
+                runningGames.delete(appID);
+                mainWindow?.webContents.send('game:exit', { id: appID });
+              },
+            });
           }),
         catch: (cause) =>
           new LibraryError({
             message: `Failed to launch game with UMU: ${String(cause)}`,
             gameId: parsedAppId,
           }),
-      });
+      }).pipe(
+        Effect.onError(() =>
+          Effect.sync(() => runningGames.delete(appInfo.appID))
+        )
+      );
 
       if (!result.success) {
+        runningGames.delete(appInfo.appID);
         logger.sync.error('[launch] UMU launch failed:', result.error);
         sendNotification({
           message: `Failed to launch game: ${result.error}`,
@@ -178,6 +230,8 @@ export function launchGameFromLibrary(
         };
       }
 
+      // Already tracked by the pre-await add above; do not re-add here or a
+      // fast crash's onExit delete would be resurrected.
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
       return { success: true };
     }
@@ -211,11 +265,25 @@ export function launchGameFromLibrary(
         ...effectiveLaunchEnv,
       },
     };
-    const spawnedItem: ChildProcess = spawnInvocation.args
-      ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
-      : spawn(spawnInvocation.command, spawnOptions);
+    // Register + spawn inside the queue so a concurrent removal cannot
+    // interleave with the launch.
+    const spawnedItem: ChildProcess = yield* Effect.tryPromise({
+      try: () =>
+        enqueueGameOperation(parsedAppId, async () => {
+          runningGames.add(appInfo.appID);
+          return spawnInvocation.args
+            ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
+            : spawn(spawnInvocation.command, spawnOptions);
+        }),
+      catch: (cause) =>
+        new LibraryError({
+          message: `Failed to launch game: ${String(cause)}`,
+          gameId: parsedAppId,
+        }),
+    });
     spawnedItem.on('error', (error) => {
       logger.sync.error(error);
+      runningGames.delete(appInfo.appID);
       sendNotification({
         message: 'Failed to launch game',
         id: generateNotificationId(),
@@ -224,6 +292,7 @@ export function launchGameFromLibrary(
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
     });
     spawnedItem.on('exit', (exitCode, signal) => {
+      runningGames.delete(appInfo.appID);
       logger.sync.info(
         'Game exited with code: ' +
           exitCode +
@@ -426,6 +495,7 @@ function executeWrapperCommandForAppSteam(
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+      runningGames.add(appid);
 
       wrappedChild.stdout?.on('data', (data) => {
         logger.sync.info(`[wrapper stdout] ${data}`);
@@ -440,10 +510,12 @@ function executeWrapperCommandForAppSteam(
           '[wrapper] Failed to execute wrapper command:',
           error
         );
+        runningGames.delete(appid);
         resume(Effect.succeed({ success: false, error: error.message }));
       });
 
       wrappedChild.on('close', (code, signal) => {
+        runningGames.delete(appid);
         if (code === 0) {
           resume(Effect.succeed({ success: true, exitCode: 0 }));
           return;
@@ -556,7 +628,63 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               }
 
               yield* Effect.sync(removal.commit);
-              return { status: 'success' as const, warning };
+
+              // Delete the game files from disk; a failed, skipped, or
+              // refused deletion is a warning, not a failed removal (the
+              // library entry is already gone).
+              let fileWarning: string | undefined;
+              let filesDeleted = false;
+              if (appInfo.cwd) {
+                if (runningGames.has(appid)) {
+                  fileWarning =
+                    'The game was removed from the library, but its files were not deleted because the game is currently running.';
+                } else if (
+                  isProtectedDeletePath(appInfo.cwd, deleteGuardRoots())
+                ) {
+                  fileWarning =
+                    'The game was removed from the library, but its files were not deleted because the path is a protected directory.';
+                } else if (
+                  sharesDirectoryWithOtherGames(
+                    appid,
+                    appInfo.cwd,
+                    getAllLibraryFiles()
+                  )
+                ) {
+                  fileWarning =
+                    'The game was removed from the library, but its files were not deleted because the directory contains other games.';
+                } else if (fs.existsSync(appInfo.cwd)) {
+                  const deletion = yield* Effect.either(
+                    Effect.tryPromise({
+                      try: () =>
+                        // Serialize against other per-game operations so a
+                        // launch cannot interleave with the recursive rm
+                        enqueueGameOperation(appid, async () => {
+                          if (runningGames.has(appid)) {
+                            throw new Error('the game is currently running');
+                          }
+                          await fsp.rm(appInfo.cwd, {
+                            recursive: true,
+                            force: true,
+                          });
+                        }),
+                      catch: (cause) =>
+                        cause instanceof Error ? cause.message : String(cause),
+                    })
+                  );
+                  if (deletion._tag === 'Left') {
+                    fileWarning = `The game was removed from the library, but its files could not be deleted: ${deletion.left}`;
+                  } else {
+                    filesDeleted = true;
+                  }
+                }
+              }
+
+              return {
+                status: 'success' as const,
+                warning:
+                  [warning, fileWarning].filter(Boolean).join(' ') || undefined,
+                filesDeleted,
+              };
             }),
           (removal) =>
             Effect.try({
@@ -733,7 +861,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 }
               }
               if (redistributableFailed) {
-                return 'setup-redistributables-failed';
+                // A failed redistributable should not fail the whole setup;
+                // the game is installed either way.
+                sendNotification({
+                  message: `Some redistributables failed to install for ${data.name}. The game was still added.`,
+                  id: generateNotificationId(),
+                  type: 'warning',
+                });
               }
             }
           }

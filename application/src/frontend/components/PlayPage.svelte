@@ -239,11 +239,18 @@ function onFinish(data: any) {
   libraryInfo.cwd = data.cwd;
   libraryInfo.launchExecutable = data.launchExecutable;
   libraryInfo.launchArguments = data.launchArguments;
-  if (libraryInfo.umu && Array.isArray(data.dllOverrides)) {
+  if (libraryInfo.umu) {
     libraryInfo.umu = {
       ...libraryInfo.umu,
-      dllOverrides:
-        data.dllOverrides.length > 0 ? data.dllOverrides : undefined,
+      ...(Array.isArray(data.dllOverrides) && {
+        dllOverrides:
+          data.dllOverrides.length > 0 ? data.dllOverrides : undefined,
+      }),
+      ...(typeof data.protonVersion === 'string' && {
+        // 'umu-proton' is umu's default; storing it explicitly is redundant.
+        protonVersion:
+          data.protonVersion === 'umu-proton' ? undefined : data.protonVersion,
+      }),
     };
   }
   window.electronAPI.fs.write(

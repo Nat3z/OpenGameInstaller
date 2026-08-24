@@ -12,6 +12,10 @@ import {
   launchGameFromLibrary,
 } from '@/electron/handlers/handler.library.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
+import {
+  isGamescopeSession,
+  tagWindowForGamescope,
+} from '@/electron/lib/gamescope.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
 import { RendererEventReadiness } from '@/electron/lib/renderer-event-readiness.js';
 import {
@@ -143,6 +147,13 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
 }
 
 export const VERSION = app.getVersion();
+
+// Embedded gamescope only shows XWayland windows it can classify, so pin
+// Chromium to X11 there; must run before app 'ready' to take effect.
+// (ozone-platform-hint was removed in Electron 40 — use ozone-platform.)
+if (isGamescopeSession()) {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+}
 
 // check if NixOS using command -v nixos-rebuild
 logger.sync.info('continuing launch...');
@@ -443,6 +454,9 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
       mainWindow.setFullScreen(true);
     }
     mainWindow?.show();
+    // Game Mode won't display an untagged Chromium window; tag after show so
+    // the X11 window exists.
+    if (mainWindow) void tagWindowForGamescope(mainWindow);
   });
 }
 

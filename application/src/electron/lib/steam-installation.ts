@@ -9,9 +9,13 @@ import {
 } from '@ogi-sdk/errors';
 import { Context, Effect, Exit, Layer } from 'effect';
 import { readShortcuts } from '@/electron/lib/steam-shortcuts.js';
-import type { BinaryVdfObject } from '@/electron/lib/steam-vdf.js';
+import type {
+  BinaryVdfObject,
+  TextVdfObject,
+} from '@/electron/lib/steam-vdf.js';
 import {
   parseLoginUsers,
+  parseTextVdf,
   serializeBinaryVdf,
 } from '@/electron/lib/steam-vdf.js';
 
@@ -98,6 +102,107 @@ export function getSteamRootCandidates(
       candidates.filter((candidate): candidate is string => Boolean(candidate))
     ),
   ];
+}
+
+export interface SteamCompatibilityTool {
+  id: string;
+  name: string;
+  /** Absolute path to the tool's install directory, usable as umu's PROTONPATH. */
+  installPath: string;
+}
+
+/**
+ * Derive Steam's internal compat tool name from an official Proton install
+ * directory. A ".0" minor version is dropped, matching Steam's naming:
+ * "Proton - Experimental" → proton_experimental, "Proton 9.0 (Beta)" →
+ * proton_9, "Proton 6.3" → proton_63, "Proton 5.13" → proton_513.
+ */
+const officialProtonToolId = (directoryName: string): string | undefined => {
+  const name = directoryName.toLowerCase();
+  if (!name.startsWith('proton')) return undefined;
+  if (name.includes('experimental')) return 'proton_experimental';
+  if (name.includes('hotfix')) return 'proton_hotfix';
+  const version = /(\d+)\.(\d+)/.exec(name);
+  if (!version) return undefined;
+  const [, major, minor] = version;
+  return minor === '0' ? `proton_${major}` : `proton_${major}${minor}`;
+};
+
+const listDirectories = (parent: string): string[] => {
+  try {
+    return fs
+      .readdirSync(parent, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * List the compat tools installed across all Steam roots by reading the
+ * filesystem: official Proton builds under steamapps/common and custom tools
+ * (GE-Proton etc.) registered through compatibilitytools.d manifests.
+ */
+export function listSteamCompatibilityTools(
+  candidates = getSteamRootCandidates()
+): SteamCompatibilityTool[] {
+  const tools = new Map<string, SteamCompatibilityTool>();
+  for (const root of candidates) {
+    const commonDir = path.join(root, 'steamapps', 'common');
+    for (const directory of listDirectories(commonDir)) {
+      const id = officialProtonToolId(directory);
+      if (id && !tools.has(id))
+        tools.set(id, {
+          id,
+          name: directory,
+          installPath: path.join(commonDir, directory),
+        });
+    }
+    const customDir = path.join(root, 'compatibilitytools.d');
+    for (const directory of listDirectories(customDir)) {
+      const manifestPath = path.join(
+        customDir,
+        directory,
+        'compatibilitytool.vdf'
+      );
+      try {
+        const manifest = parseTextVdf(fs.readFileSync(manifestPath, 'utf8'));
+        const definitions = manifest.get('compatibilitytools');
+        const compatTools =
+          definitions instanceof Map
+            ? definitions.get('compat_tools')
+            : undefined;
+        if (!(compatTools instanceof Map)) continue;
+        for (const [id, definition] of compatTools as TextVdfObject) {
+          if (tools.has(id)) continue;
+          const displayName =
+            definition instanceof Map
+              ? definition.get('display_name')
+              : undefined;
+          const installPath =
+            definition instanceof Map
+              ? definition.get('install_path')
+              : undefined;
+          tools.set(id, {
+            id,
+            name: typeof displayName === 'string' ? displayName : id,
+            // install_path in the manifest is relative to the manifest's directory.
+            installPath: path.resolve(
+              customDir,
+              directory,
+              typeof installPath === 'string' ? installPath : '.'
+            ),
+          });
+        }
+      } catch {
+        // Skip missing or unparseable manifests rather than failing the listing.
+      }
+    }
+  }
+  return [...tools.values()].sort((left, right) =>
+    left.name.localeCompare(right.name)
+  );
 }
 
 const listSteamUsersSync = (root: string): SteamUser[] => {

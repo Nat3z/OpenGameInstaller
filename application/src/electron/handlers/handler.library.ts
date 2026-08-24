@@ -275,7 +275,9 @@ export function launchGameFromLibrary(
           type: 'info',
         });
       }
-      // The wrapper cannot yet distinguish the selected game's exit from Steam's.
+      // The wrapper cannot observe the game's exit, so this is a hand-off:
+      // resolve the launch immediately instead of pinning the UI on PLAYING.
+      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
       return { success: true };
     }
 
@@ -807,13 +809,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             process.platform === 'darwin' &&
             data.launchExecutable.toLowerCase().endsWith('.exe')
           ) {
+            // Persist first so a runtime failure still leaves the game in
+            // the library where setup can be retried.
+            saveLibraryInfo(data.appID, data);
+            addToInternalsApps(data.appID);
             const setupResult = yield* Effect.either(
               Effect.gen(function* () {
                 const runtime = yield* SikarugirRuntime;
                 const setupState = yield* runtime.setupState;
-
-                saveLibraryInfo(data.appID, data);
-                addToInternalsApps(data.appID);
 
                 if (setupState.state === 'steam-login-required') {
                   return 'setup-steam-login-required' as const;
@@ -932,6 +935,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             loadLibraryInfo(data.appID)
           );
           if (!existing) return 'app-not-found';
+          // Captured before Object.assign mutates `existing` via `appData`.
+          const previousExecutablePath = path.resolve(
+            existing.cwd,
+            existing.launchExecutable
+          );
+          const previousWorkingDirectory = path.resolve(existing.cwd);
 
           const requestedUmu =
             data.umu ??
@@ -991,31 +1000,50 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           }
 
           saveLibraryInfo(data.appID, appData);
-          if (
-            process.platform === 'darwin' &&
-            existing.sikarugir &&
-            data.launchExecutable.toLowerCase().endsWith('.exe')
-          ) {
-            const shortcutUpdate = yield* Effect.either(
-              upsertSikarugirShortcut(appData).pipe(
-                Effect.provide(SikarugirRuntimeLive)
-              )
-            );
-            if (shortcutUpdate._tag === 'Left') {
-              const message = formatError(shortcutUpdate.left);
-              logger.sync.error(
-                `[update] Could not update the Windows Steam shortcut: ${message}`
+          if (process.platform === 'darwin' && existing.sikarugir) {
+            if (data.launchExecutable.toLowerCase().endsWith('.exe')) {
+              const shortcutUpdate = yield* Effect.either(
+                upsertSikarugirShortcut(appData).pipe(
+                  Effect.provide(SikarugirRuntimeLive)
+                )
               );
-              // Drop the stale shortcut metadata so the next Play re-inserts
-              // it from the updated paths instead of launching the old ones.
+              if (shortcutUpdate._tag === 'Left') {
+                const message = formatError(shortcutUpdate.left);
+                logger.sync.error(
+                  `[update] Could not update the Windows Steam shortcut: ${message}`
+                );
+                // Drop the stale shortcut metadata so the next Play re-inserts
+                // it from the updated paths instead of launching the old ones.
+                delete appData.sikarugir;
+                saveLibraryInfo(data.appID, appData);
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: `The game was updated, but its Windows Steam shortcut could not be updated: ${message}`,
+                    gameId: data.appID,
+                  })
+                );
+              }
+            } else {
+              // The update switched the game to a native executable: retire
+              // the Windows Steam shortcut and its metadata.
+              const shortcutRemoval = yield* Effect.either(
+                Effect.gen(function* () {
+                  const runtime = yield* SikarugirRuntime;
+                  yield* runtime.removeShortcut({
+                    gameId: existing.appID,
+                    appName: existing.name,
+                    executablePath: previousExecutablePath,
+                    workingDirectory: previousWorkingDirectory,
+                  });
+                }).pipe(Effect.provide(SikarugirRuntimeLive))
+              );
+              if (shortcutRemoval._tag === 'Left') {
+                logger.sync.warn(
+                  `[update] Could not remove the Windows Steam shortcut: ${formatError(shortcutRemoval.left)}`
+                );
+              }
               delete appData.sikarugir;
               saveLibraryInfo(data.appID, appData);
-              return yield* Effect.fail(
-                new LibraryError({
-                  message: `The game was updated, but its Windows Steam shortcut could not be updated: ${message}`,
-                  gameId: data.appID,
-                })
-              );
             }
           }
           return 'success';

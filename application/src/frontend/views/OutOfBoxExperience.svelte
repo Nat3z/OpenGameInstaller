@@ -270,6 +270,7 @@ let windowsSupport = $state<WindowsSupportStatus | null>(null);
 let homebrewHandoffActive = $state(false);
 let homebrewPollTimer: ReturnType<typeof setInterval> | null = null;
 let rosettaBusy = $state(false);
+let rosettaPollTimer: ReturnType<typeof setInterval> | null = null;
 let sikarugirBusy = $state(false);
 let sikarugirError = $state('');
 let provisionState = $state<SikarugirProvisionState | null>(null);
@@ -331,6 +332,10 @@ function stopHomebrewPoll() {
 }
 
 async function beginHomebrewInstall() {
+  // Marked active up front so a second click cannot start a parallel
+  // Terminal hand-off and orphan the first poll timer.
+  if (homebrewHandoffActive || homebrewPollTimer) return;
+  homebrewHandoffActive = true;
   let launched = false;
   try {
     launched = await runFrontendEffect(electronRpc.oobe.startHomebrewInstall());
@@ -346,7 +351,6 @@ async function beginHomebrewInstall() {
     });
     return;
   }
-  homebrewHandoffActive = true;
   homebrewPollTimer = setInterval(async () => {
     try {
       const result = await runFrontendEffect(electronRpc.oobe.pollHomebrew());
@@ -360,16 +364,40 @@ async function beginHomebrewInstall() {
   }, 3000);
 }
 
+function stopRosettaPoll() {
+  if (rosettaPollTimer) {
+    clearInterval(rosettaPollTimer);
+    rosettaPollTimer = null;
+  }
+  rosettaBusy = false;
+}
+
 async function beginRosettaInstall() {
+  if (rosettaBusy || rosettaPollTimer) return;
   rosettaBusy = true;
+  let result: 'ready' | 'action-required' | 'unsupported' = 'action-required';
   try {
-    await runFrontendEffect(electronRpc.oobe.installRosetta());
+    result = await runFrontendEffect(electronRpc.oobe.installRosetta());
     await refreshWindowsSupport();
   } catch (error: unknown) {
     logger.sync.error('Failed to install Rosetta:', error);
-  } finally {
     rosettaBusy = false;
+    return;
   }
+  if (result !== 'action-required') {
+    rosettaBusy = false;
+    return;
+  }
+  // The Terminal hand-off outlives the RPC, so keep polling until the
+  // softwareupdate install finishes instead of re-showing the button.
+  rosettaPollTimer = setInterval(async () => {
+    try {
+      await refreshWindowsSupport();
+      if (windowsSupport?.rosetta.status === 'ready') stopRosettaPoll();
+    } catch (error: unknown) {
+      logger.sync.error('Rosetta poll failed:', error);
+    }
+  }, 3000);
 }
 
 async function beginSikarugirInstall() {
@@ -399,6 +427,7 @@ async function beginSikarugirInstall() {
 
 function finishWindowsSupport() {
   stopHomebrewPoll();
+  stopRosettaPoll();
   oobeLog.update((currentLog) => ({ ...currentLog, status: 'idle', logs: [] }));
   stage = 2;
 }
@@ -699,6 +728,7 @@ onDestroy(() => {
   // Clean up event listener
   document.removeEventListener('oobe:log', handleOOBELog);
   stopHomebrewPoll();
+  stopRosettaPoll();
 });
 </script>
 

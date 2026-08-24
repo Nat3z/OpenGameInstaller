@@ -115,14 +115,18 @@ const installRedistributablesWithSikarugir = (
     if (result === 'success') {
       const updatedInfo = loadLibraryInfo(appInfo.appID);
       if (updatedInfo) {
-        delete updatedInfo.redistributables;
-        saveLibraryInfo(appInfo.appID, updatedInfo);
+        // Insert the shortcut before clearing redistributables so a failure
+        // here leaves the prerequisite list intact for the next retry.
         const shortcutResult = yield* Effect.either(
           upsertSikarugirShortcut(updatedInfo)
         );
         if (shortcutResult._tag === 'Left') {
           result = 'failed';
           finalError = `Could not insert the Windows Steam shortcut: ${formatError(shortcutResult.left)}`;
+        } else {
+          const withShortcut = shortcutResult.right;
+          delete withShortcut.redistributables;
+          saveLibraryInfo(appInfo.appID, withShortcut);
         }
       } else {
         result = 'failed';
@@ -162,11 +166,13 @@ const installRedistributables = (
         failedCount: 0,
         overallProgress: 100,
         result: 'failed',
-        error: 'Redistributable installation is only supported on Linux',
+        error:
+          'Redistributable installation is only supported on Linux and macOS',
       });
       return yield* Effect.fail(
         new PlatformError({
-          message: 'Redistributable installation is only supported on Linux',
+          message:
+            'Redistributable installation is only supported on Linux and macOS',
           platform: process.platform,
         })
       );

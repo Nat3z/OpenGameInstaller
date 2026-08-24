@@ -249,7 +249,9 @@ const executeAbsolute = (
       [...args],
       {
         env: { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' },
-        maxBuffer: 1024 * 1024,
+        // Sized for the largest caller (`ps -ax -o command=`), whose full
+        // command lines can exceed the 1 MiB execFile default.
+        maxBuffer: 16 * 1024 * 1024,
       },
       (cause, stdout, stderr) => {
         if (cause) {
@@ -480,16 +482,18 @@ const withStoppedSteam = <A, E>(
 ): Effect.Effect<A, E | SikarugirError> =>
   Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
+      const wasRunning = yield* restore(readWindowsSteamRunning());
       yield* restore(
         wrapper.launcher.quit.pipe(Effect.andThen(waitForWindowsSteamExit()))
       );
       const result = yield* Effect.exit(restore(operation));
-      const restart = yield* Effect.exit(
-        wrapper.launcher.run(WINDOWS_STEAM_EXECUTABLE)
-      );
+      // Only bring Steam back if the user had it open before the mutation.
+      const restart = wasRunning
+        ? yield* Effect.exit(wrapper.launcher.run(WINDOWS_STEAM_EXECUTABLE))
+        : undefined;
       if (result._tag === 'Failure')
         return yield* Effect.failCause(result.cause);
-      if (restart._tag === 'Failure') {
+      if (restart !== undefined && restart._tag === 'Failure') {
         return yield* Effect.failCause(restart.cause);
       }
       return result.value;

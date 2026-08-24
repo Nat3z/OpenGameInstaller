@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { SikarugirError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { SikarugirRuntime } from '@/electron/lib/sikarugir/index.js';
 import type { SikarugirRuntimeError } from '@/electron/lib/sikarugir/runtime.js';
@@ -31,6 +32,14 @@ export const upsertSikarugirShortcut = (
         windowsWorkingDirectory,
       },
     };
-    saveLibraryInfo(updated.appID, updated);
+    yield* Effect.try({
+      try: () => saveLibraryInfo(updated.appID, updated),
+      catch: (cause) =>
+        new SikarugirError({
+          message: 'Could not persist the game library metadata',
+          step: 'library-metadata',
+          cause,
+        }),
+    });
     return updated;
   });

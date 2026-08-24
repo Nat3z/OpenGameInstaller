@@ -37,6 +37,55 @@ export const OperatingSystem = Schema.Literal('darwin', 'linux', 'win32');
 
 export type OperatingSystem = typeof OperatingSystem.Type;
 
+export type ToolSetupStatus =
+  | 'ready'
+  | 'missing'
+  | 'action-required'
+  | 'unsupported';
+
+export interface WindowsSupportStatus {
+  readonly platform: 'darwin' | 'other';
+  readonly homebrew: {
+    readonly status: ToolSetupStatus;
+    readonly path?: string;
+  };
+  readonly rosetta: { readonly status: ToolSetupStatus };
+  readonly sikarugir: {
+    readonly status: ToolSetupStatus;
+    readonly path?: string;
+  };
+}
+
+export type HomebrewPollResult =
+  | { readonly status: 'ready'; readonly path: string }
+  | { readonly status: 'missing' | 'unsupported' };
+
+export interface SikarugirInstallResult {
+  readonly success: boolean;
+  readonly message: string;
+}
+
+/** Wrapper provisioning progress: mirrors SikarugirSetupState plus non-darwin. */
+export interface SikarugirProvisionState {
+  readonly state:
+    | 'unsupported'
+    | 'wrapper-missing'
+    | 'prefix-missing'
+    | 'steam-not-installed'
+    | 'steam-login-required'
+    | 'ready';
+  readonly message?: string;
+  readonly wrapperPath?: string;
+  readonly steamAccountIds?: readonly string[];
+  readonly selectedSteamAccountId?: string;
+  readonly steamAccountSelectionRequired?: boolean;
+}
+
+export interface SikarugirActionResult {
+  readonly success: boolean;
+  readonly message: string;
+}
+
 export class ElectronRpcError extends Schema.TaggedError<ElectronRpcError>()(
   'ElectronRpcError',
   {
@@ -171,7 +220,9 @@ export const ElectronRpc = {
         'setup-success',
         'setup-redistributables-failed',
         'setup-redistributables-success',
-        'setup-prefix-required'
+        'setup-prefix-required',
+        'setup-steam-login-required',
+        'setup-windows-support-required'
       )
     ),
     getAllApps: rpc('app.getAllApps', [], opaque<LibraryInfo[]>()),
@@ -476,6 +527,48 @@ export const ElectronRpc = {
       'oobe.setSteamGridDBKey',
       [Schema.String],
       Schema.Boolean
+    ),
+    getWindowsSupportStatus: rpc(
+      'oobe.getWindowsSupportStatus',
+      [],
+      opaque<WindowsSupportStatus>()
+    ),
+    startHomebrewInstall: rpc('oobe.startHomebrewInstall', [], Schema.Boolean),
+    pollHomebrew: rpc('oobe.pollHomebrew', [], opaque<HomebrewPollResult>()),
+    installRosetta: rpc(
+      'oobe.installRosetta',
+      [],
+      Schema.Literal('ready', 'action-required', 'unsupported')
+    ),
+    installSikarugir: rpc(
+      'oobe.installSikarugir',
+      [],
+      opaque<SikarugirInstallResult>()
+    ),
+    getSikarugirSetupState: rpc(
+      'oobe.getSikarugirSetupState',
+      [],
+      opaque<SikarugirProvisionState>()
+    ),
+    createSikarugirPrefix: rpc(
+      'oobe.createSikarugirPrefix',
+      [],
+      opaque<SikarugirActionResult>()
+    ),
+    installWindowsSteam: rpc(
+      'oobe.installWindowsSteam',
+      [],
+      opaque<SikarugirActionResult>()
+    ),
+    launchWindowsSteam: rpc(
+      'oobe.launchWindowsSteam',
+      [],
+      opaque<SikarugirActionResult>()
+    ),
+    selectSikarugirSteamAccount: rpc(
+      'oobe.selectSikarugirSteamAccount',
+      [Schema.String],
+      opaque<SikarugirActionResult>()
     ),
   },
   powerSave: {

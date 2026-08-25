@@ -170,7 +170,7 @@ addon.onTask('download-test', async (task) => {
     name: 'Download API test',
     files: [
       {
-        link: 'https://raw.githubusercontent.com/Nat3z/OpenGameInstaller/main/README.md',
+        link: 'https://raw.githubusercontent.com/Nat3z/OpenGameInstaller/872c79ac7f975cbd40ef75178cd134517a0248d7/README.md',
         path: 'ogi-download-test/test-file.bin',
       },
     ],

@@ -21,6 +21,7 @@ import {
   getStoredValue,
   refreshCached,
 } from '@/electron/manager/manager.config.js';
+import { cancelQueuedDownload } from '@/electron/rpc/queue-cancel.js';
 import { consumeDownloadReplayEvents } from '@/lib/download-handshake.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -48,7 +49,6 @@ type PendingRequest = { disconnected: boolean };
 
 let context: AddonDownloadContext | undefined;
 const ownedDownloads = new Map<string, Set<string>>();
-const downloadServices = new Map<string, DownloadServiceShape>();
 
 export function setAddonDownloadContext(
   service: DownloadServiceShape,
@@ -132,17 +132,15 @@ function untrackDownload(addonID: string, downloadID: string): void {
   const owned = ownedDownloads.get(addonID);
   owned?.delete(downloadID);
   if (owned?.size === 0) ownedDownloads.delete(addonID);
-  downloadServices.delete(downloadID);
 }
 
 function abortOwnedDownload(addonID: string, downloadID: string): void {
   if (!ownedDownloads.get(addonID)?.has(downloadID)) return;
-  const service = downloadServices.get(downloadID);
-  if (!service) return;
-  void runEffectBoundary(
-    service
-      .abort(downloadID)
-      .pipe(Effect.catchTag('DownloadNotActive', () => Effect.void))
+  // Route through the queue-cancel handler (same path as UI cancel) so
+  // queued-but-not-processing downloads are removed from the queue instead
+  // of being stranded by a direct service abort.
+  void cancelQueuedDownload(downloadID).catch((error) =>
+    logger.sync.error('[addon-download] Failed to abort download:', error)
   );
 }
 
@@ -175,6 +173,17 @@ function handleDownloadRequest(
   }
 
   let downloadID: string | undefined;
+  let ackDelivered = false;
+  const pendingUpdates: Array<(id: string) => AddonDownloadStatusUpdate> = [];
+  const emitStatus = (
+    make: (id: string) => AddonDownloadStatusUpdate
+  ): void => {
+    if (ackDelivered && downloadID) {
+      sendStatus(server, addonID, make(downloadID));
+    } else {
+      pendingUpdates.push(make);
+    }
+  };
   let lastStatus: AddonDownloadStatus | undefined;
   // Terminal renderer events (download-complete/error) also buffer in the
   // handshake replay map; frontend services normally consume them after
@@ -190,13 +199,12 @@ function handleDownloadRequest(
     }
   };
   const sendDedupedStatus = (
-    id: string,
     status: AddonDownloadStatus,
     error?: string
   ): void => {
     if (lastStatus === status) return;
     lastStatus = status;
-    sendStatus(server, addonID, { id, kind: 'status', status, error });
+    emitStatus((id) => ({ id, kind: 'status', status, error }));
   };
   const mapStatus = (
     status: DownloadStatus
@@ -241,28 +249,26 @@ function handleDownloadRequest(
 
     if (pendingRequest.disconnected) {
       yield* replyWith(reply, { error: 'addon disconnected' });
+      pendingUpdates.length = 0;
       return;
     }
 
     const handshake = yield* activeContext.service.start(jobs, undefined, {
       preservePartialFilesOnCancel: true,
       onProgress: (progress) => {
-        if (!downloadID) return;
-        sendStatus(server, addonID, {
-          id: downloadID,
+        emitStatus((id) => ({
+          id,
           kind: 'progress',
           progress: progress.progress,
           downloadSpeed: progress.downloadSpeed,
           queuePosition: progress.queuePosition,
           part: progress.part,
           totalParts: progress.totalParts,
-        });
+        }));
       },
       onStatusChange: (status) => {
         const addonStatus = mapStatus(status);
-        if (downloadID && addonStatus) {
-          sendDedupedStatus(downloadID, addonStatus);
-        }
+        if (addonStatus) sendDedupedStatus(addonStatus);
       },
       onTerminal: (id, outcome, error) => {
         const terminalStatus: AddonDownloadStatus =
@@ -271,7 +277,7 @@ function handleDownloadRequest(
             : outcome === 'failed'
               ? 'error'
               : 'cancelled';
-        sendDedupedStatus(id, terminalStatus, error);
+        sendDedupedStatus(terminalStatus, error);
         untrackDownload(addonID, id);
         // Card already live: renderer got the terminal IPC directly, so the
         // buffered copy is stale. Pre-card terminals stay buffered for the
@@ -286,6 +292,7 @@ function handleDownloadRequest(
         .abort(handshake.id)
         .pipe(Effect.catchTag('DownloadNotActive', () => Effect.void));
       yield* replyWith(reply, { error: 'addon disconnected' });
+      pendingUpdates.length = 0;
       drainReplayEvents(handshake.id, false);
       return;
     }
@@ -293,6 +300,7 @@ function handleDownloadRequest(
       yield* replyWith(reply, {
         error: handshake.error ?? 'download failed to start',
       });
+      pendingUpdates.length = 0;
       drainReplayEvents(handshake.id, false);
       return;
     }
@@ -301,6 +309,7 @@ function handleDownloadRequest(
         .abort(handshake.id)
         .pipe(Effect.catchTag('DownloadNotActive', () => Effect.void));
       yield* replyWith(reply, { error: 'download queue position unavailable' });
+      pendingUpdates.length = 0;
       drainReplayEvents(handshake.id, false);
       return;
     }
@@ -309,10 +318,9 @@ function handleDownloadRequest(
       const owned = ownedDownloads.get(addonID) ?? new Set<string>();
       owned.add(handshake.id);
       ownedDownloads.set(addonID, owned);
-      downloadServices.set(handshake.id, activeContext.service);
     }
     if (handshake.status === 'queued' || handshake.status === 'downloading') {
-      sendDedupedStatus(handshake.id, handshake.status);
+      sendDedupedStatus(handshake.status);
     }
 
     const payload: AddonDownloadCardPayload = {
@@ -340,9 +348,20 @@ function handleDownloadRequest(
       id: handshake.id,
       queuePosition: handshake.queuePosition,
     });
+    ackDelivered = true;
+    for (const make of pendingUpdates) {
+      sendStatus(server, addonID, make(handshake.id));
+    }
+    pendingUpdates.length = 0;
   }).pipe(
     Effect.catchAllCause((cause) =>
-      replyWith(reply, { error: formatError(Cause.squash(cause)) })
+      Effect.sync(() => {
+        pendingUpdates.length = 0;
+      }).pipe(
+        Effect.zipRight(
+          replyWith(reply, { error: formatError(Cause.squash(cause)) })
+        )
+      )
     ),
     Effect.ensuring(Effect.sync(onSettled))
   );
@@ -385,7 +404,6 @@ export function attachAddonDownloadBridge(server: AddonServer): void {
     const downloads = Array.from(ownedDownloads.get(addonID) ?? []);
     for (const downloadID of downloads) {
       abortOwnedDownload(addonID, downloadID);
-      downloadServices.delete(downloadID);
     }
     ownedDownloads.delete(addonID);
   });

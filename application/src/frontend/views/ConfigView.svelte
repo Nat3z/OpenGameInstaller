@@ -215,6 +215,7 @@ async function resetMarketplaceSources() {
     >
       <div class="absolute inset-0 flex flex-row gap-4 h-12 z-10">
         <button
+          data-selected={$view === 'my-addons'}
           onclick={() => view.set('my-addons')}
           class="h-full flex-1 border-none text-accent-dark font-archivo rounded-lg bg-accent-lighter data-[selected=true]:bg-accent-light shadow-md text-lg hover:bg-accent-light transition-colors"
           >My Addons</button

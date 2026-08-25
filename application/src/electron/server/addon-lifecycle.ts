@@ -39,6 +39,7 @@ export function deleteInstalledAddon(
     if (!client.addonInfo) {
       return { success: false, message: 'Client has no addon info' };
     }
+
     if (!client.addonLink || client.addonLink.startsWith('local@')) {
       return {
         success: false,

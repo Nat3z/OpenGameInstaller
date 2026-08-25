@@ -171,7 +171,9 @@ async function processDownloadComplete(
   const filesNotToMove = [
     ...(downloadedItem.files ?? []).map((file) => file.name),
     basename(downloadedItem.downloadPath),
-    ...(isTorrent ? ['.torrent'] : []),
+    ...(isTorrent
+      ? [basename(downloadedItem.downloadPath) + '.torrent']
+      : []),
     'old_files',
   ];
   const filesToMove = currentFiles.filter(

@@ -76,7 +76,7 @@ function checkForAppUpdates() {
                   message: `Failed to check for updates: ${formatError(cause)}`,
                 }),
             });
-            if (update.available) {
+            if (runId === updateCheckRunId && update.available) {
               updatesManager.addAppUpdate({
                 appID: app.appID,
                 name: addon.name,

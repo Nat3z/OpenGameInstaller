@@ -1174,8 +1174,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               if (shortcutRemoval._tag === 'Left') {
                 // Keep the metadata so removeApp or a later update retries
                 // the cleanup instead of orphaning the shortcut.
+                const message = formatError(shortcutRemoval.left);
                 logger.sync.warn(
-                  `[update] Could not remove the Windows Steam shortcut: ${formatError(shortcutRemoval.left)}`
+                  `[update] Could not remove the Windows Steam shortcut: ${message}`
+                );
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: `The game was updated, but its Windows Steam shortcut could not be removed: ${message}`,
+                    gameId: data.appID,
+                  })
                 );
               } else {
                 delete appData.sikarugir;

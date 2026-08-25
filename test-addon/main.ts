@@ -47,6 +47,14 @@ addon.on('configure', (config) =>
         .setButtonText('Run Custom Task')
         .setTaskName('custom-task-name')
     )
+    .addActionOption((option) =>
+      option
+        .setDisplayName('Download API Test')
+        .setName('downloadTest')
+        .setDescription('Enqueue and track a download from the addon SDK')
+        .setButtonText('Run Download Test')
+        .setTaskName('download-test')
+    )
     .addNumberOption((option) =>
       option
         .setDisplayName('Test Number Range Option')
@@ -155,6 +163,26 @@ addon.onTask('task-test', (task) => {
   setTimeout(() => {
     task.complete();
   }, 1000);
+});
+
+addon.onTask('download-test', async (task) => {
+  const download = await addon.download({
+    name: 'Download API test',
+    files: [
+      {
+        link: 'https://raw.githubusercontent.com/Nat3z/OpenGameInstaller/main/README.md',
+        path: 'ogi-download-test/test-file.bin',
+      },
+    ],
+  });
+  download.on('progress', (progress) => {
+    task.log(`Download progress: ${JSON.stringify(progress)}`);
+  });
+  download.on('status', (status) => {
+    task.log(`Download status: ${JSON.stringify(status)}`);
+  });
+  await download.wait();
+  task.complete();
 });
 
 addon.on('search', ({ storefront, appID, for: searchFor }, event) => {

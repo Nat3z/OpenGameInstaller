@@ -709,7 +709,9 @@ onDestroy(() => {
                       clip-rule="evenodd"
                     ></path>
                   </svg>
-                  Setup Complete
+                  {download.isAddonDownload
+                    ? 'Download Complete'
+                    : 'Setup Complete'}
                 </div>
               {:else if download.status === 'error'}
                 <div class="status-badge error">

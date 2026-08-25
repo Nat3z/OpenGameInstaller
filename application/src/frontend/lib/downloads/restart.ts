@@ -167,6 +167,8 @@ export function restartDownload(
   return Effect.gen(function* () {
     const latest = getDownloadItem(pausedState.id);
     if (!latest) return false;
+    // Addon-enqueued downloads can only resume in place; the addon owns the links.
+    if (latest.isAddonDownload) return false;
 
     const download = { ...pausedState.downloadInfo, ...latest };
     newDownloadId = Math.random().toString(36).substring(7);

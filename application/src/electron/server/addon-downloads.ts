@@ -299,6 +299,10 @@ function handleDownloadRequest(
       return;
     }
     if (handshake.status === 'error') {
+      // Usually a no-op (the download already cleaned itself up), but a
+      // handshake timeout can report an error while the queued fiber is
+      // still alive — cancel so it isn't stranded without a handle.
+      yield* Effect.promise(() => cancelDownload(handshake.id));
       yield* replyWith(reply, {
         error: handshake.error ?? 'download failed to start',
       });

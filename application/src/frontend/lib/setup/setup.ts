@@ -17,6 +17,7 @@ import { getApp } from '@/frontend/lib/core/library';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
+import { toSerializable } from '@/frontend/lib/setup/serialize';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
   createNotification,
@@ -88,9 +89,9 @@ export function createSetupPayload(
     ...(currentLibraryInfo ? { currentLibraryInfo } : {}),
     multiPartFiles:
       downloadedItem.downloadType === 'direct'
-        ? structuredClone(downloadedItem.files ?? [])
+        ? toSerializable(downloadedItem.files ?? [])
         : [],
-    manifest: structuredClone(downloadedItem.manifest ?? {}),
+    manifest: toSerializable(downloadedItem.manifest ?? {}),
     ...additionalData,
   } as SetupCommandData & { addonID: string };
 }

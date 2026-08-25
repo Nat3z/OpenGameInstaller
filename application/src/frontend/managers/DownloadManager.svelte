@@ -122,8 +122,12 @@ async function processDownloadComplete(
   const filesNotToMove = [
     ...(downloadedItem.files ?? []).map((file) => file.name),
     basename(downloadedItem.downloadPath),
+    ...(isTorrent ? ['.torrent'] : []),
     'old_files',
   ];
+  const filesToMove = currentFiles.filter(
+    (file) => !filesNotToMove.includes(file)
+  );
   logger.sync.info('Current files: ', currentFiles);
   logger.sync.info('downloadedItem.files: ', downloadedItem.files);
   logger.sync.info('outputDir: ', outputDir);
@@ -133,23 +137,21 @@ async function processDownloadComplete(
     downloadedItem.downloadPath
   );
 
-  if (shouldStageOldFiles && currentFiles.length > 0) {
+  if (shouldStageOldFiles && filesToMove.length > 0) {
     dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
     await window.electronAPI.fs.mkdir(outputDir + '/old_files');
     stagedOldFiles = true;
 
     logger.sync.info('Files not to move: ', filesNotToMove);
-    for (const file of currentFiles) {
-      if (!filesNotToMove.includes(file)) {
-        const result = await runFrontendEffect(
-          electronRpc.fs.move({
-            source: outputDir + '/' + file,
-            destination: outputDir + '/old_files/' + file,
-          })
-        );
-        if (result !== 'success') {
-          logger.sync.error('Failed to move file: ', file);
-        }
+    for (const file of filesToMove) {
+      const result = await runFrontendEffect(
+        electronRpc.fs.move({
+          source: outputDir + '/' + file,
+          destination: outputDir + '/old_files/' + file,
+        })
+      );
+      if (result !== 'success') {
+        logger.sync.error('Failed to move file: ', file);
       }
     }
     dispatchSetupEvent('log', downloadID, ['Moved all files']);
@@ -468,6 +470,14 @@ async function processDownloadComplete(
     }
   } catch (error) {
     logger.sync.error('Error setting up app: ', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    dispatchSetupEvent('log', downloadedItem.id, [
+      `Setup failed: ${errorMessage}`,
+    ]);
+    updateDownloadStatus(downloadedItem.id, {
+      status: 'error',
+      error: errorMessage,
+    });
     await revertOldFiles();
   } finally {
     processingDownloadCompletions.delete(downloadID);

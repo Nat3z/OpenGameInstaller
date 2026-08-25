@@ -3,6 +3,10 @@ import type {
   AddonClientToServerEventArgs,
   AddonClientToServerEventName,
   AddonClientToServerWebsocketMessage,
+  AddonDownloadAck,
+  AddonDownloadRequest,
+  AddonDownloadStatus,
+  AddonDownloadStatusUpdate,
   AddonNotificationMessage,
   AddonProtocolEventListenerTypes,
   AddonSDKLifecycleEventListenerTypes,
@@ -25,7 +29,7 @@ import {
   ValidationError,
 } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect, Layer, ManagedRuntime, Schema } from 'effect';
+import { Deferred, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import Fuse, { IFuseOptions } from 'fuse.js';
 import { Configuration, DefiniteConfig } from './config/Configuration';
 import { ConfigurationBuilder } from './config/ConfigurationBuilder';
@@ -44,6 +48,11 @@ export type {
   AddonClientToServerEventArgs,
   AddonClientToServerEventName,
   AddonClientToServerWebsocketMessage,
+  AddonDownloadAck,
+  AddonDownloadFile,
+  AddonDownloadRequest,
+  AddonDownloadStatus,
+  AddonDownloadStatusUpdate,
   AddonNotificationMessage,
   AddonProtocolEventListenerTypes,
   AddonSDKLifecycleEventListenerTypes,
@@ -73,6 +82,102 @@ export type {
 
 /** @deprecated Use {@link AddonNotificationMessage}. */
 export type Notification = AddonNotificationMessage;
+
+type AddonDownloadProgress = {
+  progress: number;
+  downloadSpeed: number;
+  queuePosition?: number;
+  part?: number;
+  totalParts?: number;
+};
+
+type AddonDownloadStatusEvent = {
+  status: AddonDownloadStatus;
+  error?: string;
+};
+
+export class AddonDownload {
+  public queuePosition: number;
+  private readonly progressListeners: Array<
+    (progress: AddonDownloadProgress) => void
+  > = [];
+  private readonly statusListeners: Array<
+    (status: AddonDownloadStatusEvent) => void
+  > = [];
+
+  public constructor(
+    public readonly id: string,
+    queuePosition: number,
+    private readonly completion: Deferred.Deferred<void, Error>,
+    private readonly sendAbort: () => Effect.Effect<void, unknown>,
+    private readonly schedule: EffectScheduler
+  ) {
+    this.queuePosition = queuePosition;
+  }
+
+  public on(
+    event: 'progress',
+    callback: (progress: AddonDownloadProgress) => void
+  ): this;
+  public on(
+    event: 'status',
+    callback: (status: AddonDownloadStatusEvent) => void
+  ): this;
+  public on(
+    event: 'progress' | 'status',
+    callback:
+      | ((progress: AddonDownloadProgress) => void)
+      | ((status: AddonDownloadStatusEvent) => void)
+  ): this {
+    if (event === 'progress') {
+      this.progressListeners.push(
+        callback as (progress: AddonDownloadProgress) => void
+      );
+    } else {
+      this.statusListeners.push(
+        callback as (status: AddonDownloadStatusEvent) => void
+      );
+    }
+    return this;
+  }
+
+  public wait(): Promise<void> {
+    return Effect.runPromise(Deferred.await(this.completion));
+  }
+
+  public abort(): void {
+    this.schedule(this.sendAbort());
+  }
+
+  public dispatch(update: AddonDownloadStatusUpdate): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      if (update.kind === 'progress') {
+        if (update.queuePosition !== undefined)
+          this.queuePosition = update.queuePosition;
+        const progress: AddonDownloadProgress = {
+          progress: update.progress,
+          downloadSpeed: update.downloadSpeed,
+          queuePosition: update.queuePosition,
+          part: update.part,
+          totalParts: update.totalParts,
+        };
+        this.progressListeners.forEach((listener) => listener(progress));
+        return;
+      }
+
+      if (update.status === 'completed') {
+        yield* Deferred.succeed(this.completion, undefined).pipe(Effect.asVoid);
+      } else if (update.status === 'error' || update.status === 'cancelled') {
+        yield* Deferred.fail(
+          this.completion,
+          new Error(update.error ?? update.status)
+        ).pipe(Effect.asVoid);
+      }
+      const status = { status: update.status, error: update.error };
+      this.statusListeners.forEach((listener) => listener(status));
+    });
+  }
+}
 
 /**
  * Addon SDK listener signatures. Protocol commands come from `addonProtocol` in
@@ -256,6 +361,52 @@ export default class OGIAddon {
     storefront: string
   ): Promise<BasicLibraryInfo[]> {
     return this.runPromise(this.searchGameEffect(query, storefront));
+  }
+
+  private downloadEffect(
+    request: AddonDownloadRequest
+  ): Effect.Effect<AddonDownload, AddonError> {
+    return Effect.gen(this, function* () {
+      const ack = yield* this.addonWSListener
+        .requestResponse<AddonDownloadAck>('download-request', request)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new AddonError({
+                message: formatError(error),
+                addonName: this.addonInfo.name,
+              })
+          )
+        );
+      if ('error' in ack) {
+        return yield* Effect.fail(
+          new AddonError({
+            message: ack.error,
+            addonName: this.addonInfo.name,
+          })
+        );
+      }
+      const completion = yield* Deferred.make<void, Error>();
+      const download = new AddonDownload(
+        ack.id,
+        ack.queuePosition,
+        completion,
+        () =>
+          this.addonWSListener
+            .send('download-action', {
+              downloadID: ack.id,
+              action: 'abort',
+            })
+            .pipe(Effect.asVoid),
+        (effect) => this.runBackground(effect)
+      );
+      yield* this.addonWSListener.registerDownload(download);
+      return download;
+    });
+  }
+
+  public download(request: AddonDownloadRequest): Promise<AddonDownload> {
+    return this.runPromise(this.downloadEffect(request));
   }
 
   /**
@@ -600,6 +751,11 @@ class OGIAddonWSListener {
   public readonly eventEmitter: events.EventEmitter;
   public readonly addon: OGIAddon;
   private configConnected = false;
+  private readonly downloads = new Map<string, AddonDownload>();
+  private readonly pendingDownloadUpdates = new Map<
+    string,
+    AddonDownloadStatusUpdate[]
+  >();
 
   private constructor(
     addon: OGIAddon,
@@ -737,6 +893,33 @@ class OGIAddonWSListener {
     return this.configConnected;
   }
 
+  public registerDownload(download: AddonDownload): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      this.downloads.set(download.id, download);
+      const buffered = this.pendingDownloadUpdates.get(download.id);
+      if (!buffered) return;
+      this.pendingDownloadUpdates.delete(download.id);
+      for (const update of buffered) {
+        yield* this.dispatchDownloadUpdate(download, update);
+      }
+    });
+  }
+
+  private dispatchDownloadUpdate(
+    download: AddonDownload,
+    update: AddonDownloadStatusUpdate
+  ): Effect.Effect<void> {
+    if (
+      update.kind === 'status' &&
+      (update.status === 'completed' ||
+        update.status === 'error' ||
+        update.status === 'cancelled')
+    ) {
+      this.downloads.delete(update.id);
+    }
+    return download.dispatch(update);
+  }
+
   private onOpen(): Effect.Effect<void, NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
       yield* logger.info('Connected to OGI Addon Server');
@@ -781,6 +964,7 @@ class OGIAddonWSListener {
       'catalog',
       'task-run',
       'launch-app',
+      'download-status',
     ];
     return Effect.forEach(
       protocolEvents,
@@ -796,6 +980,20 @@ class OGIAddonWSListener {
     message: AddonServerToClientWebsocketMessage
   ): Effect.Effect<void> {
     return Effect.gen(this, function* () {
+      if (message.event === 'download-status') {
+        const update = message.args as AddonDownloadStatusUpdate;
+        const download = this.downloads.get(update.id);
+        if (!download) {
+          // The ack fiber may not have registered the handle yet; buffer so
+          // registerDownload can replay these in order instead of dropping.
+          const buffered = this.pendingDownloadUpdates.get(update.id) ?? [];
+          buffered.push(update);
+          this.pendingDownloadUpdates.set(update.id, buffered);
+          return;
+        }
+        yield* this.dispatchDownloadUpdate(download, update);
+        return;
+      }
       const id = message.id;
       if (!id) {
         return yield* Effect.fail(

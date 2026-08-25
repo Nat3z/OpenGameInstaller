@@ -1,4 +1,5 @@
 import type {
+  AddonDownloadStatusUpdate,
   AddonNotificationMessage,
   AddonServerHostEventListeners,
   AddonServerHostEventName,
@@ -112,6 +113,22 @@ export class AddonServer {
   public getClient(id: string): AddonConnection | undefined {
     return this.clients.get(id);
   }
+
+  public sendDownloadStatus(
+    addonID: string,
+    update: AddonDownloadStatusUpdate
+  ): Effect.Effect<void> {
+    const connection = this.getClient(addonID);
+    return connection
+      ? connection.events.noResponse
+          .downloadStatus(update)
+          .pipe(Effect.asVoid, Effect.ignore)
+      : Effect.void;
+  }
+
+  public listenerCount(event: AddonServerEventName): number {
+    return this.eventEmitter.listenerCount(event);
+  }
   public addClient(id: string, connection: AddonConnection): void {
     this.clients.set(id, connection);
   }
@@ -206,11 +223,13 @@ export class AddonServer {
       const connection = yield* AddonConnection.make(ws, this.config, this);
       this.connections.add(connection);
       ws.on('close', () => {
+        const addonID = connection.addonInfo?.id;
         this.removeConnection(connection);
         this.eventEmitter.emit(
           'disconnect',
           `${connection.addonInfo?.name ?? 'Addon'} websocket closed`
         );
+        if (addonID) this.eventEmitter.emit('addon-disconnect', addonID);
       });
       const success = yield* connection.setupWebsocket();
       if (!success) {

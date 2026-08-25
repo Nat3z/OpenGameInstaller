@@ -131,6 +131,7 @@ export const addonEventAliases = [
   'game-details',
   'request-dl',
   'catalog',
+  'download-status',
 ].reduce(
   (aliases, event) => {
     aliases[toCamelCaseEvent(event)] = event as AddonServerToClientEventName;

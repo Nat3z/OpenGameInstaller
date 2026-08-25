@@ -1,5 +1,6 @@
 import type {
   AddonClientToServerEventArgs,
+  AddonDownloadAck,
   AddonNotificationMessage,
   ConfigurationFile,
   OGIAddonSDKEventListener,
@@ -198,6 +199,48 @@ const handleFlag: ClientMessageHandler = (context, message) =>
     }
   });
 
+const handleDownloadRequest: ClientMessageHandler = (context, message) =>
+  Effect.gen(function* () {
+    if (!requireAuthenticated(context, 'download-request')) return;
+    if (!requireMessageId(context, 'download-request', message.id)) return;
+    if (context.server.listenerCount('download-request') === 0) {
+      yield* context.connection.events
+        .response(message.id, {
+          error: 'download-request not supported by host',
+        } satisfies AddonDownloadAck)
+        .pipe(Effect.asVoid);
+      return;
+    }
+    const request =
+      message.args as AddonClientToServerEventArgs['download-request'];
+    yield* context.server.emitEffect(
+      'download-request',
+      context.connection.addonInfo!.id,
+      request,
+      (ack) =>
+        Effect.runPromise(
+          logger.observe(
+            context.connection.events
+              .response(message.id!, ack)
+              .pipe(Effect.asVoid)
+          )
+        )
+    );
+  });
+
+const handleDownloadAction: ClientMessageHandler = (context, message) =>
+  Effect.gen(function* () {
+    if (!requireAuthenticated(context, 'download-action')) return;
+    const { downloadID, action } =
+      message.args as AddonClientToServerEventArgs['download-action'];
+    yield* context.server.emitEffect(
+      'download-action',
+      context.connection.addonInfo!.id,
+      downloadID,
+      action
+    );
+  });
+
 export const createClientMessageHandlers = (): ClientMessageHandlers => ({
   notification: handleNotification,
   authenticate: handleAuthenticate,
@@ -207,5 +250,7 @@ export const createClientMessageHandlers = (): ClientMessageHandlers => ({
   'task-update': handleTaskUpdate,
   'get-app-details': handleGetAppDetails,
   'search-app-name': handleSearchAppName,
+  'download-request': handleDownloadRequest,
+  'download-action': handleDownloadAction,
   flag: handleFlag,
 });

@@ -88,6 +88,15 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'ddl:addon-download-created',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('ddl:addon-download-created', { detail: arg })
+    );
+  })
+);
+
+ipcRenderer.on(
   'processing:progress',
   wrap((_, arg) => {
     document.dispatchEvent(

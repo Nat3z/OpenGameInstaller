@@ -400,7 +400,7 @@ export default class OGIAddon {
             .pipe(Effect.asVoid),
         (effect) => this.runBackground(effect)
       );
-      this.addonWSListener.registerDownload(download);
+      yield* this.addonWSListener.registerDownload(download);
       return download;
     });
   }
@@ -752,6 +752,10 @@ class OGIAddonWSListener {
   public readonly addon: OGIAddon;
   private configConnected = false;
   private readonly downloads = new Map<string, AddonDownload>();
+  private readonly pendingDownloadUpdates = new Map<
+    string,
+    AddonDownloadStatusUpdate[]
+  >();
 
   private constructor(
     addon: OGIAddon,
@@ -889,8 +893,31 @@ class OGIAddonWSListener {
     return this.configConnected;
   }
 
-  public registerDownload(download: AddonDownload): void {
-    this.downloads.set(download.id, download);
+  public registerDownload(download: AddonDownload): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      this.downloads.set(download.id, download);
+      const buffered = this.pendingDownloadUpdates.get(download.id);
+      if (!buffered) return;
+      this.pendingDownloadUpdates.delete(download.id);
+      for (const update of buffered) {
+        yield* this.dispatchDownloadUpdate(download, update);
+      }
+    });
+  }
+
+  private dispatchDownloadUpdate(
+    download: AddonDownload,
+    update: AddonDownloadStatusUpdate
+  ): Effect.Effect<void> {
+    if (
+      update.kind === 'status' &&
+      (update.status === 'completed' ||
+        update.status === 'error' ||
+        update.status === 'cancelled')
+    ) {
+      this.downloads.delete(update.id);
+    }
+    return download.dispatch(update);
   }
 
   private onOpen(): Effect.Effect<void, NetworkError | ValidationError> {
@@ -956,16 +983,15 @@ class OGIAddonWSListener {
       if (message.event === 'download-status') {
         const update = message.args as AddonDownloadStatusUpdate;
         const download = this.downloads.get(update.id);
-        if (!download) return;
-        if (
-          update.kind === 'status' &&
-          (update.status === 'completed' ||
-            update.status === 'error' ||
-            update.status === 'cancelled')
-        ) {
-          this.downloads.delete(update.id);
+        if (!download) {
+          // The ack fiber may not have registered the handle yet; buffer so
+          // registerDownload can replay these in order instead of dropping.
+          const buffered = this.pendingDownloadUpdates.get(update.id) ?? [];
+          buffered.push(update);
+          this.pendingDownloadUpdates.set(update.id, buffered);
+          return;
         }
-        yield* download.dispatch(update);
+        yield* this.dispatchDownloadUpdate(download, update);
         return;
       }
       const id = message.id;

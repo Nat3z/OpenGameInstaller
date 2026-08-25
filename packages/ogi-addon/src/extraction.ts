@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
 import { FileSystemError, PlatformError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import {
   detectUnarFromVersionOutput,
@@ -14,6 +15,8 @@ import {
   parseZipInfoTotal,
   type UnrarType,
 } from './extraction-progress';
+
+const logger = createLogger(LOGGER_PREFIXES.addon);
 
 const sevenZipPath = 'C:\\Program Files\\7-Zip\\7z.exe';
 const progressPollIntervalMs = 150;
@@ -251,7 +254,7 @@ const reportProgress = (
   }
 };
 
-export const extraction = (
+const extractArchiveEffect = (
   filePath: string,
   outputDir: string,
   onProgress?: ExtractionProgressCallback
@@ -438,3 +441,13 @@ export const extraction = (
       )
     );
   });
+
+/** Promise-based archive extraction; the Effect pipeline stays internal. */
+export const extraction = (
+  filePath: string,
+  outputDir: string,
+  onProgress?: ExtractionProgressCallback
+): Promise<void> =>
+  Effect.runPromise(
+    logger.observe(extractArchiveEffect(filePath, outputDir, onProgress))
+  );

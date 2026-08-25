@@ -297,7 +297,7 @@ export type RedistributableInstallProgress = {
   redistributablePath?: string;
   index?: number;
   status?: 'installing' | 'completed' | 'failed';
-  result?: 'success' | 'failed' | 'not-found';
+  result?: 'success' | 'partial' | 'failed' | 'not-found';
   error?: string;
 };
 
@@ -610,7 +610,7 @@ export async function launchWithUmu(
 export async function installRedistributablesWithUmu(
   appID: number,
   reportProgress?: RedistributableProgressReporter
-): Promise<'success' | 'failed' | 'not-found'> {
+): Promise<'success' | 'partial' | 'failed' | 'not-found'> {
   if (!isLinux()) {
     reportProgress?.({
       kind: 'done',
@@ -911,10 +911,13 @@ export async function installRedistributablesWithUmu(
     completedCount,
     failedCount: anyFailed ? failedCount + unresolvedCount : failedCount,
     overallProgress: 100,
-    result: anyFailed ? 'failed' : 'success',
+    result: !anyFailed ? 'success' : completedCount > 0 ? 'partial' : 'failed',
   });
 
-  return anyFailed ? 'failed' : 'success';
+  // Partial failure is distinct from total failure so the UI can warn without
+  // treating the whole setup as broken.
+  if (!anyFailed) return 'success';
+  return completedCount > 0 ? 'partial' : 'failed';
 }
 async function initializePrefixWithUmuRun(
   libraryInfo: LibraryInfo,

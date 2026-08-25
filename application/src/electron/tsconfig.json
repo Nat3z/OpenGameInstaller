@@ -34,5 +34,6 @@
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "include": [".", "../typings"]
+  "include": [".", "../typings"],
+  "exclude": ["**/*.test.ts"]
 }

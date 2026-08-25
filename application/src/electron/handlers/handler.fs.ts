@@ -75,19 +75,21 @@ const extractArchive = (arg: {
     // times for large games. Always let stage changes and completion through.
     let lastProgressSent = 0;
     let lastStage: string | undefined;
-    yield* extraction(archivePath, arg.outputDir, (progress, stage) => {
-      if (!arg.downloadId) return;
-      const now = Date.now();
-      if (stage === lastStage && progress !== 1 && now - lastProgressSent < 100)
-        return;
-      lastProgressSent = now;
-      lastStage = stage;
-      sendIPCMessage('processing:progress', {
-        id: arg.downloadId,
-        phase: stage === 'moving' ? 'Moving files' : 'Extracting archive',
-        progress,
-      });
-    }).pipe(
+    yield* fsTryPromise(arg.outputDir, () =>
+      extraction(archivePath, arg.outputDir, (progress, stage) => {
+        if (!arg.downloadId) return;
+        const now = Date.now();
+        if (stage === lastStage && progress !== 1 && now - lastProgressSent < 100)
+          return;
+        lastProgressSent = now;
+        lastStage = stage;
+        sendIPCMessage('processing:progress', {
+          id: arg.downloadId,
+          phase: stage === 'moving' ? 'Moving files' : 'Extracting archive',
+          progress,
+        });
+      })
+    ).pipe(
       Effect.tapError((error) =>
         Effect.sync(() => {
           if (arg.downloadId) {

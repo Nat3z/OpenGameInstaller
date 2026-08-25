@@ -29,6 +29,8 @@ export type AddonConfig = {
   readonly secret: string;
   readonly path: string;
   readonly name: string;
+  /** True when this session was launched for a specific game (Steam shortcut). */
+  readonly gameSpecificLaunch?: boolean;
   scripts: AddonFileConfiguration['scripts'];
 };
 
@@ -149,10 +151,17 @@ export class Addon {
     command: string,
     args: string[]
   ): Effect.Effect<ChildProcess, AddonError> {
+    // Strip any inherited flag so only the session config decides the value
+    const { OGI_GAME_LAUNCH: _inheritedFlag, ...inheritedEnv } = process.env;
     return Effect.try({
       try: () =>
         spawn(command, args, {
           cwd: this.config.path,
+          // Flag game-specific launches so the addon SDK can expose it on connect
+          env: {
+            ...inheritedEnv,
+            ...(this.config.gameSpecificLaunch ? { OGI_GAME_LAUNCH: '1' } : {}),
+          },
           stdio: ['ignore', 'pipe', 'pipe'],
         }),
       catch: (cause) =>

@@ -2,6 +2,7 @@ import type { SetupCommandData } from '@ogi-sdk/connect';
 import { FileSystemError, formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schedule } from 'effect';
+import { get } from 'svelte/store';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   unrarAndReturnOutputDir,
@@ -46,6 +47,13 @@ export function loadFailedSetups() {
       )
     ),
     Effect.map((files) => {
+      // Pending recoveries share this directory; hide entries whose download
+      // is still live in this session so they only surface after a crash.
+      const activeDownloadIds = new Set(
+        get(currentDownloads)
+          .filter((download) => download.status !== 'error')
+          .map((download) => download.id)
+      );
       const byDownloadId = new Map<string, FailedSetup>();
       for (const file of files) {
         if (!file.endsWith('.json')) continue;
@@ -54,7 +62,7 @@ export function loadFailedSetups() {
             window.electronAPI.fs.read(`${FAILED_SETUPS_DIR}/${file}`)
           ) as FailedSetup;
           const key = setup.downloadInfo?.id ?? setup.id;
-          if (!key) continue;
+          if (!key || activeDownloadIds.has(key)) continue;
           const existing = byDownloadId.get(key);
           if (!existing || (setup.timestamp ?? 0) > (existing.timestamp ?? 0)) {
             byDownloadId.set(key, setup);
@@ -111,6 +119,36 @@ export function saveFailedSetup(setupInfo: {
     });
   } catch (error) {
     logger.sync.error('Failed to save setup info:', error);
+  }
+}
+
+/**
+ * Writes a recovery file to disk without surfacing it in the failed-setups
+ * store. Saved before post-download processing (moving files, extraction) so
+ * closing the app mid-processing leaves a recoverable entry on next launch
+ * instead of forcing a re-download. Deleted once setup completes.
+ */
+export function savePendingRecovery(setupInfo: {
+  downloadInfo: DownloadStatusAndInfo;
+  setupData: SetupCommandData;
+  should: 'call-addon' | 'call-unrar' | 'call-unzip';
+}): void {
+  try {
+    ensureFailedSetupsDir();
+    const id = setupInfo.downloadInfo.id;
+    const saved: FailedSetup = {
+      id,
+      timestamp: Date.now(),
+      ...setupInfo,
+      error: 'The app was closed before setup could finish.',
+      retryCount: 0,
+    };
+    window.electronAPI.fs.write(
+      failedSetupPath(id),
+      JSON.stringify(saved, null, 2)
+    );
+  } catch (error) {
+    logger.sync.error('Failed to save pending recovery:', error);
   }
 }
 

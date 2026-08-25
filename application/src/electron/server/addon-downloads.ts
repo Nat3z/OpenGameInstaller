@@ -134,14 +134,18 @@ function untrackDownload(addonID: string, downloadID: string): void {
   if (owned?.size === 0) ownedDownloads.delete(addonID);
 }
 
-function abortOwnedDownload(addonID: string, downloadID: string): void {
-  if (!ownedDownloads.get(addonID)?.has(downloadID)) return;
-  // Route through the queue-cancel handler (same path as UI cancel) so
-  // queued-but-not-processing downloads are removed from the queue instead
-  // of being stranded by a direct service abort.
-  void cancelQueuedDownload(downloadID).catch((error) =>
+// Route through the queue-cancel handler (same path as UI cancel) so
+// queued-but-not-processing downloads are removed from the queue instead
+// of being stranded by a direct service abort.
+function cancelDownload(downloadID: string): Promise<void> {
+  return cancelQueuedDownload(downloadID).catch((error) =>
     logger.sync.error('[addon-download] Failed to abort download:', error)
   );
+}
+
+function abortOwnedDownload(addonID: string, downloadID: string): void {
+  if (!ownedDownloads.get(addonID)?.has(downloadID)) return;
+  void cancelDownload(downloadID);
 }
 
 function handleDownloadRequest(
@@ -288,9 +292,7 @@ function handleDownloadRequest(
 
     downloadID = handshake.id;
     if (pendingRequest.disconnected) {
-      yield* activeContext.service
-        .abort(handshake.id)
-        .pipe(Effect.catchTag('DownloadNotActive', () => Effect.void));
+      yield* Effect.promise(() => cancelDownload(handshake.id));
       yield* replyWith(reply, { error: 'addon disconnected' });
       pendingUpdates.length = 0;
       drainReplayEvents(handshake.id, false);
@@ -305,9 +307,7 @@ function handleDownloadRequest(
       return;
     }
     if (handshake.queuePosition === undefined) {
-      yield* activeContext.service
-        .abort(handshake.id)
-        .pipe(Effect.catchTag('DownloadNotActive', () => Effect.void));
+      yield* Effect.promise(() => cancelDownload(handshake.id));
       yield* replyWith(reply, { error: 'download queue position unavailable' });
       pendingUpdates.length = 0;
       drainReplayEvents(handshake.id, false);

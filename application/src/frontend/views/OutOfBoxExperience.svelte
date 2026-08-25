@@ -17,6 +17,7 @@ import {
 } from '@/frontend/store.svelte';
 import { installAddonsAndReconnect } from '@/frontend/utils';
 import type {
+  SikarugirProvisionProgress,
   SikarugirProvisionState,
   WindowsSupportStatus,
 } from '@/lib/electron-rpc';
@@ -277,6 +278,7 @@ let sikarugirError = $state('');
 let provisionState = $state<SikarugirProvisionState | null>(null);
 let provisionBusy = $state(false);
 let provisionError = $state('');
+let wrapperProgress = $state<SikarugirProvisionProgress | null>(null);
 // Fully provisioned: wrapper, prefix, Windows Steam, login, and account chosen.
 const provisionReady = $derived(
   provisionState?.state === 'ready' &&
@@ -322,6 +324,28 @@ async function runProvisionAction(
   }
   await refreshProvisionState();
   provisionBusy = false;
+}
+
+// Downloads and assembles the shared Steam wrapper; progress arrives on
+// the oobe:sikarugir-progress channel while the RPC runs.
+async function beginWrapperProvision() {
+  wrapperProgress = { stage: 'Preparing', progress: 0 };
+  await runProvisionAction(() =>
+    runFrontendEffect(electronRpc.oobe.provisionSikarugirWrapper())
+  );
+  wrapperProgress = null;
+  // The prefix needs no user input, so chain straight into it instead of
+  // making the user click a second setup button.
+  if (!provisionError && provisionState?.state === 'prefix-missing') {
+    await runProvisionAction(() =>
+      runFrontendEffect(electronRpc.oobe.createSikarugirPrefix())
+    );
+  }
+}
+
+function handleWrapperProgress(event: Event) {
+  if (!(event instanceof CustomEvent)) return;
+  wrapperProgress = event.detail as SikarugirProvisionProgress;
 }
 
 function stopHomebrewPoll() {
@@ -709,6 +733,7 @@ function handleOOBELog(event: Event) {
 onMount(async () => {
   // Set up OOBE log listener
   document.addEventListener('oobe:log', handleOOBELog);
+  document.addEventListener('oobe:sikarugir-progress', handleWrapperProgress);
 
   // Initialize previous log length
   previousLogLength = $oobeLog.logs.length;
@@ -736,6 +761,10 @@ onMount(async () => {
 onDestroy(() => {
   // Clean up event listener
   document.removeEventListener('oobe:log', handleOOBELog);
+  document.removeEventListener(
+    'oobe:sikarugir-progress',
+    handleWrapperProgress
+  );
   stopHomebrewPoll();
   stopRosettaPoll();
 });
@@ -1104,22 +1133,52 @@ onDestroy(() => {
             </div>
 
             {#if provisionState.state === 'wrapper-missing'}
-              <p class="oobe-tool-purpose">
-                Create a wrapper named <code>Steam.app</code> with Sikarugir
-                Creator (in <code>~/Applications/Sikarugir</code>), then check
-                again.
-                {#if provisionState.message}
-                  <br />{provisionState.message}
+              {#if provisionState.canProvision}
+                <p class="oobe-tool-purpose">
+                  OpenGameInstaller downloads the official Sikarugir wrapper
+                  and Wine engine, then assembles <code>Steam.app</code> for
+                  you. Nothing to do outside the app.
+                </p>
+                {#if provisionBusy && wrapperProgress}
+                  <div class="oobe-provision-progress">
+                    <div class="oobe-provision-progress-bar">
+                      <div
+                        class="oobe-provision-progress-fill"
+                        style:width="{wrapperProgress.progress}%"
+                      ></div>
+                    </div>
+                    <span class="oobe-provision-progress-label">
+                      {wrapperProgress.stage} ({wrapperProgress.progress}%)
+                    </span>
+                  </div>
+                {:else}
+                  <button
+                    type="button"
+                    class="oobe-capability-button"
+                    disabled={provisionBusy}
+                    onclick={beginWrapperProvision}
+                  >
+                    Set Up Wrapper
+                  </button>
                 {/if}
-              </p>
-              <button
-                type="button"
-                class="oobe-capability-button"
-                disabled={provisionBusy}
-                onclick={() => refreshProvisionState()}
-              >
-                Check Again
-              </button>
+              {:else}
+                <p class="oobe-tool-purpose">
+                  Create a wrapper named <code>Steam.app</code> with Sikarugir
+                  Creator (in <code>~/Applications/Sikarugir</code>), then
+                  check again.
+                  {#if provisionState.message}
+                    <br />{provisionState.message}
+                  {/if}
+                </p>
+                <button
+                  type="button"
+                  class="oobe-capability-button"
+                  disabled={provisionBusy}
+                  onclick={() => refreshProvisionState()}
+                >
+                  Check Again
+                </button>
+              {/if}
             {:else if provisionState.state === 'prefix-missing'}
               <p class="oobe-tool-purpose">
                 The wrapper needs a Wine prefix before Steam can be installed.
@@ -2025,6 +2084,22 @@ onDestroy(() => {
 
   .oobe-provision-actions {
     @apply flex items-center gap-3 flex-wrap;
+  }
+
+  .oobe-provision-progress {
+    @apply w-full flex flex-col gap-1.5;
+  }
+
+  .oobe-provision-progress-bar {
+    @apply w-full h-2 bg-accent-light rounded-full overflow-hidden;
+  }
+
+  .oobe-provision-progress-fill {
+    @apply h-full bg-accent rounded-full transition-all duration-300;
+  }
+
+  .oobe-provision-progress-label {
+    @apply font-open-sans text-xs text-text-secondary;
   }
 
   .oobe-capability-button.is-outline {

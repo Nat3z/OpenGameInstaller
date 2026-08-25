@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -25,6 +24,7 @@ import {
 } from '@/electron/lib/steam-shortcuts.js';
 import { serializeBinaryVdf } from '@/electron/lib/steam-vdf.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { executeAbsolute } from './exec.js';
 import { makeSikarugirLauncher, type SikarugirLauncher } from './launcher.js';
 import {
   normalizeWinetricksVerbs,
@@ -41,6 +41,14 @@ const CONFIGURATION_PATH = path.join(
 );
 const runtimeMutationLock = Effect.unsafeMakeSemaphore(1);
 
+/**
+ * Serialize an operation against every other prefix/wrapper mutation. Never
+ * wrap a running game in this: the lock must stay free while a game plays.
+ */
+export const withRuntimeMutationLock = <A, E, R>(
+  operation: Effect.Effect<A, E, R>
+): Effect.Effect<A, E, R> => runtimeMutationLock.withPermits(1)(operation);
+
 export interface SikarugirRuntimeConfiguration {
   readonly wrapperPath: string;
   readonly templateVersion: string;
@@ -49,11 +57,30 @@ export interface SikarugirRuntimeConfiguration {
   readonly steamAccountId?: string;
 }
 
+/**
+ * How Play starts a Windows game. 'direct' runs the executable through the
+ * wrapper launcher and needs no Steam login; 'steam' hands off to the Windows
+ * Steam client. Absent means 'direct'.
+ */
+export type SikarugirLaunchMethod = 'direct' | 'steam';
+
 export interface SikarugirGameConfiguration {
+  readonly launchMethod?: SikarugirLaunchMethod;
   readonly steamLaunchId?: string;
   readonly windowsExecutable: string;
   readonly windowsWorkingDirectory: string;
 }
+
+export interface SikarugirLaunchInput {
+  readonly executablePath: string;
+  readonly workingDirectory: string;
+  readonly flags?: readonly string[];
+  readonly onLaunch?: () => void;
+}
+
+export const effectiveLaunchMethod = (
+  game?: Pick<SikarugirGameConfiguration, 'launchMethod'>
+): SikarugirLaunchMethod => game?.launchMethod ?? 'direct';
 
 export type SikarugirWrapperReadiness =
   | {
@@ -237,40 +264,6 @@ const ensureDarwin = (): Effect.Effect<void, PlatformError> =>
           platform: process.platform,
         })
       );
-
-const executeAbsolute = (
-  executablePath: string,
-  args: readonly string[],
-  step: string
-): Effect.Effect<string, SikarugirError> =>
-  Effect.async<string, SikarugirError>((resume) => {
-    const child = execFile(
-      executablePath,
-      [...args],
-      {
-        env: { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' },
-        // Sized for the largest caller (`ps -ax -o command=`), whose full
-        // command lines can exceed the 1 MiB execFile default.
-        maxBuffer: 16 * 1024 * 1024,
-      },
-      (cause, stdout, stderr) => {
-        if (cause) {
-          resume(
-            Effect.fail(
-              new SikarugirError({
-                message: `${cause.message}${stderr.trim() ? `: ${stderr.trim()}` : ''}`,
-                step,
-                cause,
-              })
-            )
-          );
-        } else {
-          resume(Effect.succeed(stdout));
-        }
-      }
-    );
-    return Effect.sync(() => child.kill());
-  });
 
 const readLauncherPath = (
   wrapperPath: string
@@ -600,6 +593,9 @@ export class SikarugirRuntime extends Context.Tag('SikarugirRuntime')<
     readonly removeShortcut: (
       input: SikarugirShortcutInput
     ) => Effect.Effect<SikarugirShortcutMutationResult, SikarugirRuntimeError>;
+    readonly launchGame: (
+      input: SikarugirLaunchInput
+    ) => Effect.Effect<void, ConfigError | PlatformError | SikarugirError>;
     readonly launchSteam: (
       game?: Pick<SikarugirGameConfiguration, 'steamLaunchId'>
     ) => Effect.Effect<void, ConfigError | PlatformError | SikarugirError>;
@@ -947,6 +943,34 @@ export const SikarugirRuntimeLive: Layer.Layer<SikarugirRuntime> =
           );
         })
       ),
+    launchGame: (input) =>
+      Effect.gen(function* () {
+        // Only the pre-launch resolution is serialized: holding the mutation
+        // lock for the whole session would block shortcut edits and Winetricks
+        // for as long as the game runs.
+        const { wrapper, windowsExecutable } =
+          yield* runtimeMutationLock.withPermits(1)(
+            Effect.gen(function* () {
+              const resolved = yield* resolveWrapper();
+              const executable = yield* windowsPathFromPrefix(
+                resolved.prefixPath,
+                path.resolve(input.executablePath)
+              );
+              // Converted purely to prove the game directory is reachable
+              // through a Wine drive; the launcher has no working-dir flag.
+              yield* windowsPathFromPrefix(
+                resolved.prefixPath,
+                path.resolve(input.workingDirectory)
+              );
+              return { wrapper: resolved, windowsExecutable: executable };
+            })
+          );
+        yield* wrapper.launcher.runAndWaitWithSpawnSignal(
+          windowsExecutable,
+          input.flags ?? [],
+          input.onLaunch ?? (() => undefined)
+        );
+      }),
     launchSteam: (game) =>
       runtimeMutationLock.withPermits(1)(
         resolveWrapper().pipe(

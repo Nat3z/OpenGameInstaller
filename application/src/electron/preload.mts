@@ -166,6 +166,15 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'oobe:sikarugir-progress',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('oobe:sikarugir-progress', { detail: arg })
+    );
+  })
+);
+
+ipcRenderer.on(
   'torrent:download-progress',
   wrap((_, arg) => {
     document.dispatchEvent(

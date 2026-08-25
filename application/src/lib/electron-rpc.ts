@@ -76,9 +76,17 @@ export interface SikarugirProvisionState {
     | 'ready';
   readonly message?: string;
   readonly wrapperPath?: string;
+  /** Set on 'wrapper-missing' when OGI can assemble the wrapper itself. */
+  readonly canProvision?: boolean;
   readonly steamAccountIds?: readonly string[];
   readonly selectedSteamAccountId?: string;
   readonly steamAccountSelectionRequired?: boolean;
+}
+
+/** Streamed on `oobe:sikarugir-progress` while the wrapper is assembled. */
+export interface SikarugirProvisionProgress {
+  readonly stage: string;
+  readonly progress: number;
 }
 
 export interface SikarugirActionResult {
@@ -552,6 +560,11 @@ export const ElectronRpc = {
       'oobe.getSikarugirSetupState',
       [],
       opaque<SikarugirProvisionState>()
+    ),
+    provisionSikarugirWrapper: rpc(
+      'oobe.provisionSikarugirWrapper',
+      [],
+      opaque<SikarugirActionResult>()
     ),
     createSikarugirPrefix: rpc(
       'oobe.createSikarugirPrefix',

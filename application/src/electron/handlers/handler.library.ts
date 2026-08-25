@@ -55,7 +55,10 @@ import {
 } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
-import { upsertSikarugirShortcut } from '@/electron/handlers/helpers.app/sikarugir.js';
+import {
+  recordSikarugirGameMetadata,
+  upsertSikarugirShortcut,
+} from '@/electron/handlers/helpers.app/sikarugir.js';
 import {
   appMetadataSubtrees,
   type DeleteGuardRoots,
@@ -65,12 +68,14 @@ import {
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
 import {
+  effectiveLaunchMethod,
   SikarugirRuntime,
   SikarugirRuntimeLive,
 } from '@/electron/lib/sikarugir/index.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { runElectronEffect } from '@/electron/runtime.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -124,6 +129,95 @@ export type ExecuteWrapperResult = {
   signal?: string;
   error?: string;
 };
+
+type DirectLaunchSignal =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: string };
+
+/**
+ * Run a Windows game through the Sikarugir wrapper launcher. The launcher
+ * process represents the game itself, so `game:launch` is emitted when it
+ * spawns and `game:exit` when it closes - the same shape the UMU branch uses.
+ */
+function launchSikarugirGameDirectly(
+  appInfo: LibraryInfo,
+  mainWindow?: Electron.BrowserWindow | null
+): Effect.Effect<LaunchGameResult, LibraryError> {
+  return Effect.gen(function* () {
+    const appID = appInfo.appID;
+    const executablePath = path.resolve(appInfo.cwd, appInfo.launchExecutable);
+    const workingDirectory = path.resolve(appInfo.cwd);
+    // Everything after %command% is a game flag; without %command% the whole
+    // argument string is, matching the wrapper-command branch.
+    const afterCommand = parseLaunchArgumentsAfterCommand(
+      appInfo.launchArguments
+    );
+    const flags =
+      afterCommand.length > 0
+        ? afterCommand
+        : resolveLaunchCommand(
+            appInfo.launchExecutable,
+            appInfo.launchArguments
+          ).args;
+
+    const signal = yield* Effect.tryPromise({
+      try: () =>
+        // Register inside the queue so a concurrent removal cannot interleave.
+        enqueueGameOperation(appID, async () => {
+          runningGames.add(appID);
+          let reportSpawn: () => void = () => undefined;
+          let reportFailure: (error: string) => void = () => undefined;
+          const spawnSignal = new Promise<DirectLaunchSignal>((resolve) => {
+            reportSpawn = () => resolve({ ok: true });
+            reportFailure = (error) => resolve({ ok: false, error });
+          });
+          // The session outlives this promise: launchGame only completes when
+          // the launcher process exits, which is the game's exit.
+          void runElectronEffect(
+            Effect.either(
+              Effect.gen(function* () {
+                const runtime = yield* SikarugirRuntime;
+                yield* runtime.launchGame({
+                  executablePath,
+                  workingDirectory,
+                  flags,
+                  onLaunch: () => reportSpawn(),
+                });
+              }).pipe(Effect.provide(SikarugirRuntimeLive))
+            )
+          ).then((result) => {
+            if (result._tag === 'Left') {
+              const message = formatError(result.left);
+              logger.sync.error(`[launch] Sikarugir game failed: ${message}`);
+              // No-op once the launcher already spawned.
+              reportFailure(message);
+            }
+            runningGames.delete(appID);
+            mainWindow?.webContents.send('game:exit', { id: appID });
+          });
+          return spawnSignal;
+        }),
+      catch: (cause) =>
+        new LibraryError({
+          message: `Failed to launch game with Sikarugir: ${String(cause)}`,
+          gameId: appID,
+        }),
+    }).pipe(
+      Effect.onError(() => Effect.sync(() => runningGames.delete(appID)))
+    );
+
+    if (!signal.ok) {
+      sendNotification({
+        message: `Failed to launch game: ${signal.error}`,
+        id: generateNotificationId(),
+        type: 'error',
+      });
+      return { success: false, error: signal.error };
+    }
+    mainWindow?.webContents.send('game:launch', { id: appID });
+    return { success: true };
+  });
+}
 
 export function launchGameFromLibrary(
   appid: number | string,
@@ -254,11 +348,29 @@ export function launchGameFromLibrary(
       appInfo.launchExecutable.toLowerCase().endsWith('.exe')
     ) {
       logger.sync.info(`[launch] Using Sikarugir mode for ${appInfo.name}`);
+      const launchMethod = effectiveLaunchMethod(appInfo.sikarugir);
       if (!appInfo.sikarugir) {
         const preparation = yield* Effect.either(
           Effect.gen(function* () {
             const runtime = yield* SikarugirRuntime;
             const setupState = yield* runtime.setupState;
+            // Direct launch runs the game through the wrapper launcher, so it
+            // only needs the wrapper and its prefix - not a Steam login.
+            if (launchMethod === 'direct') {
+              if (
+                setupState.state === 'wrapper-missing' ||
+                setupState.state === 'prefix-missing'
+              ) {
+                return {
+                  ready: false as const,
+                  error: 'Finish Windows-game support setup before playing.',
+                };
+              }
+              return {
+                ready: true as const,
+                appInfo: yield* recordSikarugirGameMetadata(appInfo),
+              };
+            }
             if (
               setupState.state !== 'ready' ||
               setupState.steamAccountSelectionRequired
@@ -303,6 +415,11 @@ export function launchGameFromLibrary(
           error: 'Finish Windows-game support setup before playing.',
         };
       }
+
+      if (launchMethod === 'direct') {
+        return yield* launchSikarugirGameDirectly(appInfo, mainWindow);
+      }
+
       const result = yield* Effect.either(
         Effect.gen(function* () {
           const runtime = yield* SikarugirRuntime;

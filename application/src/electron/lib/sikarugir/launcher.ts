@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { SikarugirError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 
-type LauncherMode = 'modern' | 'legacy';
+export type LauncherMode = 'modern' | 'legacy';
 
 interface LauncherOutput {
   readonly exitCode: number | null;
@@ -12,6 +12,8 @@ interface LauncherOutput {
 }
 
 export interface SikarugirLauncher {
+  /** Resolve which command surface the launcher exposes, via its `--help`. */
+  readonly probeCapabilities: Effect.Effect<LauncherMode, SikarugirError>;
   readonly createPrefix: (
     noRegistries?: boolean
   ) => Effect.Effect<void, SikarugirError>;
@@ -22,6 +24,15 @@ export interface SikarugirLauncher {
   readonly runAndWait: (
     executablePath: string,
     flags?: readonly string[]
+  ) => Effect.Effect<void, SikarugirError>;
+  /**
+   * Like {@link runAndWait}, but invokes `onSpawn` as soon as the launcher
+   * process starts so a caller can report "launched" before the game exits.
+   */
+  readonly runAndWaitWithSpawnSignal: (
+    executablePath: string,
+    flags: readonly string[],
+    onSpawn: () => void
   ) => Effect.Effect<void, SikarugirError>;
   readonly runStartExecutable: (
     executablePath: string,
@@ -43,7 +54,8 @@ const capabilityCache = new Map<string, LauncherMode>();
 const runLauncher = (
   launcherPath: string,
   args: readonly string[],
-  step: string
+  step: string,
+  onSpawn?: () => void
 ): Effect.Effect<LauncherOutput, SikarugirError> =>
   Effect.async<LauncherOutput, SikarugirError>((resume) => {
     const child = spawn(launcherPath, [...args], {
@@ -51,6 +63,7 @@ const runLauncher = (
       env: launcherPathEnvironment,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    if (onSpawn) child.once('spawn', onSpawn);
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -89,9 +102,10 @@ const runLauncher = (
 const requireSuccessfulExit = (
   launcherPath: string,
   args: readonly string[],
-  step: string
+  step: string,
+  onSpawn?: () => void
 ): Effect.Effect<void, SikarugirError> =>
-  runLauncher(launcherPath, args, step).pipe(
+  runLauncher(launcherPath, args, step, onSpawn).pipe(
     Effect.flatMap((output) =>
       output.exitCode === 0
         ? Effect.void
@@ -190,6 +204,7 @@ const withMode = (
 export const makeSikarugirLauncher = (
   launcherPath: string
 ): SikarugirLauncher => ({
+  probeCapabilities: detectLauncherMode(launcherPath),
   createPrefix: (noRegistries = false) =>
     withMode(launcherPath, (mode) =>
       requireSuccessfulExit(
@@ -222,6 +237,17 @@ export const makeSikarugirLauncher = (
           ? ['run', executablePath, ...flags]
           : ['WSS-installer', executablePath, ...flags],
         'run'
+      )
+    ),
+  runAndWaitWithSpawnSignal: (executablePath, flags, onSpawn) =>
+    withMode(launcherPath, (mode) =>
+      requireSuccessfulExit(
+        launcherPath,
+        mode === 'modern'
+          ? ['run', executablePath, ...flags]
+          : ['WSS-installer', executablePath, ...flags],
+        'run',
+        onSpawn
       )
     ),
   runStartExecutable: (executablePath, flags = []) =>

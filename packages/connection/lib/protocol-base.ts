@@ -136,6 +136,8 @@ export interface LibraryInfo {
     steamShortcutLegacyName?: string;
   };
   sikarugir?: {
+    /** Absent means 'direct': run the game through the wrapper launcher. */
+    launchMethod?: 'direct' | 'steam';
     steamLaunchId?: string;
     windowsExecutable: string;
     windowsWorkingDirectory: string;

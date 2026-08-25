@@ -21,6 +21,8 @@ import {
   resolveSupportedHomebrew,
 } from '@/electron/lib/macos-tools.js';
 import {
+  type ProvisionProgress,
+  provisionWrapper,
   SikarugirRuntime,
   SikarugirRuntimeLive,
 } from '@/electron/lib/sikarugir/index.js';
@@ -38,6 +40,7 @@ import {
   type HomebrewPollResult,
   type SikarugirActionResult,
   type SikarugirInstallResult,
+  type SikarugirProvisionProgress,
   type SikarugirProvisionState,
   type WindowsSupportStatus,
 } from '@/lib/electron-rpc.js';
@@ -450,6 +453,8 @@ const getSikarugirSetupState = (): Effect.Effect<SikarugirProvisionState> => {
         state: 'wrapper-missing' as const,
         message: setupState.readiness.message,
         wrapperPath: setupState.readiness.wrapperPath,
+        // An existing-but-invalid wrapper is never overwritten automatically.
+        canProvision: setupState.readiness.reason === 'wrapper-missing',
       };
     }
     if (setupState.state === 'ready') {
@@ -468,6 +473,43 @@ const getSikarugirSetupState = (): Effect.Effect<SikarugirProvisionState> => {
         const message = formatError(error);
         log(`Error: ${message}`);
         return { state: 'wrapper-missing' as const, message };
+      })
+    )
+  );
+};
+
+const provisionSikarugirWrapper = (): Effect.Effect<SikarugirActionResult> => {
+  if (process.platform !== 'darwin') {
+    return Effect.succeed({
+      success: false,
+      message: 'Windows-game support is unsupported on this platform.',
+    });
+  }
+  const report: ProvisionProgress = (stage, progress) => {
+    const rounded = Math.round(progress);
+    sendIPCMessage('oobe:sikarugir-progress', {
+      stage,
+      progress: rounded,
+    } satisfies SikarugirProvisionProgress);
+    log(`${stage} (${rounded}%)`);
+  };
+  return provisionWrapper(report).pipe(
+    Effect.map((result) =>
+      result.alreadyProvisioned
+        ? {
+            success: true,
+            message: `A Sikarugir wrapper already exists at ${result.wrapperPath}.`,
+          }
+        : {
+            success: true,
+            message: `Sikarugir wrapper created at ${result.wrapperPath} (${result.templateVersion}, ${result.engineVersion}).`,
+          }
+    ),
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        const message = formatError(error);
+        log(`Error: ${message}`);
+        return { success: false, message };
       })
     )
   );
@@ -597,6 +639,9 @@ export default function OOBEHandler() {
     ),
     procedure(ElectronRpc.oobe.getSikarugirSetupState, () =>
       runEffectBoundary(getSikarugirSetupState())
+    ),
+    procedure(ElectronRpc.oobe.provisionSikarugirWrapper, () =>
+      runEffectBoundary(provisionSikarugirWrapper())
     ),
     procedure(ElectronRpc.oobe.createSikarugirPrefix, () =>
       runEffectBoundary(createSikarugirPrefix())

@@ -1,0 +1,61 @@
+{
+  "name": "@ogi-sdk/manifest-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Community update-manifest server for OpenGameInstaller managed game updates.",
+  "main": "./build/src/server.cjs",
+  "module": "./build/src/server.mjs",
+  "exports": {
+    ".": {
+      "bun": "./src/server.ts",
+      "import": {
+        "default": "./build/src/server.mjs",
+        "types": "./build/src/server.d.mts"
+      },
+      "require": {
+        "default": "./build/src/server.cjs",
+        "types": "./build/src/server.d.cts"
+      }
+    },
+    "./schema": {
+      "bun": "./schema/index.ts",
+      "import": {
+        "default": "./build/schema/index.mjs",
+        "types": "./build/schema/index.d.mts"
+      },
+      "require": {
+        "default": "./build/schema/index.cjs",
+        "types": "./build/schema/index.d.cts"
+      }
+    }
+  },
+  "scripts": {
+    "dev": "bun run --watch src/main.ts",
+    "start": "bun run src/main.ts",
+    "build": "tsdown --config tsdown.config.js",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./tests/**/*.test.ts"
+  },
+  "dependencies": {
+    "effect": "3.22.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsdown": "^0.21.10"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/manifest-server"
+  }
+}

@@ -79,6 +79,11 @@ export let appUpdates = $state({
   }[],
   requiredReadds: [] as RequiredReadd[],
   dismissedUpdates: [] as DismissedUpdate[],
+  // appIDs currently awaiting a check-for-updates response from an addon
+  checkingApps: [] as number[],
+  // true while a sweep is still resolving which games are checkable,
+  // so games don't show as playable before their check even starts
+  updateSweepResolving: false,
 });
 
 export function queueRequiredReadd(appID: number, steamAppId?: number): void {
@@ -189,6 +194,23 @@ export const updatesManager = {
   },
   getAppUpdate: (appID: number) => {
     return appUpdates.apps.find((app) => app.appID === appID);
+  },
+  beginAppUpdateSweep: () => {
+    appUpdates.updateSweepResolving = true;
+  },
+  setCheckingAppUpdates: (appIDs: number[]) => {
+    appUpdates.checkingApps = appIDs;
+    appUpdates.updateSweepResolving = false;
+  },
+  finishAppUpdateCheck: (appID: number) => {
+    appUpdates.checkingApps = appUpdates.checkingApps.filter(
+      (id) => id !== appID
+    );
+  },
+  isCheckingAppUpdate: (appID: number) => {
+    return (
+      appUpdates.updateSweepResolving || appUpdates.checkingApps.includes(appID)
+    );
   },
   dismissAppUpdate: (appID: number, updateVersion: string) => {
     if (

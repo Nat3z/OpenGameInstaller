@@ -80,6 +80,9 @@ interface Props {
 
 let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
 
+let isCheckingForUpdates = $derived(
+  updatesManager.isCheckingAppUpdate(libraryInfo.appID)
+);
 let requiresSteamReadd = $derived(
   libraryInfo.umu?.steamShortcutReaddId !== undefined ||
     appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
@@ -118,9 +121,10 @@ const addonFailurePrompt = createLaunchPrompt();
 
 async function launchGame() {
   if ($gamesLaunched[libraryInfo.appID]) return;
-  if (!playButton) return;
   logger.sync.info('Launching game with appID: ' + libraryInfo.appID);
-  playButton.setAttribute('data-error', 'false');
+  // playButton may be unbound (e.g. update-available button rendered instead);
+  // launching still proceeds since gamesLaunched drives the button states
+  playButton?.setAttribute('data-error', 'false');
 
   // Fire of the addon launch-app event first
 
@@ -129,9 +133,11 @@ async function launchGame() {
     return games;
   });
 
-  playButton.disabled = true;
-  playButton.querySelector('svg')!!.style.display = 'none';
-  playButton.querySelector('p')!!.textContent = 'WAITING';
+  if (playButton) {
+    playButton.disabled = true;
+    playButton.querySelector('svg')!!.style.display = 'none';
+    playButton.querySelector('p')!!.textContent = 'WAITING';
+  }
   try {
     logger.sync.info('launching pre-launch');
     logger.sync.info('launchApp', libraryInfo);
@@ -535,7 +541,7 @@ function handleRunTask(task: SearchResult, addonID: string) {
       <div
         class="flex flex-wrap items-center gap-3 rounded-b-lg bg-accent-lighter px-6 py-4 backdrop-blur-sm"
       >
-        {#if updateInfo && !hasActiveUpdateDownload && !isUpdateDismissed}
+        {#if updateInfo && !hasActiveUpdateDownload && !isUpdateDismissed && !$gamesLaunched[libraryInfo.appID]}
           <button
             class="flex items-center justify-center gap-2 rounded-lg border-none bg-success px-6 py-3 text-overlay-text transition-colors duration-200 hover:bg-success-hover disabled:cursor-not-allowed disabled:bg-disabled"
             onclick={() => (showUpdateModal = true)}
@@ -613,6 +619,18 @@ function handleRunTask(task: SearchResult, addonID: string) {
           >
             <p class="font-archivo font-semibold text-overlay-text">PLAYING</p>
           </button>
+        {:else if isCheckingForUpdates}
+          <button
+            class="flex items-center justify-center gap-2 rounded-lg border-none bg-disabled px-6 py-3 text-overlay-text transition-colors duration-200 cursor-not-allowed"
+            disabled
+          >
+            <div
+              class="h-5 w-5 rounded-full border-2 border-overlay-text/40 border-t-overlay-text animate-spin"
+            ></div>
+            <p class="font-archivo font-semibold text-overlay-text">
+              Checking for updates
+            </p>
+          </button>
         {:else}
           <button
             bind:this={playButton}
@@ -624,7 +642,7 @@ function handleRunTask(task: SearchResult, addonID: string) {
           </button>
         {/if}
 
-        {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed}
+        {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed && !$gamesLaunched[libraryInfo.appID]}
           <button
             aria-label="Open update options"
             title="Open update options"

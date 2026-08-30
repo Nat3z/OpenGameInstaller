@@ -80,6 +80,9 @@ interface Props {
 
 let { libraryInfo = $bindable(), exitPlayPage }: Props = $props();
 
+let isCheckingForUpdates = $derived(
+  updatesManager.isCheckingAppUpdate(libraryInfo.appID)
+);
 let requiresSteamReadd = $derived(
   libraryInfo.umu?.steamShortcutReaddId !== undefined ||
     appUpdates.requiredReadds.some((r) => r.appID === libraryInfo.appID)
@@ -612,6 +615,18 @@ function handleRunTask(task: SearchResult, addonID: string) {
             disabled
           >
             <p class="font-archivo font-semibold text-overlay-text">PLAYING</p>
+          </button>
+        {:else if isCheckingForUpdates}
+          <button
+            class="flex items-center justify-center gap-2 rounded-lg border-none bg-disabled px-6 py-3 text-overlay-text transition-colors duration-200 cursor-not-allowed"
+            disabled
+          >
+            <div
+              class="h-5 w-5 rounded-full border-2 border-overlay-text/40 border-t-overlay-text animate-spin"
+            ></div>
+            <p class="font-archivo font-semibold text-overlay-text">
+              Checking for updates
+            </p>
           </button>
         {:else}
           <button

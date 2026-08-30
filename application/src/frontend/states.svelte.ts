@@ -79,6 +79,8 @@ export let appUpdates = $state({
   }[],
   requiredReadds: [] as RequiredReadd[],
   dismissedUpdates: [] as DismissedUpdate[],
+  // appIDs currently awaiting a check-for-updates response from an addon
+  checkingApps: [] as number[],
 });
 
 export function queueRequiredReadd(appID: number, steamAppId?: number): void {
@@ -189,6 +191,17 @@ export const updatesManager = {
   },
   getAppUpdate: (appID: number) => {
     return appUpdates.apps.find((app) => app.appID === appID);
+  },
+  setCheckingAppUpdates: (appIDs: number[]) => {
+    appUpdates.checkingApps = appIDs;
+  },
+  finishAppUpdateCheck: (appID: number) => {
+    appUpdates.checkingApps = appUpdates.checkingApps.filter(
+      (id) => id !== appID
+    );
+  },
+  isCheckingAppUpdate: (appID: number) => {
+    return appUpdates.checkingApps.includes(appID);
   },
   dismissAppUpdate: (appID: number, updateVersion: string) => {
     if (

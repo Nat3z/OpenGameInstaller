@@ -52,16 +52,25 @@ function checkForAppUpdates() {
     });
     const connectedAddons = yield* queryConnectedAddons();
     const addonServer = yield* getAddonServer();
+    const checkableApps = library
+      .map((app) => ({
+        app,
+        addons: connectedAddons.filter(
+          (addon) =>
+            supportsStorefront(addon.storefronts, app.storefront) &&
+            isAddonEventAvailable(addon, 'check-for-updates')
+        ),
+      }))
+      .filter(({ addons }) => addons.length > 0);
+    if (runId === updateCheckRunId) {
+      updatesManager.setCheckingAppUpdates(
+        checkableApps.map(({ app }) => app.appID)
+      );
+    }
     yield* Effect.forEach(
-      library,
-      (app) =>
+      checkableApps,
+      ({ app, addons }) =>
         Effect.gen(function* () {
-          const addons = connectedAddons.filter(
-            (addon) =>
-              supportsStorefront(addon.storefronts, app.storefront) &&
-              isAddonEventAvailable(addon, 'check-for-updates')
-          );
-          if (addons.length === 0) return;
           if (addons.length > 1) {
             return yield* Effect.fail(
               new UpdateError({
@@ -92,12 +101,29 @@ function checkForAppUpdates() {
         }).pipe(
           Effect.catchAll((error) =>
             logger.error('Error checking for updates for app', app.name, error)
+          ),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (runId === updateCheckRunId) {
+                updatesManager.finishAppUpdateCheck(app.appID);
+              }
+            })
           )
         ),
       { concurrency: 4 }
     );
   });
 
-  return workflow;
+  return workflow.pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        // if the whole run dies early (e.g. addon server unavailable),
+        // never leave games stuck on the checking spinner
+        if (runId === updateCheckRunId) {
+          updatesManager.setCheckingAppUpdates([]);
+        }
+      })
+    )
+  );
 }
 </script>

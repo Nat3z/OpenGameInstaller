@@ -46,15 +46,30 @@ function checkForAppUpdates() {
   logger.sync.info('checking for app updates');
 
   const workflow = Effect.gen(function* () {
-    const library = yield* Effect.tryPromise({
-      try: () => core.library.getAllApps(),
-      catch: (cause) =>
-        new UpdateError({
-          message: `Failed to load library: ${formatError(cause)}`,
-        }),
-    });
-    const connectedAddons = yield* queryConnectedAddons();
-    const addonServer = yield* getAddonServer();
+    // bound resolution so a permanently unavailable addon server (getAddonServer
+    // retries forever) can't leave every game stuck on the checking spinner
+    const { library, connectedAddons, addonServer } = yield* Effect.gen(
+      function* () {
+        const library = yield* Effect.tryPromise({
+          try: () => core.library.getAllApps(),
+          catch: (cause) =>
+            new UpdateError({
+              message: `Failed to load library: ${formatError(cause)}`,
+            }),
+        });
+        const connectedAddons = yield* queryConnectedAddons();
+        const addonServer = yield* getAddonServer();
+        return { library, connectedAddons, addonServer };
+      }
+    ).pipe(
+      Effect.timeoutFail({
+        duration: '15 seconds',
+        onTimeout: () =>
+          new UpdateError({
+            message: 'Timed out resolving addon server for update checks',
+          }),
+      })
+    );
     const checkableApps = library
       .map((app) => ({
         app,

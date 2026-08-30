@@ -9,6 +9,8 @@ import {
   loadLibraryInfo,
   saveLibraryInfo,
 } from '@/electron/handlers/helpers.app/library.js';
+import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
+import { sendNotification } from '@/electron/main.js';
 import { __dirname as ogiDirectory } from '@/electron/manager/manager.paths.js';
 import { resolveInside, scanFiles, writeJsonAtomic } from './files.js';
 import {
@@ -428,8 +430,8 @@ function recoverTransaction(id: string): Effect.Effect<void, FileSystemError> {
     // A directory with NO journal file means we crashed before the journal
     // write — nothing was backed up or mutated yet, so discard it. A journal
     // that exists but cannot be read may still guard rollback copies for a
-    // mutated installation: quarantine it (rename) rather than delete, and
-    // never let either case block startup.
+    // mutated installation: quarantine it (rename) rather than delete, warn
+    // the user that the game may need repair, and never block startup.
     const journal = yield* readJournal(id).pipe(
       Effect.catchAll(() =>
         Effect.tryPromise({
@@ -441,6 +443,11 @@ function recoverTransaction(id: string): Effect.Effect<void, FileSystemError> {
               .catch(() => false);
             if (journalExists) {
               await fs.rename(directory, `${directory}.quarantined`);
+              sendNotification({
+                id: generateNotificationId(),
+                type: 'error',
+                message: `An interrupted game update could not be rolled back automatically. The game may need to be reinstalled; its backup files were kept in ${directory}.quarantined.`,
+              });
             } else {
               await fs.rm(directory, { recursive: true, force: true });
             }

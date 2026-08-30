@@ -24,7 +24,17 @@ document.addEventListener('addon-manifests-ready', () => {
 async function onAddonManifestsReady() {
   await runFrontendEffect(
     Effect.gen(function* () {
-      const connectedAddons = yield* fetchAddonsWithConfigure();
+      // the handshake retries its addon-server queries forever; bound it so
+      // this handler can't hang indefinitely when the server never comes up
+      const connectedAddons = yield* fetchAddonsWithConfigure().pipe(
+        Effect.timeoutFail({
+          duration: '30 seconds',
+          onTimeout: () =>
+            new UpdateError({
+              message: 'Timed out configuring addons for update checks',
+            }),
+        })
+      );
       yield* checkForAppUpdates(connectedAddons);
     }).pipe(
       Effect.catchAll((error) =>

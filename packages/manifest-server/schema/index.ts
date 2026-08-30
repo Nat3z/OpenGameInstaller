@@ -114,6 +114,7 @@ function isStructurallyValidManifest(
     if (entry.compressedSize === 0) {
       return (
         entry.size === 0 &&
+        entry.range.end < source.size &&
         entry.dataOffset >= entry.range.start &&
         entry.dataOffset <= source.size
       );

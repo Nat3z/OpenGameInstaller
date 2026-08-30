@@ -16,18 +16,21 @@ import { LocalStorageLive } from '../src/storage.js';
 const hash = (value: string): string => Bun.SHA256.hash(value, 'hex');
 const identity = sourceSetIdentity([{ url: 'https://example.test/game.zip' }]);
 
+// Each test seeds its own source-set identity so ordering never matters.
 function makeManifest(overrides: {
   readonly entrySize: number;
+  readonly identity?: ReturnType<typeof sourceSetIdentity>;
 }): UpdateManifest {
+  const id = overrides.identity ?? identity;
   return {
     schemaVersion: UPDATE_MANIFEST_VERSION,
     encoding: 'canonical-json',
-    sourceSetKey: identity.sourceSetKey,
+    sourceSetKey: id.sourceSetKey,
     archive: { format: 'zip', multipart: false },
     sources: [
       {
         index: 0,
-        urlHash: identity.urlHashes[0]!,
+        urlHash: id.urlHashes[0]!,
         size: 1_000,
         sha256: hash('archive'),
       },
@@ -89,14 +92,23 @@ describe('manifest server', () => {
   });
 
   test('accepts an identical re-submission idempotently', async () => {
-    const manifest = makeManifest({ entrySize: 256 });
-    const response = await post(gzipSync(canonicalJson(manifest)), true);
-    expect(response.status).toBe(200);
+    const id = sourceSetIdentity([{ url: 'https://example.test/idem.zip' }]);
+    const manifest = makeManifest({ entrySize: 256, identity: id });
+    const body = gzipSync(canonicalJson(manifest));
+    expect((await post(body, true)).status).toBe(201);
+    expect((await post(body, true)).status).toBe(200);
   });
 
   test('rejects a conflicting manifest for the same key', async () => {
-    const manifest = makeManifest({ entrySize: 512 });
-    const response = await post(gzipSync(canonicalJson(manifest)), true);
+    const id = sourceSetIdentity([
+      { url: 'https://example.test/conflict.zip' },
+    ]);
+    const baseline = makeManifest({ entrySize: 256, identity: id });
+    expect((await post(gzipSync(canonicalJson(baseline)), true)).status).toBe(
+      201
+    );
+    const conflicting = makeManifest({ entrySize: 512, identity: id });
+    const response = await post(gzipSync(canonicalJson(conflicting)), true);
     expect(response.status).toBe(409);
   });
 
@@ -116,6 +128,25 @@ describe('manifest server', () => {
     const manifest = makeManifest({ entrySize: 256 });
     const broken = { ...manifest, sources: [] };
     const response = await post(JSON.stringify(broken), false);
+    expect(response.status).toBe(422);
+  });
+
+  test('rejects a zero-length entry whose range escapes its source', async () => {
+    const id = sourceSetIdentity([{ url: 'https://example.test/empty.zip' }]);
+    const manifest = makeManifest({ entrySize: 0, identity: id });
+    const invalid = {
+      ...manifest,
+      entries: [
+        {
+          ...manifest.entries[0]!,
+          size: 0,
+          compressedSize: 0,
+          dataOffset: 0,
+          range: { start: 0, end: 1_000 },
+        },
+      ],
+    };
+    const response = await post(JSON.stringify(invalid), false);
     expect(response.status).toBe(422);
   });
 

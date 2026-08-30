@@ -23,9 +23,16 @@ function resolveStorage(): {
   const kind = process.env.MANIFEST_STORAGE?.trim() || 'local';
   if (kind === 's3') {
     const bucket = required('S3_BUCKET');
+    const endpoint = process.env.S3_ENDPOINT?.trim();
+    // Signed requests carry credentials; never let them travel cleartext.
+    if (endpoint?.startsWith('http://')) {
+      throw new Error(
+        'S3_ENDPOINT must use https:// — credentialed requests over cleartext are not allowed'
+      );
+    }
     return {
       layer: S3StorageLive({
-        endpoint: process.env.S3_ENDPOINT?.trim(),
+        endpoint,
         bucket,
         region: process.env.S3_REGION?.trim() || 'auto',
         accessKeyId: required('S3_ACCESS_KEY_ID'),

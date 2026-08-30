@@ -197,9 +197,13 @@ export function handleRequest(
     if (request.method === 'POST' && path === '/v1/manifests') {
       return handlePost(request);
     }
-    const match = /^\/v1\/manifests\/([^/]+)$/.exec(path);
-    if (request.method === 'GET' && match?.[1]) {
-      return handleGet(decodeURIComponent(match[1]));
+    const rawKey = /^\/v1\/manifests\/([^/]+)$/.exec(path)?.[1];
+    if (request.method === 'GET' && rawKey) {
+      return Effect.try({
+        try: () => decodeURIComponent(rawKey),
+        catch: () =>
+          new HttpError({ status: 400, message: 'Invalid source set key' }),
+      }).pipe(Effect.flatMap(handleGet));
     }
     return Effect.fail(new HttpError({ status: 404, message: 'Not found' }));
   })();

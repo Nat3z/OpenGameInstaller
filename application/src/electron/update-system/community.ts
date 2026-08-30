@@ -15,10 +15,13 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
 const requestTimeoutMs = 3_000;
 const maximumManifestBytes = 8 * 1024 * 1024;
 
-/** OGI_UPDATE_MANIFEST_URL overrides the setting; empty either way disables manifest exchange. */
+/** OGI_UPDATE_MANIFEST_URL overrides the setting; setting it to an empty string disables manifest exchange even when a URL is configured. */
 function endpoint(): Effect.Effect<string | undefined> {
-  const override = process.env.OGI_UPDATE_MANIFEST_URL?.trim();
-  if (override) return Effect.succeed(override.replace(/\/$/, ''));
+  const override = process.env.OGI_UPDATE_MANIFEST_URL;
+  if (override !== undefined) {
+    const trimmed = override.trim();
+    return Effect.succeed(trimmed ? trimmed.replace(/\/$/, '') : undefined);
+  }
   return refreshCached('general').pipe(
     Effect.zipRight(getStoredValue('general', 'updateManifestUrl')),
     Effect.map((value: unknown) => {

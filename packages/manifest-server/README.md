@@ -17,6 +17,17 @@ storage key is taken from the manifest's own `sourceSetKey` field, and the
 payload is re-encoded as canonical JSON before it is persisted. Bodies are
 capped at 8 MiB both before and after decompression.
 
+## Trust model
+
+Submissions are anonymous and first-submit-wins, so a submitter who knows a
+source set's public URL hashes can reserve its key with bogus metadata. The
+server cannot verify entry contents — manifests identify sources only by URL
+hash, so it has nothing to fetch. This is bounded client-side: the desktop app
+verifies every stored manifest against the real remote archive's ZIP structure
+and sha256-checks each extracted entry, so a poisoned manifest can at worst
+force the full-download fallback — the same behavior as having no manifest at
+all. Authenticated submission or moderation is a deliberate non-goal for v1.
+
 ## Environment
 
 | Variable               | Default   | Notes                          |

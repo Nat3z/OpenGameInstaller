@@ -40,6 +40,9 @@ async function onAddonManifestsReady() {
 function checkForAppUpdates() {
   const runId = ++updateCheckRunId;
   updatesManager.clearAppUpdates();
+  // mark the sweep as resolving immediately so games don't briefly show as
+  // playable while the library/connected addons are still being loaded
+  updatesManager.beginAppUpdateSweep();
   logger.sync.info('checking for app updates');
 
   const workflow = Effect.gen(function* () {

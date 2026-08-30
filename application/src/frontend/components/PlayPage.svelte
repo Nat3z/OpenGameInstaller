@@ -121,9 +121,10 @@ const addonFailurePrompt = createLaunchPrompt();
 
 async function launchGame() {
   if ($gamesLaunched[libraryInfo.appID]) return;
-  if (!playButton) return;
   logger.sync.info('Launching game with appID: ' + libraryInfo.appID);
-  playButton.setAttribute('data-error', 'false');
+  // playButton may be unbound (e.g. update-available button rendered instead);
+  // launching still proceeds since gamesLaunched drives the button states
+  playButton?.setAttribute('data-error', 'false');
 
   // Fire of the addon launch-app event first
 
@@ -132,9 +133,11 @@ async function launchGame() {
     return games;
   });
 
-  playButton.disabled = true;
-  playButton.querySelector('svg')!!.style.display = 'none';
-  playButton.querySelector('p')!!.textContent = 'WAITING';
+  if (playButton) {
+    playButton.disabled = true;
+    playButton.querySelector('svg')!!.style.display = 'none';
+    playButton.querySelector('p')!!.textContent = 'WAITING';
+  }
   try {
     logger.sync.info('launching pre-launch');
     logger.sync.info('launchApp', libraryInfo);

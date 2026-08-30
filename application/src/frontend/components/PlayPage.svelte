@@ -541,7 +541,7 @@ function handleRunTask(task: SearchResult, addonID: string) {
       <div
         class="flex flex-wrap items-center gap-3 rounded-b-lg bg-accent-lighter px-6 py-4 backdrop-blur-sm"
       >
-        {#if updateInfo && !hasActiveUpdateDownload && !isUpdateDismissed}
+        {#if updateInfo && !hasActiveUpdateDownload && !isUpdateDismissed && !$gamesLaunched[libraryInfo.appID]}
           <button
             class="flex items-center justify-center gap-2 rounded-lg border-none bg-success px-6 py-3 text-overlay-text transition-colors duration-200 hover:bg-success-hover disabled:cursor-not-allowed disabled:bg-disabled"
             onclick={() => (showUpdateModal = true)}
@@ -642,7 +642,7 @@ function handleRunTask(task: SearchResult, addonID: string) {
           </button>
         {/if}
 
-        {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed}
+        {#if updateInfo && !hasActiveUpdateDownload && isUpdateDismissed && !$gamesLaunched[libraryInfo.appID]}
           <button
             aria-label="Open update options"
             title="Open update options"

@@ -6,10 +6,10 @@ import core from '@/frontend/lib/core';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
+  type AddonInfo,
   fetchAddonsWithConfigure,
   getAddonServer,
   isAddonEventAvailable,
-  queryConnectedAddons,
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
 
@@ -24,8 +24,8 @@ document.addEventListener('addon-manifests-ready', () => {
 async function onAddonManifestsReady() {
   await runFrontendEffect(
     Effect.gen(function* () {
-      yield* fetchAddonsWithConfigure();
-      yield* checkForAppUpdates();
+      const connectedAddons = yield* fetchAddonsWithConfigure();
+      yield* checkForAppUpdates(connectedAddons);
     }).pipe(
       Effect.catchAll((error) =>
         logger.error(
@@ -37,39 +37,24 @@ async function onAddonManifestsReady() {
   );
 }
 
-function checkForAppUpdates() {
+function checkForAppUpdates(connectedAddons: AddonInfo[]) {
   const runId = ++updateCheckRunId;
   updatesManager.clearAppUpdates();
-  // mark the sweep as resolving immediately so games don't briefly show as
-  // playable while the library/connected addons are still being loaded
+  // mark the sweep as resolving immediately so checkable games don't briefly
+  // show as playable while the library is still being loaded
   updatesManager.beginAppUpdateSweep();
   logger.sync.info('checking for app updates');
 
   const workflow = Effect.gen(function* () {
-    // bound resolution so a permanently unavailable addon server (getAddonServer
-    // retries forever) can't leave every game stuck on the checking spinner
-    const { library, connectedAddons, addonServer } = yield* Effect.gen(
-      function* () {
-        const library = yield* Effect.tryPromise({
-          try: () => core.library.getAllApps(),
-          catch: (cause) =>
-            new UpdateError({
-              message: `Failed to load library: ${formatError(cause)}`,
-            }),
-        });
-        const connectedAddons = yield* queryConnectedAddons();
-        const addonServer = yield* getAddonServer();
-        return { library, connectedAddons, addonServer };
-      }
-    ).pipe(
-      Effect.timeoutFail({
-        duration: '15 seconds',
-        onTimeout: () =>
-          new UpdateError({
-            message: 'Timed out resolving addon server for update checks',
-          }),
-      })
-    );
+    const library = yield* Effect.tryPromise({
+      try: () => core.library.getAllApps(),
+      catch: (cause) =>
+        new UpdateError({
+          message: `Failed to load library: ${formatError(cause)}`,
+        }),
+    });
+    // narrow the spinner to games with an update-capable addon before touching
+    // the addon server, so everything else returns to PLAY immediately
     const checkableApps = library
       .map((app) => ({
         app,
@@ -85,6 +70,18 @@ function checkForAppUpdates() {
         checkableApps.map(({ app }) => app.appID)
       );
     }
+    if (checkableApps.length === 0) return;
+    // bound resolution so a permanently unavailable addon server (getAddonServer
+    // retries forever) can't leave checkable games stuck on the spinner
+    const addonServer = yield* getAddonServer().pipe(
+      Effect.timeoutFail({
+        duration: '15 seconds',
+        onTimeout: () =>
+          new UpdateError({
+            message: 'Timed out resolving addon server for update checks',
+          }),
+      })
+    );
     yield* Effect.forEach(
       checkableApps,
       ({ app, addons }) =>

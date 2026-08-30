@@ -168,6 +168,21 @@ async function launchGame() {
 
   logger.sync.info('pre-launch complete');
 
+  // An update may have started while pre-launch awaited; recheck before the RPC.
+  if (hasActiveUpdateDownload) {
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
+    await tick();
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `An update for ${libraryInfo.name} started; launch it once the update finishes.`,
+      type: 'warning',
+    });
+    return;
+  }
+
   try {
     await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
   } catch (error) {

@@ -151,6 +151,20 @@ async function parseZip(path: string): Promise<readonly ParsedEntry[]> {
       }
       const localNameLength = local.readUInt16LE(26);
       const localExtraLength = local.readUInt16LE(28);
+      // Extractors read the LOCAL header's filename; a hostile archive can
+      // pair a safe central-directory name with a traversal local name, so
+      // the two must match exactly.
+      const localName = await readExactly(
+        handle,
+        localNameLength,
+        localOffset + 30
+      );
+      if (
+        localName.toString((flags & 0x800) !== 0 ? 'utf8' : 'latin1') !==
+        relativePath
+      ) {
+        throw new Error('ZIP local header filename mismatch');
+      }
       entries.push({
         path: relativePath,
         crc32,

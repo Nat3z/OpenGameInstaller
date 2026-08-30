@@ -413,7 +413,9 @@ export function recoverTransactions(): Effect.Effect<void, FileSystemError> {
     Effect.catchAll(() => Effect.succeed([])),
     Effect.flatMap((entries) =>
       Effect.forEach(
-        entries.filter((entry) => entry.isDirectory()),
+        entries.filter(
+          (entry) => entry.isDirectory() && !entry.name.endsWith('.quarantined')
+        ),
         (entry) => recoverTransaction(entry.name),
         { concurrency: 1, discard: true }
       )
@@ -423,17 +425,26 @@ export function recoverTransactions(): Effect.Effect<void, FileSystemError> {
 
 function recoverTransaction(id: string): Effect.Effect<void, FileSystemError> {
   return Effect.gen(function* () {
-    // A directory without a readable journal means we crashed before the
-    // journal write — nothing was backed up or mutated yet, so the only
-    // recovery is discarding the directory. Never let it block startup.
+    // A directory with NO journal file means we crashed before the journal
+    // write — nothing was backed up or mutated yet, so discard it. A journal
+    // that exists but cannot be read may still guard rollback copies for a
+    // mutated installation: quarantine it (rename) rather than delete, and
+    // never let either case block startup.
     const journal = yield* readJournal(id).pipe(
       Effect.catchAll(() =>
         Effect.tryPromise({
-          try: () =>
-            fs.rm(join(transactionDirectory, id), {
-              recursive: true,
-              force: true,
-            }),
+          try: async () => {
+            const directory = join(transactionDirectory, id);
+            const journalExists = await fs
+              .stat(journalPath(id))
+              .then(() => true)
+              .catch(() => false);
+            if (journalExists) {
+              await fs.rename(directory, `${directory}.quarantined`);
+            } else {
+              await fs.rm(directory, { recursive: true, force: true });
+            }
+          },
           catch: (cause) => fileError(join(transactionDirectory, id), cause),
         }).pipe(Effect.as(undefined))
       )

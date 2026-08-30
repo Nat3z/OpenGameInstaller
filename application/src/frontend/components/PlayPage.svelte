@@ -117,7 +117,15 @@ let openedGameConfiguration = $state(false);
 const addonFailurePrompt = createLaunchPrompt();
 
 async function launchGame() {
-  if ($gamesLaunched[libraryInfo.appID] || hasActiveUpdateDownload) return;
+  if (hasActiveUpdateDownload) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `Finish or cancel the update for ${libraryInfo.name} before launching it.`,
+      type: 'warning',
+    });
+    return;
+  }
+  if ($gamesLaunched[libraryInfo.appID]) return;
   if (!playButton) return;
   logger.sync.info('Launching game with appID: ' + libraryInfo.appID);
   playButton.setAttribute('data-error', 'false');
@@ -160,7 +168,24 @@ async function launchGame() {
 
   logger.sync.info('pre-launch complete');
 
-  await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
+  try {
+    await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
+  } catch (error) {
+    // Reset the launch state or the play button stays stuck in WAITING.
+    logger.sync.error('Launch RPC failed:', error);
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
+    await tick();
+    playButton?.setAttribute('data-error', 'true');
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: formatError(error) || 'Failed to launch game',
+      type: 'error',
+    });
+    return;
+  }
 
   logger.sync.info('launchGame complete');
   if (!window.electronAPI.fs.exists('./internals')) {

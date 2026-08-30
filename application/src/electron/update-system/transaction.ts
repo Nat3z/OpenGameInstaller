@@ -23,26 +23,55 @@ const updateDirectory = join(ogiDirectory, 'internals', 'update-system');
 const ownershipDirectory = join(updateDirectory, 'ownership');
 const transactionDirectory = join(updateDirectory, 'transactions');
 
-interface TransactionJournal {
-  readonly schemaVersion: 1;
-  readonly id: string;
-  readonly appID: number;
-  readonly root: string;
-  readonly sourceSetKey: string;
-  readonly extractedPath: string;
-  readonly beforeFiles: readonly {
-    readonly path: string;
-    readonly size: number;
-    readonly sha256: string;
-  }[];
-  readonly backups: readonly {
-    readonly installedPath: string;
-    readonly backupPath: string;
-  }[];
+const TransactionJournalSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  id: Schema.String,
+  appID: Schema.NonNegativeInt,
+  root: Schema.String,
+  sourceSetKey: Schema.String,
+  extractedPath: Schema.String,
+  beforeFiles: Schema.Array(
+    Schema.Struct({
+      path: Schema.String,
+      size: Schema.NonNegativeInt,
+      sha256: Schema.String,
+    })
+  ),
+  backups: Schema.Array(
+    Schema.Struct({
+      installedPath: Schema.String,
+      backupPath: Schema.String,
+    })
+  ),
+  previousOwnership: Schema.optional(OwnershipManifestSchema),
+  previousLibrary: Schema.optional(Schema.Unknown),
+  expectedLibrary: Schema.optional(
+    Schema.Struct({
+      version: Schema.String,
+      cwd: Schema.String,
+      launchExecutable: Schema.String,
+      launchArguments: Schema.optional(Schema.String),
+      addonSource: Schema.optional(Schema.String),
+    })
+  ),
+  state: Schema.Literal('preparing', 'prepared', 'committing'),
+});
+
+interface TransactionJournal
+  extends Omit<
+    typeof TransactionJournalSchema.Type,
+    'previousLibrary' | 'previousOwnership'
+  > {
   readonly previousOwnership?: OwnershipManifest;
   readonly previousLibrary?: LibraryInfo;
-  readonly expectedLibrary?: ExpectedLibraryUpdate;
-  readonly state: 'preparing' | 'prepared' | 'committing';
+}
+
+/** Transaction ids are randomUUID() values; anything else is rejected before path joins. */
+const transactionIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function isValidTransactionId(id: string): boolean {
+  return transactionIdPattern.test(id);
 }
 
 export interface ExpectedLibraryUpdate {
@@ -111,7 +140,6 @@ export function prepareTransaction(input: {
     const id = randomUUID();
     const directory = join(transactionDirectory, id);
     const backups: TransactionJournal['backups'][number][] = [];
-    const beforeByPath = new Map(before.map((file) => [file.path, file]));
     const targetByPath = new Map(
       input.manifest.entries.map((entry) => [entry.path, entry] as const)
     );
@@ -119,18 +147,12 @@ export function prepareTransaction(input: {
       installedPath: file.path,
       size: file.size,
     }));
-    const requiredBackupBytes =
-      ownership?.files.reduce((total, file) => {
-        const beforeFile = beforeByPath.get(file.installedPath);
-        const target = file.sourcePath
-          ? targetByPath.get(file.sourcePath)
-          : undefined;
-        return !target ||
-          target.sha256 !== file.sha256 ||
-          beforeFile?.sha256 !== file.sha256
-          ? total + (beforeFile?.size ?? 0)
-          : total;
-      }, 0) ?? 0;
+    // Every protected file gets a rollback copy below, so budget for all of
+    // them (reflinks may use less, but plan for the worst case).
+    const requiredBackupBytes = filesToProtect.reduce(
+      (total, file) => total + file.size,
+      0
+    );
     yield* Effect.tryPromise({
       try: async () => {
         await fs.mkdir(directory, { recursive: true });
@@ -401,7 +423,22 @@ export function recoverTransactions(): Effect.Effect<void, FileSystemError> {
 
 function recoverTransaction(id: string): Effect.Effect<void, FileSystemError> {
   return Effect.gen(function* () {
-    const journal = yield* readJournal(id);
+    // A directory without a readable journal means we crashed before the
+    // journal write — nothing was backed up or mutated yet, so the only
+    // recovery is discarding the directory. Never let it block startup.
+    const journal = yield* readJournal(id).pipe(
+      Effect.catchAll(() =>
+        Effect.tryPromise({
+          try: () =>
+            fs.rm(join(transactionDirectory, id), {
+              recursive: true,
+              force: true,
+            }),
+          catch: (cause) => fileError(join(transactionDirectory, id), cause),
+        }).pipe(Effect.as(undefined))
+      )
+    );
+    if (!journal) return;
     if (journal.state === 'preparing') {
       yield* removeStaging(journal.extractedPath);
       yield* Effect.tryPromise({
@@ -501,9 +538,19 @@ function readJournal(
   id: string
 ): Effect.Effect<TransactionJournal, FileSystemError> {
   const path = journalPath(id);
-  return Effect.tryPromise({
-    try: async () =>
-      JSON.parse(await fs.readFile(path, 'utf8')) as TransactionJournal,
-    catch: (cause) => fileError(path, cause),
+  return Effect.gen(function* () {
+    if (!isValidTransactionId(id)) {
+      return yield* Effect.fail(
+        fileError(path, `Invalid transaction id: ${id}`)
+      );
+    }
+    const raw = yield* Effect.tryPromise({
+      try: async (): Promise<unknown> =>
+        JSON.parse(await fs.readFile(path, 'utf8')),
+      catch: (cause) => fileError(path, cause),
+    });
+    return (yield* Schema.decodeUnknown(TransactionJournalSchema)(raw).pipe(
+      Effect.mapError((cause) => fileError(path, cause))
+    )) as TransactionJournal;
   });
 }

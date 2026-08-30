@@ -110,9 +110,15 @@ async function findMarker(path: string): Promise<StagingMarker | undefined> {
   const entries = await fs.readdir(stagingDirectory).catch(() => []);
   for (const entry of entries) {
     if (!entry.endsWith('.json')) continue;
-    const marker = JSON.parse(
-      await fs.readFile(join(stagingDirectory, entry), 'utf8')
-    ) as StagingMarker;
+    // A corrupt marker must not fail the lookup — skip it and keep scanning.
+    let marker: StagingMarker;
+    try {
+      marker = JSON.parse(
+        await fs.readFile(join(stagingDirectory, entry), 'utf8')
+      ) as StagingMarker;
+    } catch {
+      continue;
+    }
     if (
       marker.path === path &&
       registryPath(marker.id) === join(stagingDirectory, entry)

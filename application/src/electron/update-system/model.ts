@@ -100,9 +100,11 @@ export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
   }
+  // Sort by code units, not locale: canonical output must be identical on
+  // every machine regardless of ICU configuration.
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, item]) => item !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right));
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
   return `{${entries
     .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
     .join(',')}}`;

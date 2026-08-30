@@ -98,17 +98,28 @@ describe('update model', () => {
     ).toBeUndefined();
   });
 
-  test('rejects duplicate paths and out-of-source ranges', async () => {
+  test('rejects duplicate entry paths', async () => {
     const valid = manifest();
     const invalid = {
       ...valid,
       entries: [
         valid.entries[0],
-        {
-          ...valid.entries[1],
-          path: valid.entries[0].path,
-          range: { start: 790, end: 900 },
-        },
+        { ...valid.entries[1], path: valid.entries[0].path },
+      ],
+    };
+    const result = await Effect.runPromise(
+      Schema.decodeUnknown(UpdateManifestSchema)(invalid).pipe(Effect.either)
+    );
+    expect(result._tag).toBe('Left');
+  });
+
+  test('rejects out-of-source entry ranges', async () => {
+    const valid = manifest();
+    const invalid = {
+      ...valid,
+      entries: [
+        valid.entries[0],
+        { ...valid.entries[1], range: { start: 790, end: 900 } },
       ],
     };
     const result = await Effect.runPromise(

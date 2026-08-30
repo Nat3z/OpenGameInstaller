@@ -140,11 +140,11 @@ export function extractManagedDownload(input: {
       Effect.tapError(() => removeStaging(extractedPath))
     );
     yield* submitCommunityManifest(manifest);
+    // A failed archive delete must not discard a valid extraction + manifest.
     yield* Effect.tryPromise({
       try: () => fs.rm(source.localPath, { force: true }),
-      catch: (cause) =>
-        updateError('Unable to remove downloaded archive', cause),
-    }).pipe(Effect.tapError(() => removeStaging(extractedPath)));
+      catch: (cause) => cause,
+    }).pipe(Effect.ignore);
     return { extractedPath, manifest };
   });
 }

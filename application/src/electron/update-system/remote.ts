@@ -235,6 +235,7 @@ function verifyRemoteZipStructure(
       let offset = 0;
       let parsed = 0;
       while (offset < central.length) {
+        if (offset + 46 > central.length) return false;
         if (central.readUInt32LE(offset) !== centralHeader) return false;
         const flags = central.readUInt16LE(offset + 8);
         const method = central.readUInt16LE(offset + 10);
@@ -322,18 +323,32 @@ function fetchRange(
 ): Effect.Effect<boolean> {
   const attempt = Effect.tryPromise({
     try: async () => {
-      const response = await fetch(url, {
-        headers: { Range: `bytes=${start}-${end}` },
-        signal: AbortSignal.timeout(sourceTimeoutMs),
-      });
-      if (response.status !== 206) {
-        throw new Error(`Range request returned ${response.status}`);
-      }
-      if (!response.body) throw new Error('Range response has no body');
-      await pipeline(
-        Readable.fromWeb(response.body as never),
-        createWriteStream(outputPath, { flags: 'wx' })
+      // A fixed whole-exchange deadline would abort large range bodies on
+      // slow links; instead abort only after sourceTimeoutMs of inactivity.
+      const controller = new AbortController();
+      let inactivityTimer = setTimeout(
+        () => controller.abort(),
+        sourceTimeoutMs
       );
+      const touch = () => {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => controller.abort(), sourceTimeoutMs);
+      };
+      try {
+        const response = await fetch(url, {
+          headers: { Range: `bytes=${start}-${end}` },
+          signal: controller.signal,
+        });
+        if (response.status !== 206) {
+          throw new Error(`Range request returned ${response.status}`);
+        }
+        if (!response.body) throw new Error('Range response has no body');
+        const body = Readable.fromWeb(response.body as never);
+        body.on('data', touch);
+        await pipeline(body, createWriteStream(outputPath, { flags: 'wx' }));
+      } finally {
+        clearTimeout(inactivityTimer);
+      }
       if ((await fs.stat(outputPath)).size !== end - start + 1) {
         throw new Error('Range request returned an unexpected byte count');
       }
@@ -372,10 +387,6 @@ function extractEntry(
           callback(null, chunk);
         },
       });
-      const compressed = createReadStream(rangePath, {
-        start: entry.dataOffset - groupStart,
-        end: entry.range.end - groupStart,
-      });
       const localHeader = Buffer.alloc(30);
       const handle = await fs.open(rangePath, 'r');
       try {
@@ -400,6 +411,12 @@ function extractEntry(
       } finally {
         await handle.close();
       }
+      // Opened only after validation so the early returns above cannot leak
+      // the read stream's descriptor.
+      const compressed = createReadStream(rangePath, {
+        start: entry.dataOffset - groupStart,
+        end: entry.range.end - groupStart,
+      });
       if (entry.compression === 'deflate') {
         await pipeline(
           compressed,

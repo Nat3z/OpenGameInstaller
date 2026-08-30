@@ -2,6 +2,7 @@ import { gunzipSync } from 'node:zlib';
 import { Data, Effect, Runtime, Schema } from 'effect';
 import {
   canonicalJson,
+  sha256,
   type UpdateManifest,
   UpdateManifestSchema,
 } from '../schema/index.js';
@@ -147,7 +148,18 @@ function handlePost(
     const text = yield* decodeBody(request, body);
     const manifest = yield* parseManifest(text);
 
+    // The key must be derived from the manifest's own source hashes, so a
+    // submitter cannot reserve an arbitrary key with unrelated sources.
     const key = manifest.sourceSetKey;
+    const derivedKey = sha256(
+      canonicalJson(manifest.sources.map((source) => source.urlHash))
+    );
+    if (key !== derivedKey) {
+      return yield* new HttpError({
+        status: 422,
+        message: 'Source set key does not match the manifest sources',
+      });
+    }
     const canonical = new TextEncoder().encode(canonicalJson(manifest));
     const storage = yield* ManifestStorage;
 

@@ -100,6 +100,18 @@ describe('manifest server', () => {
     expect(response.status).toBe(409);
   });
 
+  test('rejects a source set key that does not match the sources', async () => {
+    const other = sourceSetIdentity([
+      { url: 'https://example.test/other.zip' },
+    ]);
+    const manifest = {
+      ...makeManifest({ entrySize: 256 }),
+      sourceSetKey: other.sourceSetKey,
+    };
+    const response = await post(gzipSync(canonicalJson(manifest)), true);
+    expect(response.status).toBe(422);
+  });
+
   test('rejects a structurally invalid manifest', async () => {
     const manifest = makeManifest({ entrySize: 256 });
     const broken = { ...manifest, sources: [] };

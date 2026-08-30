@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { Context, Data, Effect, Layer } from 'effect';
@@ -59,7 +60,7 @@ export const LocalStorageLive = (
       return Effect.tryPromise({
         try: async () => {
           await fs.mkdir(dirname(path), { recursive: true });
-          const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+          const temporary = `${path}.${randomUUID()}.tmp`;
           await fs.writeFile(temporary, data, { flag: 'wx' });
           try {
             await fs.link(temporary, path);

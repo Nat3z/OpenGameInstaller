@@ -179,6 +179,12 @@ export class AddonDownload {
   }
 }
 
+const makeWarmRuntime = (): ManagedRuntime.ManagedRuntime<never, never> => {
+  const runtime = ManagedRuntime.make(Layer.empty);
+  runtime.runSync(Effect.void);
+  return runtime;
+};
+
 /**
  * Addon SDK listener signatures. Protocol commands come from `addonProtocol` in
  * `@ogi-sdk/connect`; lifecycle and builder-specific hooks are merged below.
@@ -218,7 +224,7 @@ export default class OGIAddon {
   public addonInfo: OGIAddonConfiguration;
   public config: Configuration = new Configuration({});
   private eventsAvailable: OGIAddonSDKEventListener[] = [];
-  private readonly runtime = ManagedRuntime.make(Layer.empty);
+  private readonly runtime = makeWarmRuntime();
   private taskHandlers: Map<
     string,
     (

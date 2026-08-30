@@ -421,8 +421,30 @@ export function recoverTransactions(): Effect.Effect<void, FileSystemError> {
         (entry) => recoverTransaction(entry.name),
         { concurrency: 1, discard: true }
       )
-    )
+    ),
+    // Quarantined directories persist on disk, so warning here (instead of at
+    // quarantine time) re-fires every startup until the user resolves them —
+    // even if the run that quarantined had no renderer window to deliver to.
+    Effect.zipRight(notifyQuarantinedTransactions())
   );
+}
+
+function notifyQuarantinedTransactions(): Effect.Effect<void> {
+  return Effect.promise(async () => {
+    const entries = await fs
+      .readdir(transactionDirectory, { withFileTypes: true })
+      .catch(() => []);
+    const quarantined = entries.filter(
+      (entry) => entry.isDirectory() && entry.name.endsWith('.quarantined')
+    );
+    if (quarantined.length === 0) return;
+    // sendIPCMessage inside waits for renderer readiness before delivering.
+    sendNotification({
+      id: generateNotificationId(),
+      type: 'error',
+      message: `An interrupted game update could not be rolled back automatically; the affected game may need to be reinstalled. Backup files were kept under ${transactionDirectory}.`,
+    });
+  });
 }
 
 function recoverTransaction(id: string): Effect.Effect<void, FileSystemError> {
@@ -443,11 +465,6 @@ function recoverTransaction(id: string): Effect.Effect<void, FileSystemError> {
               .catch(() => false);
             if (journalExists) {
               await fs.rename(directory, `${directory}.quarantined`);
-              sendNotification({
-                id: generateNotificationId(),
-                type: 'error',
-                message: `An interrupted game update could not be rolled back automatically. The game may need to be reinstalled; its backup files were kept in ${directory}.quarantined.`,
-              });
             } else {
               await fs.rm(directory, { recursive: true, force: true });
             }

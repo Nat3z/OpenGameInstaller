@@ -583,6 +583,9 @@ export async function launchWithUmu(
 
     child.on('error', (error) => {
       logger.sync.error('[umu] Failed to launch game:', error);
+      // The promise may already have resolved success; fire onExit so the
+      // caller's running-game tracking is cleaned up either way.
+      onExitCallback?.(null, null);
       resolve({ success: false, error: error.message });
     });
 

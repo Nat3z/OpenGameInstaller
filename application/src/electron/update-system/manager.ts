@@ -20,7 +20,7 @@ import {
   prepareTransaction,
   rollbackTransaction,
 } from './transaction.js';
-import { buildZipManifest } from './zip.js';
+import { buildZipManifest, validateZipStructure } from './zip.js';
 
 export interface ManagedSource {
   readonly url: string;
@@ -116,6 +116,13 @@ export function extractManagedDownload(input: {
     const extractedPath = join(
       dirname(source.localPath),
       `.ogi-managed-extract-${randomUUID()}`
+    );
+    // Validate the archive's structure (traversal paths, encryption, ZIP64)
+    // BEFORE extraction so a hostile ZIP can never write outside staging.
+    yield* validateZipStructure(source.localPath).pipe(
+      Effect.mapError((cause) =>
+        updateError('Downloaded archive failed validation', cause)
+      )
     );
     yield* registerStaging(extractedPath).pipe(
       Effect.mapError((cause) =>

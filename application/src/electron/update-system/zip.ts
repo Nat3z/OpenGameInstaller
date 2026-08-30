@@ -170,6 +170,20 @@ async function parseZip(path: string): Promise<readonly ParsedEntry[]> {
   }
 }
 
+/**
+ * Structural preflight for a downloaded archive: rejects traversal paths,
+ * encrypted entries, and ZIP64/multipart layouts BEFORE anything extracts it.
+ */
+export function validateZipStructure(
+  archivePath: string
+): Effect.Effect<void, FileSystemError> {
+  return Effect.tryPromise({
+    try: () => parseZip(archivePath),
+    catch: (cause) =>
+      zipError(archivePath, `Unable to inspect ZIP: ${String(cause)}`),
+  }).pipe(Effect.asVoid);
+}
+
 export interface BuildZipManifestInput {
   readonly archivePath: string;
   readonly extractedPath: string;

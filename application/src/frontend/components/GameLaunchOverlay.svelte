@@ -3,6 +3,8 @@ import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
+import AddonFailurePromptModal from '@/frontend/components/built/AddonFailurePromptModal.svelte';
+import { createLaunchPrompt } from '@/frontend/lib/core/launch-prompt.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
@@ -32,6 +34,9 @@ let wrapperCommand: string | null = $state(null);
 let isWrapperLaunch = $state(false);
 const timeouts: ReturnType<typeof setTimeout>[] = [];
 let isMounted = false;
+
+// Prompt state: lets the user launch even when the addon pre-launch step failed
+const addonFailurePrompt = createLaunchPrompt();
 
 onMount(async () => {
   isMounted = true;
@@ -66,7 +71,9 @@ onMount(async () => {
     status = 'running';
 
     if (isHookOnly && hookType) {
-      // Hook-only mode: run addon event without launching game
+      // Hook-only mode: run addon event without launching game.
+      // No Launch Anyway prompt here — there is nothing to launch on
+      // failure, so the app just reports and quits.
       logger.sync.info(
         `[GameLaunchOverlay] Running ${hookType}-launch hooks for ${gameName}`
       );
@@ -117,14 +124,21 @@ onMount(async () => {
           '[GameLaunchOverlay] Pre-launch hooks failed:',
           error
         );
-        status = 'error';
-        errorMessage = formatError(error) || 'Pre-launch failed';
-        onError(errorMessage);
-        const t = setTimeout(() => {
+        const failureText = formatError(error) || 'Pre-launch failed';
+        // Ask the user whether to continue launching despite the addon failure
+        const proceed = await addonFailurePrompt.request(failureText);
+        if (!proceed) {
+          status = 'error';
+          errorMessage = failureText;
+          onError(errorMessage);
           if (isMounted) runFrontendEffect(electronRpc.app.quit());
-        }, 5000);
-        timeouts.push(t);
-        return;
+          return;
+        }
+        logger.sync.warn(
+          '[GameLaunchOverlay] Continuing wrapped launch despite pre-launch hook failure'
+        );
+        errorMessage = '';
+        status = 'running';
       }
 
       let wrapperError: string | null = null;
@@ -224,6 +238,8 @@ onDestroy(() => {
   isMounted = false;
   for (const id of timeouts) clearTimeout(id);
   timeouts.length = 0;
+  // Never leave the launch flow hanging if the overlay unmounts mid-prompt
+  addonFailurePrompt.answer(false);
 });
 </script>
 
@@ -314,7 +330,15 @@ onDestroy(() => {
       {/if}
 
       {#if isHookOnly || isWrapperLaunch}
-        <p class="text-sm text-gray-400 mt-4">Closing application...</p>
+        {#if addonFailurePrompt.message !== null}
+          <AddonFailurePromptModal
+            gameName={gameName}
+            message={addonFailurePrompt.message}
+            onAnswer={addonFailurePrompt.answer}
+          />
+        {:else}
+          <p class="text-sm text-gray-400 mt-4">Closing application...</p>
+        {/if}
       {/if}
     </div>
   </div>

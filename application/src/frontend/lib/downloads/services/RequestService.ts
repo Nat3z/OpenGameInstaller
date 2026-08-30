@@ -3,7 +3,7 @@ import { DownloadError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
-import { addonServer } from '@/frontend/lib/core/ipc';
+import { getAddonServer } from '@/frontend/lib/core/ipc';
 import { startDownloadEffect } from '@/frontend/lib/downloads/lifecycle';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
@@ -51,6 +51,7 @@ export class RequestService extends BaseService {
             cause,
           }),
       });
+      const addonServer = yield* getAddonServer();
       const response = yield* Effect.tryPromise({
         try: () =>
           addonServer

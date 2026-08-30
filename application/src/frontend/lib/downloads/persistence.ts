@@ -238,6 +238,8 @@ export function initDownloadPersistence() {
       const nextSnapshot: Record<string, string> = {};
       for (const download of downloads) {
         if (!isPersistableStatus(download.status)) continue;
+        // Addon-enqueued downloads can't be restored (owning addon session is gone).
+        if (download.isAddonDownload) continue;
         const serialized = JSON.stringify(download);
         nextSnapshot[download.id] = serialized;
         if (lastSnapshot[download.id] !== serialized) saveRecord(download);

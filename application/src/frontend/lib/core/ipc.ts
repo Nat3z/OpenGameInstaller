@@ -63,44 +63,78 @@ export function connectClientSdk() {
   }).pipe(Effect.tap(initialize));
 }
 
-// The addon server may still be starting when the renderer loads.
-export let addonServer = await runFrontendEffect(
-  connectClientSdk().pipe(
-    Effect.tapError((error) => logger.warn('Waiting for addon server:', error)),
-    Effect.retry(Schedule.spaced('1 second'))
-  )
-);
+let addonServer: Connection | null = null;
+let connectionInFlight: Effect.Effect<Connection, NetworkError> | null = null;
 
-// Keep requests off the closed client while a shared reconnect swaps it out.
+export function getAddonServer(): Effect.Effect<Connection, NetworkError> {
+  return Effect.suspend(() => {
+    if (addonServer) return Effect.succeed(addonServer);
+    if (connectionInFlight) return connectionInFlight;
+
+    const connect = connectClientSdk().pipe(
+      Effect.tapError((error) =>
+        logger.warn('Waiting for addon server:', error)
+      ),
+      Effect.retry(Schedule.spaced('1 second')),
+      Effect.tap((connection) =>
+        Effect.sync(() => {
+          addonServer = connection;
+        })
+      )
+    );
+    const sharedConnection = runFrontendSync(Effect.cached(connect)).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (connectionInFlight === sharedConnection)
+            connectionInFlight = null;
+        })
+      )
+    );
+    connectionInFlight = sharedConnection;
+    return sharedConnection;
+  });
+}
+
+export function getAddonServerPromise(): Promise<Connection> {
+  return runFrontendEffect(getAddonServer());
+}
+
+// Share reconnects so concurrent stale-socket recoveries never race.
 let reconnectInFlight: Effect.Effect<void, NetworkError> | null = null;
+
+function requestConnectedAddons<T>() {
+  return Effect.gen(function* () {
+    const connection = yield* getAddonServer();
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        connection.request('query-connected-addons', {
+          type: 'addons',
+        }),
+      catch: (cause) =>
+        new NetworkError({
+          message: cause instanceof Error ? cause.message : String(cause),
+        }),
+    });
+    return response.statusError
+      ? yield* Effect.fail(new AddonError({ message: response.statusError }))
+      : (response.args.addons as T[]);
+  });
+}
 
 export function queryConnectedAddons<T = AddonInfo>() {
   return Effect.suspend(() =>
     (reconnectInFlight ?? Effect.void).pipe(
-      Effect.mapError(
-        (cause) =>
-          new AddonError({
-            message: `Failed to query connected addons: ${cause.message}`,
-          })
+      Effect.zipRight(requestConnectedAddons<T>()),
+      Effect.catchTag('NetworkError', () =>
+        reconnectClientSdk().pipe(Effect.zipRight(requestConnectedAddons<T>()))
       ),
-      Effect.zipRight(
-        Effect.tryPromise({
-          try: () =>
-            addonServer.request('query-connected-addons', {
-              type: 'addons',
-            }),
-          catch: (cause) =>
-            new AddonError({
-              message: `Failed to query connected addons: ${cause instanceof Error ? cause.message : String(cause)}`,
-            }),
-        })
+      Effect.mapError((cause) =>
+        cause._tag === 'AddonError'
+          ? cause
+          : new AddonError({
+              message: `Failed to query connected addons: ${cause.message}`,
+            })
       )
-    )
-  ).pipe(
-    Effect.flatMap((response) =>
-      response.statusError
-        ? Effect.fail(new AddonError({ message: response.statusError }))
-        : Effect.succeed(response.args.addons as T[])
     )
   );
 }
@@ -110,14 +144,23 @@ export function reconnectClientSdk(): Effect.Effect<void, NetworkError> {
     if (reconnectInFlight) return reconnectInFlight;
 
     const reconnect = Effect.gen(function* () {
-      yield* Effect.tryPromise({
-        try: () => addonServer.close(),
-        catch: (cause) =>
-          new NetworkError({
-            message: `Failed to close the addon server connection: ${cause instanceof Error ? cause.message : String(cause)}`,
-          }),
-      });
-      addonServer = yield* connectClientSdk();
+      const staleConnection = addonServer;
+      addonServer = null;
+      if (staleConnection) {
+        yield* Effect.tryPromise({
+          try: () => staleConnection.close(),
+          catch: (cause) =>
+            new NetworkError({
+              message: `Failed to close the addon server connection: ${cause instanceof Error ? cause.message : String(cause)}`,
+            }),
+        });
+      }
+      // A stale query can detect the backend between its stop and start phases.
+      addonServer = yield* connectClientSdk().pipe(
+        Effect.retry(
+          Schedule.intersect(Schedule.spaced('250 millis'), Schedule.recurs(4))
+        )
+      );
     });
     const sharedReconnect = runFrontendSync(Effect.cached(reconnect)).pipe(
       Effect.ensuring(

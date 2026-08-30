@@ -12,9 +12,10 @@ import {
 } from 'ogi-addon/config';
 import {
   type AddonInfo,
-  addonServer,
+  getAddonServer,
   queryConnectedAddons,
 } from '@/frontend/lib/core/ipc';
+import { runFrontendSync } from '@/frontend/lib/core/runtime';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -99,7 +100,7 @@ function waitForConfiguredAddons(maxWaitMs = 15_000, pollMs = 100) {
   });
 }
 
-export function fetchAddonsWithConfigure() {
+function configureConnectedAddons() {
   return Effect.gen(function* () {
     const addons = yield* waitForConfiguredAddons();
     const results = yield* Effect.forEach(
@@ -143,6 +144,7 @@ export function fetchAddonsWithConfigure() {
             );
           }
 
+          const addonServer = yield* getAddonServer();
           yield* Effect.tryPromise({
             try: () =>
               addonServer
@@ -162,6 +164,30 @@ export function fetchAddonsWithConfigure() {
         logger.sync.error('Failed to configure addon:', result.left);
       }
     }
-    return addons;
+    return yield* queryConnectedAddons<ConfigTemplateAndInfo>();
+  });
+}
+
+let configurationInFlight: ReturnType<typeof configureConnectedAddons> | null =
+  null;
+
+// Configuration is the addon runtime handshake: its first config-update emits connect.
+export function fetchAddonsWithConfigure() {
+  return Effect.suspend(() => {
+    if (configurationInFlight) return configurationInFlight;
+
+    const sharedConfiguration = runFrontendSync(
+      Effect.cached(configureConnectedAddons())
+    ).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (configurationInFlight === sharedConfiguration) {
+            configurationInFlight = null;
+          }
+        })
+      )
+    );
+    configurationInFlight = sharedConfiguration;
+    return sharedConfiguration;
   });
 }

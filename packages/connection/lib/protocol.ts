@@ -7,6 +7,9 @@
  */
 
 import type {
+  AddonDownloadAck,
+  AddonDownloadRequest,
+  AddonDownloadStatusUpdate,
   AddonNotificationMessage,
   AddonTaskRunEventArgs,
   BasicLibraryInfo,
@@ -40,6 +43,11 @@ import type { WebsocketMessage } from './types';
 
 export type {
   ActionConfigurationOption,
+  AddonDownloadAck,
+  AddonDownloadFile,
+  AddonDownloadRequest,
+  AddonDownloadStatus,
+  AddonDownloadStatusUpdate,
   AddonNotificationMessage,
   AddonTaskRunEventArgs,
   BasicLibraryInfo,
@@ -171,6 +179,10 @@ export const addonProtocol = defineAddonProtocol({
       addonListener: true,
       pack: { type: 'none' },
     }),
+    'download-status': serverCommand<
+      [update: AddonDownloadStatusUpdate],
+      void
+    >(),
   },
   addonToServer: {
     response: addonMessage<unknown>(),
@@ -202,6 +214,11 @@ export const addonProtocol = defineAddonProtocol({
     }>(),
     'get-app-details': addonMessage<{ appID: number; storefront: string }>(),
     'search-app-name': addonMessage<{ query: string; storefront: string }>(),
+    'download-request': addonMessage<AddonDownloadRequest>(),
+    'download-action': addonMessage<{
+      downloadID: string;
+      action: 'abort';
+    }>(),
     flag: addonMessage<{ flag: string; value: string | string[] }>(),
   },
   sdkToServer: {
@@ -603,22 +620,39 @@ export type AddonProtocolEventListenerTypes<
 
 /** Local SDK lifecycle hooks (not declared in `addonProtocol.serverToAddon`). */
 export type AddonSDKLifecycleEventListenerTypes<EventResponse> = {
-  connect: (event: EventResponse) => void;
+  connect: (event: EventResponse, context?: OGIAddonConnectContext) => void;
   disconnect: (reason: string) => void;
   exit: () => void;
   response: (response: unknown) => void;
 };
 
+/**
+ * Context passed to the addon SDK `connect` listener. `gameSpecificLaunch` is
+ * true when this session was started for a specific game (Steam shortcut
+ * launch), so addons can selectively start only the components they need.
+ */
+export type OGIAddonConnectContext = {
+  gameSpecificLaunch: boolean;
+};
+
 /** Host-side events emitted by `@ogi-sdk/addon-server`. */
-export type AddonServerLifecycleEvent = 'connect' | 'disconnect' | 'start';
+export type AddonServerLifecycleEvent =
+  | 'connect'
+  | 'disconnect'
+  | 'addon-disconnect'
+  | 'start';
 
 export type AddonServerHostEventName =
   | AddonServerLifecycleEvent
-  | Extract<'notification' | 'input-asked', AddonClientToServerEventName>;
+  | Extract<
+      'notification' | 'input-asked' | 'download-request' | 'download-action',
+      AddonClientToServerEventName
+    >;
 
 export type AddonServerHostEventListeners<Connection = unknown> = {
   connect: (connection: Connection) => void;
   disconnect: (reason: string) => void;
+  'addon-disconnect': (addonID: string) => void;
   start: () => void;
   notification: (notification: AddonNotificationMessage) => void;
   'input-asked': (
@@ -628,6 +662,16 @@ export type AddonServerHostEventListeners<Connection = unknown> = {
     reply: (
       result: Record<string, string | number | boolean>
     ) => void | Promise<void>
+  ) => void;
+  'download-request': (
+    addonID: string,
+    request: AddonDownloadRequest,
+    reply: (result: AddonDownloadAck) => void | Promise<void>
+  ) => void;
+  'download-action': (
+    addonID: string,
+    downloadID: string,
+    action: 'abort'
   ) => void;
 };
 

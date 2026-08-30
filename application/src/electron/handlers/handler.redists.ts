@@ -113,6 +113,14 @@ const installRedistributables = (
     });
 
     yield* Effect.forkDaemon(addDeckGameToSteam(mainWindow, appID));
+
+    // Redistributable failures are non-fatal: each failure already emitted
+    // progress + a warning notification, and the game itself is installed.
+    if (result === 'not-found') {
+      return yield* Effect.fail(
+        new LibraryError({ message: 'Game not found', gameId: appID })
+      );
+    }
     return result;
   });
 

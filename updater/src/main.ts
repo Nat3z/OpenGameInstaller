@@ -131,7 +131,14 @@ const PATCH_DOWNLOAD_PROGRESS_INTERVAL_MS = 100;
 const HTTP_RETRY_ATTEMPTS = 4;
 const HTTP_RETRY_BASE_DELAY_MS = 1500;
 const HTTP_REQUEST_TIMEOUT_MS = 60000;
-const PRESERVED_UPDATE_ENTRIES = new Set(['artifacts', 'latest.log', 'logs']);
+// favicon.png is the desktop shortcut icon older app versions copied next to
+// the AppImage; deleting it would blank the user's shortcut icon.
+const PRESERVED_UPDATE_ENTRIES = new Set([
+  'artifacts',
+  'latest.log',
+  'logs',
+  'favicon.png',
+]);
 const OGI_REPO_URL = 'https://github.com/Nat3z/OpenGameInstaller';
 const ALL_ORIGIN_HEADS_REFSPEC = '+refs/heads/*:refs/remotes/origin/*';
 const HTTP_RANGE_AGENTS = {

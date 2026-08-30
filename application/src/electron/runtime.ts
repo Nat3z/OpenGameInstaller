@@ -3,7 +3,14 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Fiber, Layer, ManagedRuntime } from 'effect';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
-const electronRuntime = ManagedRuntime.make(Layer.empty);
+
+const makeWarmRuntime = (): ManagedRuntime.ManagedRuntime<never, never> => {
+  const runtime = ManagedRuntime.make(Layer.empty);
+  runtime.runSync(Effect.void);
+  return runtime;
+};
+
+const electronRuntime = makeWarmRuntime();
 const backgroundFibers = new Set<Fiber.RuntimeFiber<unknown, unknown>>();
 
 export class EffectBoundaryError {

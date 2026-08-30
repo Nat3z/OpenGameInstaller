@@ -54,6 +54,7 @@ const eventMessagePackers: EventMessagePackerMap = {
   'game-details': ([args]) => ({ args }),
   'request-dl': ([appID, info]) => ({ args: { appID, info } }),
   catalog: () => ({ args: undefined }),
+  'download-status': ([args]) => ({ args }),
 };
 const _eventMessagePackersCheck: EventMessagePackers = eventMessagePackers;
 void _eventMessagePackersCheck;

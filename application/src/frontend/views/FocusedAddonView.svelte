@@ -23,8 +23,12 @@ import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
-import { notifications } from '@/frontend/store.svelte';
-import { addonServer, queryConnectedAddons, runTask } from '@/frontend/utils';
+import { createNotification, notifications } from '@/frontend/store.svelte';
+import {
+  getAddonServerPromise,
+  queryConnectedAddons,
+  runTask,
+} from '@/frontend/utils';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -81,7 +85,7 @@ onMount(() => {
     });
 });
 
-function updateConfig() {
+async function updateConfig() {
   if (!selectedAddon) return;
   let config: Record<string, string | number | boolean> = {};
   Object.keys(selectedAddon.configTemplate).forEach((key) => {
@@ -115,6 +119,18 @@ function updateConfig() {
   });
 
   const addonId = selectedAddon.id;
+  const addonServer = await getAddonServerPromise().catch((err) => {
+    logger.sync.error('Failed to get addon server', err);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to get addon server',
+      type: 'error',
+    });
+    return null;
+  });
+  if (!addonServer) {
+    return;
+  }
   addonServer
     .addon(addonId)
     // The wire type models config templates, but this endpoint receives values.

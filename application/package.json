@@ -1,6 +1,6 @@
 {
   "name": "opengameinstaller-gui",
-  "version": "4.2.6",
+  "version": "4.2.9",
   "description": "The front-facing GUI for OpenGameInstaller and the addon-server.",
   "type": "module",
   "private": false,
@@ -42,7 +42,7 @@
     "electron-pack": "electron-builder",
     "format": "biome check --write src package.json --files-ignore-unknown=true",
     "lint": "biome check src package.json --files-ignore-unknown=true",
-    "typecheck": "tsc -p src/electron/tsconfig.json --noEmit && svelte-check --tsconfig src/frontend/tsconfig.json",
+    "typecheck": "tsc -p src/electron/tsconfig.json --noEmit && svelte-check --tsconfig src/frontend/tsconfig.json --threshold error",
     "electron-pack:linux": "electron-builder -l"
   },
   "dependencies": {

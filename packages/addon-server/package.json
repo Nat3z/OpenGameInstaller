@@ -39,7 +39,7 @@
     "@ogi-sdk/logger": "^1.0.0",
     "effect": "^3.22.0",
     "elysia": "^1.4.28",
-    "ogi-addon": "^4.1.0",
+    "ogi-addon": "^5.0.0",
     "websocket": "^1.0.35",
     "ws": "^8.20.0"
   },

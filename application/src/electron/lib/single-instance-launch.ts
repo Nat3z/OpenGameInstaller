@@ -66,6 +66,11 @@ export function parseGameIdArg(
   return null;
 }
 
+/** Whether this session was launched for a specific game (Steam shortcut). */
+export function isGameSpecificLaunch(): boolean {
+  return parseGameIdArg() !== null;
+}
+
 /** Parse the pre/post hook flags used by Steam shortcut launches. */
 export function parseLaunchHookArgs(argv: readonly string[] = process.argv): {
   noLaunch: boolean;

@@ -80,10 +80,12 @@ export class AddonSetup {
         process.platform === 'win32'
           ? yield* Addon.getScriptSpawnCommand(script)
           : { command: '/bin/sh', args: ['-c', startCommand] };
+      const env = yield* Addon.getEnvironmentWithBun();
       const child = yield* Effect.try({
         try: () =>
           spawn(command, args, {
             cwd: this.config.path,
+            env,
             stdio: ['ignore', 'pipe', 'pipe'],
           }),
         catch: (cause) =>

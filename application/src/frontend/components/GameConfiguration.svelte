@@ -4,6 +4,7 @@ import type {
   ConfigurationOptionWire,
   LibraryInfo,
 } from '@ogi-sdk/connect';
+import { Effect } from 'effect';
 import {
   ConfigurationBuilder,
   isBooleanOption,
@@ -23,7 +24,11 @@ import {
   completeRequiredReadd,
   getRequiredReadd,
 } from '@/frontend/states.svelte';
-import { createNotification, currentDownloads } from '@/frontend/store.svelte';
+import {
+  createNotification,
+  currentDownloads,
+  gamesLaunched,
+} from '@/frontend/store.svelte';
 
 interface Props {
   exitPlayPage: () => void;
@@ -33,13 +38,46 @@ interface Props {
 
 let { exitPlayPage, gameInfo, onFinish }: Props = $props();
 
+// umu treats this PROTONPATH placeholder as "use its bundled default Proton".
+const UMU_PROTON_DEFAULT = 'umu-proton';
+
 let platform = $state<string>('');
 let showDllOverridesModal = $state(false);
+let showRemoveConfirm = $state(false);
+let protonOptions = $state<{ id: string; name: string }[]>([]);
 
 // Get OS platform
 $effect(() => {
   runFrontendEffect(electronRpc.app.getOS()).then((os) => {
     platform = os;
+  });
+});
+
+// Installed compat tools for the per-game Proton picker. Option ids are the
+// tool install paths, which umu consumes directly through PROTONPATH.
+$effect(() => {
+  if (!canEditDllOverrides) return;
+  runFrontendEffect(
+    electronRpc.app
+      .getSteamCompatibilityTools()
+      .pipe(
+        Effect.catchAll(() =>
+          Effect.succeed(
+            [] as { id: string; name: string; installPath: string }[]
+          )
+        )
+      )
+  ).then((tools) => {
+    const options = [
+      { id: UMU_PROTON_DEFAULT, name: 'UMU Default (Proton-GE)' },
+      ...tools.map((tool) => ({ id: tool.installPath, name: tool.name })),
+    ];
+    // Keep a stored version selectable even if its directory is gone.
+    const stored = gameInfo.umu?.protonVersion;
+    if (stored && !options.some((option) => option.id === stored)) {
+      options.push({ id: stored, name: `${stored} (not installed)` });
+    }
+    protonOptions = options;
   });
 });
 
@@ -90,6 +128,7 @@ $effect(() => {
   });
 
   formData.dllOverrides = [...(gameInfo.umu?.dllOverrides ?? [])];
+  formData.protonVersion = gameInfo.umu?.protonVersion ?? UMU_PROTON_DEFAULT;
 });
 
 function handleInputChange(id: string, value: string | number | boolean) {
@@ -123,6 +162,32 @@ let dllOverridesCount = $derived.by(() => {
 });
 
 async function removeFromList() {
+  if ($gamesLaunched[gameInfo.appID]) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Cannot remove a game while it is running.',
+      type: 'error',
+    });
+    return;
+  }
+  const activeDownload = $currentDownloads.find(
+    (download) =>
+      download.appID === gameInfo.appID &&
+      !['error', 'completed', 'seeding', 'setup-complete'].includes(
+        download.status
+      )
+  );
+  if (activeDownload) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message:
+        'Cannot remove a game while a download or install is in progress.',
+      type: 'error',
+    });
+    return;
+  }
+
+  showRemoveConfirm = false;
   const result = await runFrontendEffect(
     electronRpc.app.removeApp(gameInfo.appID)
   );
@@ -139,13 +204,22 @@ async function removeFromList() {
   createNotification({
     id: Math.random().toString(36).substring(7),
     message:
-      result.warning ?? 'Game removed from library. (Not deleted from disk)',
+      result.warning ??
+      (result.filesDeleted
+        ? 'Game removed from library and files deleted'
+        : 'Game removed from library'),
     type: result.warning ? 'info' : 'success',
   });
   currentDownloads.update((downloads) =>
     downloads.filter((download) => download.appID !== gameInfo.appID)
   );
   exitPlayPage();
+}
+
+function showInFolder() {
+  if (gameInfo.cwd) {
+    window.electronAPI.fs.showFileLoc(gameInfo.cwd);
+  }
 }
 
 async function addToSteam(button: HTMLButtonElement) {
@@ -229,6 +303,18 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
         />
         {#if key === 'launchArguments'}
           {#if platform === 'linux' || platform === 'darwin'}
+            {#if canEditDllOverrides && protonOptions.length > 0}
+              <InputModal
+                id="protonVersion"
+                label="Proton Version"
+                description="The Proton build umu launches this game with."
+                type="select"
+                value={formData.protonVersion}
+                options={protonOptions}
+                class="mb-4"
+                onchange={handleInputChange}
+              />
+            {/if}
             <ButtonModal
               text={dllOverridesCount > 0
                 ? `DLL Overrides (${dllOverridesCount})`
@@ -254,13 +340,47 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
         />
       {/if}
       <ButtonModal
+        text="Show in Folder"
+        variant="secondary"
+        onclick={showInFolder}
+        disabled={!gameInfo.cwd}
+      />
+      <ButtonModal
         text="Remove Game"
         variant="danger"
-        onclick={removeFromList}
+        onclick={() => (showRemoveConfirm = true)}
       />
       <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
     </div>
   </Modal>
+
+  {#if showRemoveConfirm}
+    <Modal
+      open={true}
+      size="small"
+      closeOnOverlayClick={false}
+      onClose={() => (showRemoveConfirm = false)}
+    >
+      <TitleModal title={`Remove ${gameInfo.name}?`} />
+      <p class="mb-4 text-sm text-accent-dark">
+        This removes the game from your library and permanently deletes its
+        files{gameInfo.cwd ? ` in ${gameInfo.cwd}` : ''}. This cannot be
+        undone.
+      </p>
+      <div class="flex flex-row gap-3">
+        <ButtonModal
+          text="Delete Game"
+          variant="danger"
+          onclick={removeFromList}
+        />
+        <ButtonModal
+          text="Cancel"
+          variant="secondary"
+          onclick={() => (showRemoveConfirm = false)}
+        />
+      </div>
+    </Modal>
+  {/if}
 
   <WineDllOverridesModal
     open={showDllOverridesModal}

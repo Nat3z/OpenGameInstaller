@@ -16,7 +16,6 @@ import ThemePicker from '@/frontend/components/ThemePicker.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
-import { fetchAddonsWithConfigure, reconnectClientSdk } from '@/frontend/utils';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -123,9 +122,10 @@ let options: OptionsCategory[] = [
       steamCompatibilityTool: {
         displayName: 'Steam Compatibility Tool',
         description:
-          "Steam's internal compatibility tool name, such as proton_experimental or a GE-Proton identifier. Leave blank to clear the forced tool when updating a shortcut.",
+          'The Proton version Steam uses for shortcuts, read from your installed compatibility tools.',
         defaultValue: 'proton_experimental',
         value: 'proton_experimental',
+        choice: [],
         type: 'string',
         condition: async () =>
           (await runFrontendEffect(electronRpc.app.getOS())) === 'linux',
@@ -384,6 +384,8 @@ function updateConfig() {
           config[key] = selectedTorrentClientId;
         } else if (key === 'theme') {
           config[key] = selectedTheme;
+        } else if (key === 'steamCompatibilityTool') {
+          config[key] = selectedCompatibilityTool;
         } else {
           config[key] = element.value;
         }
@@ -464,16 +466,17 @@ function updateConfig() {
   );
 }
 
+// Returns the persisted value only, undefined when nothing was saved yet.
+function getStoredValue(key: string) {
+  if (!selectedOption) return undefined;
+  const configPath = './config/option/' + selectedOption.id + '.json';
+  if (!fs.exists(configPath)) return undefined;
+  return JSON.parse(fs.read(configPath))[key];
+}
+
 function getStoredOrDefaultValue(key: string) {
   if (!selectedOption) return;
-  if (!fs.exists('./config/option/' + selectedOption.id + '.json')) {
-    return selectedOption.options[key].defaultValue;
-  } else {
-    const storedConfig = JSON.parse(
-      fs.read('./config/option/' + selectedOption.id + '.json')
-    );
-    return storedConfig[key] ?? selectedOption.options[key].defaultValue;
-  }
+  return getStoredValue(key) ?? selectedOption.options[key].defaultValue;
 }
 
 function browseForFolder(event: MouseEvent) {
@@ -542,10 +545,7 @@ async function updateAddons() {
 async function restartAddonServer() {
   isRestartingServer = true;
   await runFrontendEffect(
-    Effect.gen(function* () {
-      yield* electronRpc.restartAddonServer();
-      yield* reconnectClientSdk();
-    }).pipe(
+    electronRpc.restartAddonServer().pipe(
       Effect.catchAll((error) =>
         logger.error('Failed to restart addon server:', error)
       ),
@@ -580,6 +580,8 @@ async function saveSteamGridDbKey(): Promise<void> {
 }
 let selectedTorrentClientId: string = $state('webtorrent'); // Track selection reactively
 let selectedTheme: string = $state('light');
+let selectedCompatibilityTool: string = $state('proton_experimental');
+let compatibilityTools: { id: string; name: string }[] = $state([]);
 
 // Loading states for addon management buttons
 let isInstallingAddons = $state(false);
@@ -663,6 +665,36 @@ function handleThemeChange(detail: { selectedId: string }) {
   document.documentElement.setAttribute('data-theme', detail.selectedId);
 }
 
+function handleCompatibilityToolChange(detail: { selectedId: string }) {
+  selectedCompatibilityTool = detail.selectedId;
+  updateConfig();
+}
+
+async function loadCompatibilityTools() {
+  const tools: { id: string; name: string }[] = await runFrontendEffect(
+    electronRpc.app
+      .getSteamCompatibilityTools()
+      .pipe(
+        Effect.catchAll((error) =>
+          logger
+            .error('Failed to list Steam compatibility tools:', error)
+            .pipe(Effect.as([]))
+        )
+      )
+  );
+  // Keep an explicitly saved tool selectable even if its directory is gone.
+  // The unsaved default is skipped so an empty scan shows the no-tools hint.
+  const storedTool = getStoredValue('steamCompatibilityTool');
+  if (
+    typeof storedTool === 'string' &&
+    storedTool &&
+    !tools.some((tool) => tool.id === storedTool)
+  ) {
+    tools.push({ id: storedTool, name: `${storedTool} (not installed)` });
+  }
+  compatibilityTools = tools;
+}
+
 $effect(() => {
   if (mainContent && selectedOption) {
     mainContent.scrollTo({ top: 0, behavior: 'smooth' });
@@ -681,6 +713,12 @@ $effect(() => {
     if (storedTheme && storedTheme !== selectedTheme) {
       selectedTheme = storedTheme as string;
     }
+
+    const storedTool = getStoredOrDefaultValue('steamCompatibilityTool');
+    if (storedTool && storedTool !== selectedCompatibilityTool) {
+      selectedCompatibilityTool = storedTool as string;
+    }
+    loadCompatibilityTools();
   }
 });
 
@@ -704,26 +742,10 @@ onMount(() => {
     doSteamGridDBReconfigure = true;
     reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
   }
-  async function handleAddonConnected() {
-    await runFrontendEffect(
-      fetchAddonsWithConfigure().pipe(
-        Effect.catchAll((error) =>
-          logger.error('Failed to configure addons after reconnect:', error)
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            isRestartingServer = false;
-          })
-        )
-      )
-    );
-  }
   document.addEventListener('steamgriddb-launch', steamgriddbLaunch);
-  document.addEventListener('addon-connected', handleAddonConnected);
 
   return () => {
     document.removeEventListener('steamgriddb-launch', steamgriddbLaunch);
-    document.removeEventListener('addon-connected', handleAddonConnected);
   };
 });
 </script>
@@ -1082,6 +1104,20 @@ onMount(() => {
                                 selectedId={selectedTheme}
                                 onchange={handleThemeChange}
                               />
+                            {:else if key === 'steamCompatibilityTool'}
+                              {#if compatibilityTools.length > 0}
+                                <CustomDropdown
+                                  id={key}
+                                  options={compatibilityTools}
+                                  selectedId={selectedCompatibilityTool}
+                                  onchange={handleCompatibilityToolChange}
+                                />
+                              {:else}
+                                <p class="option-description mb-0!">
+                                  No Steam compatibility tools were found.
+                                  Install Proton through Steam first.
+                                </p>
+                              {/if}
                             {:else}
                               <!-- Regular select for other options -->
                               <select

@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { AddonError, FileSystemError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Deferred, Effect, Exit, Schema, Scope } from 'effect';
@@ -29,6 +29,8 @@ export type AddonConfig = {
   readonly secret: string;
   readonly path: string;
   readonly name: string;
+  /** True when this session was launched for a specific game (Steam shortcut). */
+  readonly gameSpecificLaunch?: boolean;
   scripts: AddonFileConfiguration['scripts'];
 };
 
@@ -60,7 +62,11 @@ export class Addon {
     }
 
     return Effect.try({
-      try: () => execFileSync('which', ['bun'], { encoding: 'utf-8' }).trim(),
+      try: () =>
+        execFileSync('which', ['bun'], {
+          encoding: 'utf-8',
+          env: process.env,
+        }).trim(),
       catch: () =>
         new AddonError({ message: 'Unable to find bun through which' }),
     }).pipe(
@@ -74,6 +80,21 @@ export class Addon {
     );
   }
 
+  public static getEnvironmentWithBun(): Effect.Effect<
+    NodeJS.ProcessEnv,
+    AddonError
+  > {
+    return Addon.getBunPath().pipe(
+      Effect.map((bunPath) => {
+        const currentPath = process.env.PATH ?? process.env.Path;
+        return {
+          ...process.env,
+          PATH: [dirname(bunPath), currentPath].filter(Boolean).join(delimiter),
+        };
+      })
+    );
+  }
+
   public static intoExecutor(
     fullCommand: string
   ): Effect.Effect<string, AddonError> {
@@ -83,20 +104,12 @@ export class Addon {
     });
   }
 
-  private static intoPowerShellScript(
-    fullCommand: string
-  ): Effect.Effect<string, AddonError> {
-    return Addon.intoExecutor(fullCommand).pipe(
-      Effect.map((command) => command.replace(/^"([^"]+)"/, '& "$1"'))
-    );
-  }
-
   public static getPowerShellExecutable(): string {
     return 'powershell.exe';
   }
 
-  private static quotePowerShellArgument(value: string): string {
-    return `'${value.replace(/'/g, "''")}'`;
+  private static quoteWindowsShellArgument(value: string): string {
+    return `"${value.replace(/%/g, '%%').replace(/"/g, '""')}"`;
   }
 
   public static getScriptSpawnCommand(
@@ -105,21 +118,14 @@ export class Addon {
   ): Effect.Effect<ScriptSpawnCommand, AddonError | ValidationError> {
     return Effect.gen(function* () {
       if (process.platform === 'win32') {
-        const scriptCommand = yield* Addon.intoPowerShellScript(script);
+        const scriptCommand = yield* Addon.intoExecutor(script);
         const command = [
           scriptCommand,
-          ...extraArgs.map(Addon.quotePowerShellArgument),
+          ...extraArgs.map(Addon.quoteWindowsShellArgument),
         ].join(' ');
         return {
-          command: Addon.getPowerShellExecutable(),
-          args: [
-            '-NoProfile',
-            '-NonInteractive',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-Command',
-            command,
-          ],
+          command: process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe',
+          args: ['/d', '/s', '/c', command],
         };
       }
 
@@ -145,10 +151,17 @@ export class Addon {
     command: string,
     args: string[]
   ): Effect.Effect<ChildProcess, AddonError> {
+    // Strip any inherited flag so only the session config decides the value
+    const { OGI_GAME_LAUNCH: _inheritedFlag, ...inheritedEnv } = process.env;
     return Effect.try({
       try: () =>
         spawn(command, args, {
           cwd: this.config.path,
+          // Flag game-specific launches so the addon SDK can expose it on connect
+          env: {
+            ...inheritedEnv,
+            ...(this.config.gameSpecificLaunch ? { OGI_GAME_LAUNCH: '1' } : {}),
+          },
           stdio: ['ignore', 'pipe', 'pipe'],
         }),
       catch: (cause) =>

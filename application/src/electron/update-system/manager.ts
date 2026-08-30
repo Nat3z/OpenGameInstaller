@@ -122,12 +122,10 @@ export function extractManagedDownload(input: {
         updateError('Unable to prepare managed extraction', cause)
       )
     );
-    yield* extraction(source.localPath, extractedPath).pipe(
-      Effect.mapError((cause) =>
-        updateError('Managed extraction failed', cause)
-      ),
-      Effect.tapError(() => removeStaging(extractedPath))
-    );
+    yield* Effect.tryPromise({
+      try: () => extraction(source.localPath, extractedPath),
+      catch: (cause) => updateError('Managed extraction failed', cause),
+    }).pipe(Effect.tapError(() => removeStaging(extractedPath)));
     const metadata = yield* inspectRemoteSource(source.url);
     const manifest = yield* buildZipManifest({
       archivePath: source.localPath,

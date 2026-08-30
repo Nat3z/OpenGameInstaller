@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  detectUnarFromVersionOutput,
   detectUnrarTypeFromOutput,
   isSupportedArchivePath,
+  parseLsarTotal,
   parseSevenZipTotal,
   parseUnrarFreeTotal,
   parseUnrarNonFreeTotal,
@@ -27,6 +29,15 @@ describe('archive extraction progress parsing', () => {
     expect(detectUnrarTypeFromOutput('command unavailable')).toBe('unknown');
   });
 
+  test('detects unar from both -version output shapes', () => {
+    expect(detectUnarFromVersionOutput('unar v1.10.8, use unar --help')).toBe(
+      true
+    );
+    expect(detectUnarFromVersionOutput('v1.10.8\n')).toBe(true);
+    expect(detectUnarFromVersionOutput('')).toBe(false);
+    expect(detectUnarFromVersionOutput('command not found')).toBe(false);
+  });
+
   test('sums 7-Zip file sizes without counting physical archive size', () => {
     const output = `Physical Size = 120\n----------\nSize = 0\nSize = 12\nSize = 30\n`;
     expect(parseSevenZipTotal(output)).toBe(42);
@@ -49,6 +60,19 @@ describe('archive extraction progress parsing', () => {
     expect(
       parseUnrarNonFreeTotal('Name: a\nSize: 12\nName: b\nSize: 30\n')
     ).toBe(42);
+  });
+
+  test('sums lsar listing sizes', () => {
+    const output = [
+      't.rar: RAR',
+      '     Flags  File size   Ratio  Mode  Date       Time   Name',
+      '     =====  ==========  =====  ====  ========== =====  ====',
+      '  0. -----         500   0.0%  None  2026-08-22 06:20  a.txt',
+      '  1. -----          42   0.0%  None  2026-08-22 06:20  b.txt',
+      '(Flags: D=Directory, R=Resource fork, L=Link, E=Encrypted, @=Extended attributes)',
+    ].join('\n');
+    expect(parseLsarTotal(output)).toBe(542);
+    expect(parseLsarTotal('no listing')).toBeUndefined();
   });
 
   test('rejects missing and unsafe totals', () => {

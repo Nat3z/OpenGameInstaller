@@ -1,16 +1,15 @@
 import { AddonError } from '@ogi-sdk/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect } from 'effect';
 import { ConfigurationBuilder } from './config/ConfigurationBuilder';
-
-const logger = createLogger(LOGGER_PREFIXES.addon);
 
 type InputValues = Record<string, string | number | boolean>;
 type InputCallback = <U extends InputValues>(
   screen: ConfigurationBuilder<U>,
   name: string,
   description: string
-) => Effect.Effect<U, AddonError> | Promise<U>;
+) => Promise<U>;
+
+/** Work registered by addon code to run while the event is deferred. */
+export type DeferredWork = () => void | Promise<void>;
 
 export default class EventResponse<T> {
   data: T | undefined = undefined;
@@ -19,70 +18,37 @@ export default class EventResponse<T> {
   progress: number = 0;
   logs: string[] = [];
   failed: string | undefined = undefined;
-  onInputAsked?: InputCallback;
-  private readonly deferredEffects: Effect.Effect<void, unknown>[] = [];
+  private onInputAsked?: InputCallback;
+  private readonly deferredQueue: DeferredWork[] = [];
   private readonly deferredWaiters = new Set<
-    (effect: Effect.Effect<void, unknown> | undefined) => void
+    (work: DeferredWork | undefined) => void
   >();
 
   constructor(onInputAsked?: InputCallback) {
     this.onInputAsked = onInputAsked;
   }
 
-  public defer(
-    effect?: () => Effect.Effect<void, unknown> | Promise<void>
-  ): void {
+  public defer(work?: DeferredWork): void {
     this.deffered = true;
-    if (!effect) return;
+    if (!work) return;
 
-    const deferredEffect = Effect.try({
-      try: effect,
-      catch: (cause) =>
-        new AddonError({
-          message: `Deferred event failed: ${String(cause)}`,
-        }),
-    }).pipe(
-      Effect.flatMap((result) =>
-        Effect.isEffect(result)
-          ? result
-          : Effect.tryPromise({
-              try: () => result,
-              catch: (cause) =>
-                new AddonError({
-                  message: `Deferred event failed: ${String(cause)}`,
-                }),
-            })
-      )
-    );
     const waiter = this.deferredWaiters.values().next().value;
     if (waiter) {
       this.deferredWaiters.delete(waiter);
-      waiter(deferredEffect);
+      waiter(work);
     } else {
-      this.deferredEffects.push(deferredEffect);
+      this.deferredQueue.push(work);
     }
   }
 
-  /** Returns queued deferred work without waiting for later registrations. */
-  public takeDeferredEffect(): Effect.Effect<void, unknown> | undefined {
-    return this.deferredEffects.shift();
-  }
+  /** Resolves with queued work immediately, waits for later registrations, and resolves `undefined` once the event settles. */
+  public nextDeferred(): Promise<DeferredWork | undefined> {
+    const queued = this.deferredQueue.shift();
+    if (queued || this.resolved) return Promise.resolve(queued);
 
-  /** Waits for deferred work registered before or after event emission. */
-  public awaitDeferredEffect(): Effect.Effect<
-    Effect.Effect<void, unknown> | undefined
-  > {
-    return Effect.async((resume) => {
-      const deferredEffect = this.takeDeferredEffect();
-      if (deferredEffect || this.resolved) {
-        resume(Effect.succeed(deferredEffect));
-        return Effect.void;
-      }
-
-      const waiter = (effect: Effect.Effect<void, unknown> | undefined): void =>
-        resume(Effect.succeed(effect));
+    return new Promise((resolve) => {
+      const waiter = (work: DeferredWork | undefined): void => resolve(work);
       this.deferredWaiters.add(waiter);
-      return Effect.sync(() => this.deferredWaiters.delete(waiter));
     });
   }
 
@@ -121,46 +87,18 @@ export default class EventResponse<T> {
     this.logs.push(message);
   }
 
-  /** Effect-native input request API. */
-  public askForInputEffect<U extends InputValues>(
-    name: string,
-    description: string,
-    screen: ConfigurationBuilder<U>
-  ): Effect.Effect<U, AddonError> {
-    if (!this.onInputAsked) {
-      return Effect.fail(
-        new AddonError({ message: 'No input callback is registered' })
-      );
-    }
-    return Effect.try({
-      try: () => this.onInputAsked!(screen, name, description),
-      catch: (cause) =>
-        new AddonError({
-          message: `Input request failed: ${String(cause)}`,
-        }),
-    }).pipe(
-      Effect.flatMap((result) =>
-        Effect.isEffect(result)
-          ? result
-          : Effect.tryPromise({
-              try: () => result,
-              catch: (cause) =>
-                new AddonError({
-                  message: `Input request failed: ${String(cause)}`,
-                }),
-            })
-      )
-    );
-  }
-
-  /** Promise compatibility adapter for existing addon implementations. */
+  /** Ask the user for input; rejects with an {@link AddonError} when no callback is registered. */
   public askForInput<U extends InputValues>(
     name: string,
     description: string,
     screen: ConfigurationBuilder<U>
   ): Promise<U> {
-    return Effect.runPromise(
-      logger.observe(this.askForInputEffect(name, description, screen))
-    );
+    if (!this.onInputAsked) {
+      return Promise.reject(
+        new AddonError({ message: 'No input callback is registered' })
+      );
+    }
+    const callback = this.onInputAsked;
+    return Promise.resolve().then(() => callback(screen, name, description));
   }
 }

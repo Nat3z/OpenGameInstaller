@@ -78,19 +78,37 @@ export type OwnershipManifest = typeof OwnershipManifestSchema.Type;
 
 export interface CanonicalSource {
   readonly url: string;
+  readonly size: number;
+  readonly etag?: string;
 }
 
 export function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+/**
+ * Content-addressed key: folding the HEAD-observable identity (size, etag) in
+ * alongside the URL hash means republishing a different archive at the same URL
+ * yields a different key instead of pinning the old one forever. canonicalJson
+ * drops undefined, so a missing etag is omitted deterministically. A manifest's
+ * own `sources` array carries the same three fields, keeping the key
+ * reproducible server-side from stored data alone.
+ */
 export function sourceSetIdentity(sources: readonly CanonicalSource[]): {
   readonly sourceSetKey: string;
   readonly urlHashes: readonly string[];
 } {
   const urlHashes = sources.map((source) => sha256(source.url));
   return {
-    sourceSetKey: sha256(canonicalJson(urlHashes)),
+    sourceSetKey: sha256(
+      canonicalJson(
+        sources.map((source, index) => ({
+          e: source.etag,
+          s: source.size,
+          u: urlHashes[index],
+        }))
+      )
+    ),
     urlHashes,
   };
 }

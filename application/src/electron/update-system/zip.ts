@@ -229,7 +229,13 @@ export function buildZipManifest(
     );
     const hashes = yield* hashFilesInBatches(extractedFiles);
     const archiveHash = yield* hashFile(input.archivePath);
-    const identity = sourceSetIdentity([{ url: input.canonicalUrl }]);
+    const identity = sourceSetIdentity([
+      {
+        url: input.canonicalUrl,
+        size: archiveStat.size,
+        ...(input.etag ? { etag: input.etag } : {}),
+      },
+    ]);
     const manifest: UpdateManifest = {
       schemaVersion: 1,
       encoding: 'canonical-json',

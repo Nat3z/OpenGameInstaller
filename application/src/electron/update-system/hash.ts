@@ -6,25 +6,40 @@ const workerSource = `
   const { createHash } = require('node:crypto');
   const { createReadStream } = require('node:fs');
   const { parentPort } = require('node:worker_threads');
+  const { crc32 } = require('node:zlib');
 
-  const hashFile = (path) => new Promise((resolve, reject) => {
+  const digestFile = (path) => new Promise((resolve, reject) => {
     const hash = createHash('sha256');
+    let checksum = 0;
+    let size = 0;
     const stream = createReadStream(path);
-    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('data', (chunk) => {
+      hash.update(chunk);
+      checksum = crc32(chunk, checksum);
+      size += chunk.byteLength;
+    });
     stream.once('error', reject);
-    stream.once('end', () => resolve(hash.digest('hex')));
+    stream.once('end', () =>
+      resolve({ sha256: hash.digest('hex'), crc32: checksum, size })
+    );
   });
 
   parentPort.on('message', ({ id, paths }) => {
-    Promise.all(paths.map(hashFile))
-      .then((hashes) => parentPort.postMessage({ id, hashes }))
+    Promise.all(paths.map(digestFile))
+      .then((digests) => parentPort.postMessage({ id, digests }))
       .catch((error) => parentPort.postMessage({ id, error: String(error) }));
   });
 `;
 
+export interface FileDigest {
+  readonly sha256: string;
+  readonly crc32: number;
+  readonly size: number;
+}
+
 interface WorkerReply {
   readonly id: number;
-  readonly hashes?: string[];
+  readonly digests?: FileDigest[];
   readonly error?: string;
 }
 
@@ -35,7 +50,7 @@ let nextRequestId = 0;
 let inFlight = 0;
 const pending = new Map<
   number,
-  { resolve: (hashes: string[]) => void; reject: (error: Error) => void }
+  { resolve: (digests: FileDigest[]) => void; reject: (error: Error) => void }
 >();
 
 function ensureWorker(): Worker {
@@ -46,7 +61,7 @@ function ensureWorker(): Worker {
     const request = pending.get(message.id);
     if (!request) return;
     pending.delete(message.id);
-    if (message.hashes) request.resolve(message.hashes);
+    if (message.digests) request.resolve(message.digests);
     else request.reject(new Error(message.error ?? 'Hash worker failed'));
   });
   spawned.on('error', (cause) => {
@@ -66,15 +81,15 @@ function releaseWorkerIfIdle(): void {
   }
 }
 
-export function hashFiles(
+export function digestFiles(
   paths: readonly string[]
-): Effect.Effect<readonly string[], FileSystemError> {
+): Effect.Effect<readonly FileDigest[], FileSystemError> {
   if (paths.length === 0) return Effect.succeed([]);
   return Effect.tryPromise({
     try: () => {
       const id = nextRequestId++;
       inFlight += 1;
-      return new Promise<string[]>((resolve, reject) => {
+      return new Promise<FileDigest[]>((resolve, reject) => {
         pending.set(id, { resolve, reject });
         ensureWorker().postMessage({ id, paths });
       }).finally(() => {
@@ -90,6 +105,20 @@ export function hashFiles(
   });
 }
 
+export function digestFile(
+  path: string
+): Effect.Effect<FileDigest, FileSystemError> {
+  return digestFiles([path]).pipe(Effect.map((digests) => digests[0]));
+}
+
+export function hashFiles(
+  paths: readonly string[]
+): Effect.Effect<readonly string[], FileSystemError> {
+  return digestFiles(paths).pipe(
+    Effect.map((digests) => digests.map((digest) => digest.sha256))
+  );
+}
+
 export function hashFile(path: string): Effect.Effect<string, FileSystemError> {
-  return hashFiles([path]).pipe(Effect.map((hashes) => hashes[0]));
+  return digestFile(path).pipe(Effect.map((digest) => digest.sha256));
 }

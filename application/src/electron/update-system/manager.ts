@@ -6,6 +6,7 @@ import { Effect, Schema } from 'effect';
 import { extraction } from 'ogi-addon';
 import { getCommunityManifest, submitCommunityManifest } from './community.js';
 import {
+  type CanonicalSource,
   sourceSetIdentity,
   type UpdateManifest,
   UpdateManifestSchema,
@@ -54,11 +55,27 @@ export function prepareDirectUpdate(input: {
     ) {
       return { kind: 'fallback' as const };
     }
-    const identity = sourceSetIdentity(
-      input.sources.map((source) => ({ url: source.url }))
-    );
     const ownership = yield* loadOwnership(input.appID);
     if (!ownership) return { kind: 'fallback' as const };
+    // The key is content-addressed, so each source's current size/etag must be
+    // observed before any manifest can be looked up.
+    const metadata = yield* Effect.forEach(
+      input.sources,
+      (source) => inspectRemoteSource(source.url),
+      { concurrency: 2 }
+    );
+    const canonicalSources: CanonicalSource[] = [];
+    for (const [index, source] of input.sources.entries()) {
+      const size = metadata[index].size;
+      // No content-length means no key, and therefore no manifest to look up.
+      if (size === undefined) return { kind: 'fallback' as const };
+      canonicalSources.push({
+        url: source.url,
+        size,
+        ...(metadata[index].etag ? { etag: metadata[index].etag } : {}),
+      });
+    }
+    const identity = sourceSetIdentity(canonicalSources);
     const manifest = yield* getCommunityManifest(identity.sourceSetKey);
     if (
       !manifest ||
@@ -222,20 +239,32 @@ export function abortManagedSetup(transactionId: string) {
   );
 }
 
-function inspectRemoteSource(url: string): Effect.Effect<{
+interface RemoteSourceMetadata {
+  readonly size?: number;
   readonly etag?: string;
   readonly lastModified?: string;
-}> {
+}
+
+/** Fail-soft HEAD probe: callers that require a field treat its absence as a
+    reason to fall back rather than as an error. */
+function inspectRemoteSource(url: string): Effect.Effect<RemoteSourceMetadata> {
   return Effect.tryPromise({
-    try: async () => {
+    try: async (): Promise<RemoteSourceMetadata> => {
       const response = await fetch(url, {
         method: 'HEAD',
         signal: AbortSignal.timeout(3_000),
       });
       if (!response.ok) return {};
+      // `Number(null)` and `Number('')` are both 0, so an absent or blank
+      // content-length must be rejected before the numeric check.
+      const rawLength = response.headers.get('content-length')?.trim();
+      const length = rawLength ? Number(rawLength) : Number.NaN;
+      const size =
+        Number.isSafeInteger(length) && length > 0 ? length : undefined;
       const etag = response.headers.get('etag') ?? undefined;
       const lastModified = response.headers.get('last-modified') ?? undefined;
       return {
+        ...(size === undefined ? {} : { size }),
         ...(etag ? { etag } : {}),
         ...(lastModified ? { lastModified } : {}),
       };

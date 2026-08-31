@@ -8,7 +8,7 @@ import { createInflateRaw } from 'node:zlib';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { resolveInside } from './files.js';
-import { hashFile } from './hash.js';
+import { digestFile } from './hash.js';
 import type {
   OwnershipManifest,
   UpdateEntry,
@@ -55,10 +55,19 @@ export function materializeUpdate(
         input.ownership.root,
         candidate.installedPath
       );
-      const actualHash = yield* hashFile(installedPath).pipe(
+      const digest = yield* digestFile(installedPath).pipe(
         Effect.catchAll(() => Effect.succeed(undefined))
       );
-      if (actualHash === candidate.entry.sha256) {
+      // sha256 alone only proves the file matches the community manifest,
+      // which is untrusted; crc32 and size are cross-checked against the real
+      // archive's central directory by verifyRemoteZipStructure, so requiring
+      // all three ties every reused byte to the actual remote archive.
+      if (
+        digest &&
+        digest.sha256 === candidate.entry.sha256 &&
+        digest.crc32 === candidate.entry.crc32 &&
+        digest.size === candidate.entry.size
+      ) {
         verifiedReuse.push(candidate);
       } else {
         failedReuse.push(candidate.entry);

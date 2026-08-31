@@ -59,21 +59,56 @@ export type UpdateManifest = typeof UpdateManifestSchema.Type;
 
 export interface CanonicalSource {
   readonly url: string;
+  readonly size: number;
+  readonly etag?: string;
 }
 
 export function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+/**
+ * Content-addressed identity: the key folds in each source's HEAD-observable
+ * size and etag, so a republished archive at the same URL yields a new key
+ * instead of pinning the old manifest forever. canonicalJson drops undefined
+ * etags deterministically.
+ */
 export function sourceSetIdentity(sources: readonly CanonicalSource[]): {
   readonly sourceSetKey: string;
   readonly urlHashes: readonly string[];
 } {
   const urlHashes = sources.map((source) => sha256(source.url));
   return {
-    sourceSetKey: sha256(canonicalJson(urlHashes)),
+    sourceSetKey: sha256(
+      canonicalJson(
+        sources.map((source, index) => ({
+          e: source.etag,
+          s: source.size,
+          u: urlHashes[index],
+        }))
+      )
+    ),
     urlHashes,
   };
+}
+
+/** Re-derives the key from a manifest's own sources; must match sourceSetIdentity. */
+export function sourceSetKeyFromManifestSources(
+  sources: ReadonlyArray<{
+    readonly urlHash: string;
+    readonly size: number;
+    readonly etag?: string;
+  }>
+): string {
+  return sha256(
+    canonicalJson(
+      sources.map((source) => ({
+        e: source.etag,
+        s: source.size,
+        u: source.urlHash,
+      }))
+    )
+  );
 }
 
 export function canonicalJson(value: unknown): string {
@@ -81,9 +116,11 @@ export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
   }
+  // Sort by code units, not locale: canonical output must be identical on
+  // every machine regardless of ICU configuration.
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, item]) => item !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right));
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
   return `{${entries
     .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
     .join(',')}}`;

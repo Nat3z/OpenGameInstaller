@@ -14,9 +14,14 @@ import { createServer } from '../src/server.js';
 import { LocalStorageLive } from '../src/storage.js';
 
 const hash = (value: string): string => Bun.SHA256.hash(value, 'hex');
-const identity = sourceSetIdentity([{ url: 'https://example.test/game.zip' }]);
+const SOURCE_SIZE = 1_000;
+const identity = sourceSetIdentity([
+  { url: 'https://example.test/game.zip', size: SOURCE_SIZE },
+]);
 
 // Each test seeds its own source-set identity so ordering never matters.
+// The identity's size/etag must match the manifest's sources for the
+// server's key re-derivation to accept the submission.
 function makeManifest(overrides: {
   readonly entrySize: number;
   readonly identity?: ReturnType<typeof sourceSetIdentity>;
@@ -31,7 +36,7 @@ function makeManifest(overrides: {
       {
         index: 0,
         urlHash: id.urlHashes[0]!,
-        size: 1_000,
+        size: SOURCE_SIZE,
         sha256: hash('archive'),
       },
     ],
@@ -92,7 +97,9 @@ describe('manifest server', () => {
   });
 
   test('accepts an identical re-submission idempotently', async () => {
-    const id = sourceSetIdentity([{ url: 'https://example.test/idem.zip' }]);
+    const id = sourceSetIdentity([
+      { url: 'https://example.test/idem.zip', size: SOURCE_SIZE },
+    ]);
     const manifest = makeManifest({ entrySize: 256, identity: id });
     const body = gzipSync(canonicalJson(manifest));
     expect((await post(body, true)).status).toBe(201);
@@ -101,7 +108,7 @@ describe('manifest server', () => {
 
   test('rejects a conflicting manifest for the same key', async () => {
     const id = sourceSetIdentity([
-      { url: 'https://example.test/conflict.zip' },
+      { url: 'https://example.test/conflict.zip', size: SOURCE_SIZE },
     ]);
     const baseline = makeManifest({ entrySize: 256, identity: id });
     expect((await post(gzipSync(canonicalJson(baseline)), true)).status).toBe(
@@ -114,7 +121,7 @@ describe('manifest server', () => {
 
   test('rejects a source set key that does not match the sources', async () => {
     const other = sourceSetIdentity([
-      { url: 'https://example.test/other.zip' },
+      { url: 'https://example.test/other.zip', size: SOURCE_SIZE },
     ]);
     const manifest = {
       ...makeManifest({ entrySize: 256 }),
@@ -132,7 +139,9 @@ describe('manifest server', () => {
   });
 
   test('rejects a zero-length entry whose range escapes its source', async () => {
-    const id = sourceSetIdentity([{ url: 'https://example.test/empty.zip' }]);
+    const id = sourceSetIdentity([
+      { url: 'https://example.test/empty.zip', size: SOURCE_SIZE },
+    ]);
     const manifest = makeManifest({ entrySize: 0, identity: id });
     const invalid = {
       ...manifest,
@@ -147,6 +156,32 @@ describe('manifest server', () => {
       ],
     };
     const response = await post(JSON.stringify(invalid), false);
+    expect(response.status).toBe(422);
+  });
+
+  test('derives distinct keys when only size or etag differs', () => {
+    const url = 'https://example.test/content.zip';
+    const a = sourceSetIdentity([{ url, size: 100 }]);
+    const b = sourceSetIdentity([{ url, size: 200 }]);
+    const c = sourceSetIdentity([{ url, size: 100, etag: '"v2"' }]);
+    expect(a.sourceSetKey).not.toBe(b.sourceSetKey);
+    expect(a.sourceSetKey).not.toBe(c.sourceSetKey);
+    expect(a.urlHashes).toEqual(b.urlHashes);
+  });
+
+  test('rejects a manifest whose source size disagrees with its key', async () => {
+    const id = sourceSetIdentity([
+      { url: 'https://example.test/republished.zip', size: SOURCE_SIZE },
+    ]);
+    const manifest = makeManifest({ entrySize: 256, identity: id });
+    // Same key, but the republished archive is a different size: the server
+    // re-derives the key from sources and must reject the mismatch.
+    const tampered = {
+      ...manifest,
+      sources: [{ ...manifest.sources[0]!, size: SOURCE_SIZE + 1 }],
+      entries: [], // avoid unrelated range-bound failures
+    };
+    const response = await post(JSON.stringify(tampered), false);
     expect(response.status).toBe(422);
   });
 

@@ -2,7 +2,7 @@ import { gunzipSync } from 'node:zlib';
 import { Data, Effect, Runtime, Schema } from 'effect';
 import {
   canonicalJson,
-  sha256,
+  sourceSetKeyFromManifestSources,
   type UpdateManifest,
   UpdateManifestSchema,
 } from '../schema/index.js';
@@ -148,12 +148,11 @@ function handlePost(
     const text = yield* decodeBody(request, body);
     const manifest = yield* parseManifest(text);
 
-    // The key must be derived from the manifest's own source hashes, so a
-    // submitter cannot reserve an arbitrary key with unrelated sources.
+    // The key must be derivable from the manifest's own sources (urlHash +
+    // size + etag), so a submitter cannot reserve an arbitrary key with
+    // unrelated sources, and a republished archive gets a fresh key.
     const key = manifest.sourceSetKey;
-    const derivedKey = sha256(
-      canonicalJson(manifest.sources.map((source) => source.urlHash))
-    );
+    const derivedKey = sourceSetKeyFromManifestSources(manifest.sources);
     if (key !== derivedKey) {
       return yield* new HttpError({
         status: 422,

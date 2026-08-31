@@ -56,8 +56,8 @@ let hasActiveUpdateDownload = $derived(
   !!$currentDownloads.find(
     (download) =>
       download.appID === libraryInfo.appID &&
+      download.isUpdate === true &&
       download.status !== 'error' &&
-      download.status !== 'completed' &&
       download.status !== 'seeding' &&
       download.status !== 'setup-complete'
   )
@@ -120,6 +120,14 @@ let openedGameConfiguration = $state(false);
 const addonFailurePrompt = createLaunchPrompt();
 
 async function launchGame() {
+  if (hasActiveUpdateDownload) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `Finish or cancel the update for ${libraryInfo.name} before launching it.`,
+      type: 'warning',
+    });
+    return;
+  }
   if ($gamesLaunched[libraryInfo.appID]) return;
   logger.sync.info('Launching game with appID: ' + libraryInfo.appID);
   // playButton may be unbound (e.g. update-available button rendered instead);
@@ -166,7 +174,39 @@ async function launchGame() {
 
   logger.sync.info('pre-launch complete');
 
-  await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
+  // An update may have started while pre-launch awaited; recheck before the RPC.
+  if (hasActiveUpdateDownload) {
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
+    await tick();
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `An update for ${libraryInfo.name} started; launch it once the update finishes.`,
+      type: 'warning',
+    });
+    return;
+  }
+
+  try {
+    await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
+  } catch (error) {
+    // Reset the launch state or the play button stays stuck in WAITING.
+    logger.sync.error('Launch RPC failed:', error);
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
+    await tick();
+    playButton?.setAttribute('data-error', 'true');
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: formatError(error) || 'Failed to launch game',
+      type: 'error',
+    });
+    return;
+  }
 
   logger.sync.info('launchGame complete');
   if (!window.electronAPI.fs.exists('./internals')) {

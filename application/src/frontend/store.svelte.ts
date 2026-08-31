@@ -12,6 +12,7 @@ import {
   type CommunityAddon,
   communityAddonArraySchema,
 } from '@/electron/lib/marketplace-schema';
+import type { UpdateManifest } from '@/electron/update-system/model';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 
@@ -74,6 +75,10 @@ export type DownloadStatusAndInfo = SearchResult & {
   isUpdate?: boolean;
   updateVersion?: string;
   clearOldFilesBeforeUpdate?: boolean;
+  managedUpdate?: {
+    extractedPath: string;
+    manifest: UpdateManifest;
+  };
   // Manifest data from the search result, passed to the setup handler
   manifest?: Record<string, unknown>;
   // Raw file download enqueued by an addon via addon.download(); skips the setup phase

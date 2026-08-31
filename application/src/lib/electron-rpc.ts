@@ -18,6 +18,7 @@ import type {
   $UnrestrictLink,
   $UserInfo,
 } from 'real-debrid-js';
+import type { UpdateManifest } from '@/electron/update-system/model.js';
 import type { DownloadHandshakeResult } from '@/lib/download-handshake.js';
 
 export const ELECTRON_RPC_CHANNEL = 'effect-rpc';
@@ -468,6 +469,79 @@ export const ElectronRpc = {
     pauseDownload: rpc('torrent.pauseDownload', [Schema.String], Void),
     resumeDownload: rpc('torrent.resumeDownload', [Schema.String], Void),
     abortDownload: rpc('torrent.abortDownload', [Schema.String], Void),
+  },
+  update: {
+    prepareDirect: rpc(
+      'update.prepareDirect',
+      [
+        opaque<{
+          appID: number;
+          installationPath: string;
+          sources: readonly {
+            url: string;
+            localPath: string;
+            headers?: Readonly<Record<string, string>>;
+          }[];
+        }>(),
+      ],
+      opaque<
+        | { kind: 'fallback' }
+        | {
+            kind: 'optimized';
+            extractedPath: string;
+            manifest: UpdateManifest;
+          }
+      >()
+    ),
+    extract: rpc(
+      'update.extract',
+      [
+        opaque<{
+          sources: readonly {
+            url: string;
+            localPath: string;
+            headers?: Readonly<Record<string, string>>;
+          }[];
+          downloadId?: string;
+        }>(),
+      ],
+      opaque<{ extractedPath: string; manifest: UpdateManifest }>()
+    ),
+    beginSetup: rpc(
+      'update.beginSetup',
+      [
+        opaque<{
+          appID: number;
+          installationPath: string;
+          extractedPath: string;
+          manifest: UpdateManifest;
+        }>(),
+      ],
+      Schema.Struct({
+        transactionId: Schema.String,
+        setupPath: Schema.String,
+      })
+    ),
+    finishSetup: rpc(
+      'update.finishSetup',
+      [
+        opaque<{
+          transactionId: string;
+          installationPath: string;
+          manifest: UpdateManifest;
+          expectedLibrary: {
+            version: string;
+            cwd: string;
+            launchExecutable: string;
+            launchArguments?: string;
+            addonSource?: string;
+          };
+        }>(),
+      ],
+      Void
+    ),
+    completeSetup: rpc('update.completeSetup', [Schema.String], Void),
+    abortSetup: rpc('update.abortSetup', [Schema.String], Void),
   },
   oobe: {
     downloadTools: rpc(

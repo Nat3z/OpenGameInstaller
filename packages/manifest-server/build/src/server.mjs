@@ -1,4 +1,4 @@
-import { UpdateManifestSchema, canonicalJson, sha256 } from "../schema/index.mjs";
+import { UpdateManifestSchema, canonicalJson, sourceSetKeyFromManifestSources } from "../schema/index.mjs";
 import { gunzipSync } from "node:zlib";
 import { Context, Data, Effect, Runtime, Schema } from "effect";
 Data.TaggedError("StorageError");
@@ -109,7 +109,7 @@ function handlePost(request) {
 	return Effect.gen(function* () {
 		const manifest = yield* parseManifest(yield* decodeBody(request, yield* readBoundedBody(request)));
 		const key = manifest.sourceSetKey;
-		if (key !== sha256(canonicalJson(manifest.sources.map((source) => source.urlHash)))) return yield* new HttpError({
+		if (key !== sourceSetKeyFromManifestSources(manifest.sources)) return yield* new HttpError({
 			status: 422,
 			message: "Source set key does not match the manifest sources"
 		});

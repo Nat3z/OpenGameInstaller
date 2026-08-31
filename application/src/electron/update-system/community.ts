@@ -3,6 +3,10 @@ import { gzip } from 'node:zlib';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schema } from 'effect';
 import {
+  getStoredValue,
+  refreshCached,
+} from '@/electron/manager/manager.config.js';
+import {
   canonicalJson,
   type UpdateManifest,
   UpdateManifestSchema,
@@ -34,16 +38,41 @@ async function readBoundedText(
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function endpoint(): string | undefined {
-  const value = process.env.OGI_UPDATE_MANIFEST_URL?.trim();
-  return value ? value.replace(/\/$/, '') : undefined;
+/** OGI_UPDATE_MANIFEST_URL overrides the setting; setting it to an empty string disables manifest exchange even when a URL is configured. */
+function endpoint(): Effect.Effect<string | undefined> {
+  const override = process.env.OGI_UPDATE_MANIFEST_URL;
+  if (override !== undefined) {
+    const trimmed = override.trim();
+    return Effect.succeed(trimmed ? trimmed.replace(/\/$/, '') : undefined);
+  }
+  return refreshCached('general').pipe(
+    Effect.zipRight(getStoredValue('general', 'updateManifestUrl')),
+    Effect.map((value: unknown) => {
+      if (typeof value !== 'string') return undefined;
+      const trimmed = value.trim();
+      if (!/^https?:\/\//.test(trimmed)) return undefined;
+      return trimmed.replace(/\/$/, '');
+    }),
+    Effect.catchAll(() => Effect.succeed(undefined))
+  );
 }
 
 export function getCommunityManifest(
   sourceSetKey: string
 ): Effect.Effect<UpdateManifest | undefined> {
-  const baseUrl = endpoint();
-  if (!baseUrl) return Effect.succeed(undefined);
+  return endpoint().pipe(
+    Effect.flatMap((baseUrl) =>
+      baseUrl
+        ? fetchCommunityManifest(baseUrl, sourceSetKey)
+        : Effect.succeed(undefined)
+    )
+  );
+}
+
+function fetchCommunityManifest(
+  baseUrl: string,
+  sourceSetKey: string
+): Effect.Effect<UpdateManifest | undefined> {
   return Effect.tryPromise({
     try: async () => {
       const response = await fetch(
@@ -87,8 +116,17 @@ export function getCommunityManifest(
 export function submitCommunityManifest(
   manifest: UpdateManifest
 ): Effect.Effect<void> {
-  const baseUrl = endpoint();
-  if (!baseUrl) return Effect.void;
+  return endpoint().pipe(
+    Effect.flatMap((baseUrl) =>
+      baseUrl ? postCommunityManifest(baseUrl, manifest) : Effect.void
+    )
+  );
+}
+
+function postCommunityManifest(
+  baseUrl: string,
+  manifest: UpdateManifest
+): Effect.Effect<void> {
   return Effect.tryPromise({
     try: async () => {
       const response = await fetch(`${baseUrl}/v1/manifests`, {

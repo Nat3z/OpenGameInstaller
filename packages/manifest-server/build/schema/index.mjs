@@ -40,17 +40,35 @@ const UpdateManifestSchema = Schema.Struct({
 function sha256(value) {
 	return createHash("sha256").update(value).digest("hex");
 }
+/**
+* Content-addressed identity: the key folds in each source's HEAD-observable
+* size and etag, so a republished archive at the same URL yields a new key
+* instead of pinning the old manifest forever. canonicalJson drops undefined
+* etags deterministically.
+*/
 function sourceSetIdentity(sources) {
 	const urlHashes = sources.map((source) => sha256(source.url));
 	return {
-		sourceSetKey: sha256(canonicalJson(urlHashes)),
+		sourceSetKey: sha256(canonicalJson(sources.map((source, index) => ({
+			e: source.etag,
+			s: source.size,
+			u: urlHashes[index]
+		})))),
 		urlHashes
 	};
+}
+/** Re-derives the key from a manifest's own sources; must match sourceSetIdentity. */
+function sourceSetKeyFromManifestSources(sources) {
+	return sha256(canonicalJson(sources.map((source) => ({
+		e: source.etag,
+		s: source.size,
+		u: source.urlHash
+	}))));
 }
 function canonicalJson(value) {
 	if (value === null || typeof value !== "object") return JSON.stringify(value);
 	if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-	return `{${Object.entries(value).filter(([, item]) => item !== void 0).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
+	return `{${Object.entries(value).filter(([, item]) => item !== void 0).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
 }
 function isSafeRelativePath(value) {
 	if (!value || value.includes("\0") || value.includes("\\")) return false;
@@ -70,6 +88,6 @@ function isStructurallyValidManifest(manifest) {
 	});
 }
 //#endregion
-export { UPDATE_MANIFEST_VERSION, UpdateEntrySchema, UpdateManifestSchema, UpdateSourceSchema, canonicalJson, isSafeRelativePath, sha256, sourceSetIdentity };
+export { UPDATE_MANIFEST_VERSION, UpdateEntrySchema, UpdateManifestSchema, UpdateSourceSchema, canonicalJson, isSafeRelativePath, sha256, sourceSetIdentity, sourceSetKeyFromManifestSources };
 
 //# sourceMappingURL=index.mjs.map

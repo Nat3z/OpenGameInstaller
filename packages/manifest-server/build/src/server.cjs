@@ -133,7 +133,7 @@ function handlePost(request) {
 	return effect.Effect.gen(function* () {
 		const manifest = yield* parseManifest(yield* decodeBody(request, yield* readBoundedBody(request)));
 		const key = manifest.sourceSetKey;
-		if (key !== require_schema_index.sha256(require_schema_index.canonicalJson(manifest.sources.map((source) => source.urlHash)))) return yield* new HttpError({
+		if (key !== require_schema_index.sourceSetKeyFromManifestSources(manifest.sources)) return yield* new HttpError({
 			status: 422,
 			message: "Source set key does not match the manifest sources"
 		});

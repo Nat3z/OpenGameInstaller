@@ -173,6 +173,14 @@ let options: OptionsCategory[] = [
           }
         },
       },
+      updateManifestUrl: {
+        displayName: 'Update Manifest Server',
+        description:
+          'URL of a community manifest server used to optimize game updates. Leave blank to disable.',
+        defaultValue: '',
+        value: '',
+        type: 'string',
+      },
       addons: {
         displayName: 'Addons',
         description: 'The addons you want to use',

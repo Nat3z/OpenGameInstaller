@@ -15,6 +15,7 @@ const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 type PersistableStatus =
   | 'downloading'
+  | 'merging'
   | 'paused'
   | 'installing-redistributables';
 
@@ -52,8 +53,21 @@ function isPersistableStatus(
 ): status is PersistableStatus {
   return (
     status === 'downloading' ||
+    status === 'merging' ||
     status === 'paused' ||
     status === 'installing-redistributables'
+  );
+}
+
+// 'merging' is only persistable while the backend merges chunk files: the
+// chunk files on disk let a restart resume without re-downloading. Post-
+// download processing (moving/extracting) is covered by the failed-setups
+// recovery file instead.
+function isPersistableDownload(download: DownloadStatusAndInfo): boolean {
+  return (
+    isPersistableStatus(download.status) &&
+    (download.status !== 'merging' ||
+      download.processingPhase === 'Merging chunks')
   );
 }
 
@@ -237,7 +251,7 @@ export function initDownloadPersistence() {
       latestDownloads = downloads;
       const nextSnapshot: Record<string, string> = {};
       for (const download of downloads) {
-        if (!isPersistableStatus(download.status)) continue;
+        if (!isPersistableDownload(download)) continue;
         // Addon-enqueued downloads can't be restored (owning addon session is gone).
         if (download.isAddonDownload) continue;
         const serialized = JSON.stringify(download);

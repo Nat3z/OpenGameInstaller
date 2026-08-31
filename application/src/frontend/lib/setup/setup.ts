@@ -17,6 +17,7 @@ import { getApp } from '@/frontend/lib/core/library';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
+import { toSerializable } from '@/frontend/lib/setup/serialize';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
   createNotification,
@@ -99,9 +100,9 @@ export function createSetupPayload(
     ...(currentLibraryInfo ? { currentLibraryInfo } : {}),
     multiPartFiles:
       downloadedItem.downloadType === 'direct'
-        ? structuredClone(downloadedItem.files ?? [])
+        ? toSerializable(downloadedItem.files ?? [])
         : [],
-    manifest: structuredClone(downloadedItem.manifest ?? {}),
+    manifest: toSerializable(downloadedItem.manifest ?? {}),
     ...additionalData,
   } as SetupCommandData & { addonID: string };
 }
@@ -440,6 +441,34 @@ export function runSetupApp(
         error: result,
       });
       return yield* Effect.fail(new AddonError({ message: result }));
+    }
+
+    if (result === 'setup-steam-login-required') {
+      // macOS Sikarugir: game is installed but Windows Steam needs a first login
+      createNotification({
+        message: `Sign in to Windows Steam to finish setting up ${downloadedItem.name}. Launching the game will finish setup automatically once you're signed in.`,
+        id: Math.random().toString(36).substring(7),
+        type: 'info',
+      });
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: result,
+      });
+      return data;
+    }
+
+    if (result === 'setup-windows-support-required') {
+      // macOS Sikarugir: the shared wrapper is not provisioned yet
+      createNotification({
+        message: `Finish Windows-game support setup to run ${downloadedItem.name}: install Sikarugir and Windows Steam, then launch the game from your library.`,
+        id: Math.random().toString(36).substring(7),
+        type: 'info',
+      });
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: result,
+      });
+      return data;
     }
 
     if (result === 'setup-prefix-required') {

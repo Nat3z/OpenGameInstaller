@@ -99,6 +99,7 @@ export function waitForDownloadHandshake(
 ): Promise<DownloadHandshakeResult> {
   const existing = lastKnownState.get(id);
   if (existing && isReadyState(existing)) {
+    settledHandshakes.add(id);
     return Promise.resolve(existing);
   }
 

@@ -1,7 +1,9 @@
+import { resolve as resolvePath } from 'node:path';
 import { TorrentError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import webtorrent from 'webtorrent';
+import { waitForTorrentFiles } from '@/electron/lib/torrent-files.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -12,6 +14,7 @@ type TorrentControls = {
   pause: () => void;
   resume: () => void;
   destroy: () => void;
+  waitUntilFilesReady: () => Effect.Effect<void, TorrentError>;
 };
 
 export function torrent(torrentId: string | Buffer, path: string) {
@@ -82,6 +85,21 @@ export function torrent(torrentId: string | Buffer, path: string) {
                   stopProgressReporting();
                   activeTorrent.destroy();
                 },
+                waitUntilFilesReady: () =>
+                  Effect.tryPromise({
+                    try: () =>
+                      waitForTorrentFiles(
+                        activeTorrent.files.map((file) => ({
+                          path: resolvePath(path, file.path),
+                          length: file.length,
+                        }))
+                      ),
+                    catch: (cause) =>
+                      new TorrentError({
+                        message: `Torrent files did not become ready: ${String(cause)}`,
+                        cause,
+                      }),
+                  }),
               })
             );
           });

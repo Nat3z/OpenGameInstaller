@@ -23,7 +23,12 @@ const progressPollIntervalMs = 150;
 type ExtractionError = FileSystemError | PlatformError;
 
 export type ExtractionProgress = number | null;
-export type ExtractionProgressCallback = (progress: ExtractionProgress) => void;
+/** 'extracting' while the archive unpacks; 'moving' while staged files move into the output directory. */
+export type ExtractionStage = 'extracting' | 'moving';
+export type ExtractionProgressCallback = (
+  progress: ExtractionProgress,
+  stage: ExtractionStage
+) => void;
 
 const spawnProcess = (
   command: string,
@@ -197,9 +202,23 @@ const getRegularFileBytes = async (directory: string): Promise<number> => {
   return total;
 };
 
+const countRegularFiles = async (directory: string): Promise<number> => {
+  let total = 0;
+  const entries = await fsAsync.readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      total += await countRegularFiles(join(directory, entry.name));
+    } else if (entry.isFile()) {
+      total += 1;
+    }
+  }
+  return total;
+};
+
 const mergeDirectory = async (
   sourceDir: string,
-  destinationDir: string
+  destinationDir: string,
+  onFileMoved?: () => void
 ): Promise<void> => {
   const destinationStat = await fsAsync
     .lstat(destinationDir)
@@ -213,21 +232,23 @@ const mergeDirectory = async (
     const source = join(sourceDir, entry.name);
     const destination = join(destinationDir, entry.name);
     if (entry.isDirectory()) {
-      await mergeDirectory(source, destination);
+      await mergeDirectory(source, destination, onFileMoved);
       await fsAsync.rm(source, { recursive: true, force: true });
       continue;
     }
     await fsAsync.rm(destination, { recursive: true, force: true });
     await fsAsync.rename(source, destination);
+    onFileMoved?.();
   }
 };
 
 const reportProgress = (
   callback: ExtractionProgressCallback | undefined,
-  progress: ExtractionProgress
+  progress: ExtractionProgress,
+  stage: ExtractionStage = 'extracting'
 ): void => {
   try {
-    callback?.(progress);
+    callback?.(progress, stage);
   } catch {
     // Progress observers must not be able to fail extraction.
   }
@@ -386,8 +407,24 @@ const extractArchiveEffect = (
             )
           )
       );
+      // Move staged files into the output directory, reporting per-file
+      // progress so big games don't look stuck after extraction finishes.
       yield* Effect.tryPromise({
-        try: () => mergeDirectory(stagingDir, outputDir),
+        try: async () => {
+          const totalFiles = await countRegularFiles(stagingDir).catch(() => 0);
+          reportProgress(onProgress, totalFiles > 0 ? 0 : null, 'moving');
+          let movedFiles = 0;
+          await mergeDirectory(stagingDir, outputDir, () => {
+            movedFiles++;
+            if (totalFiles > 0) {
+              reportProgress(
+                onProgress,
+                Math.min(movedFiles / totalFiles, 0.99),
+                'moving'
+              );
+            }
+          });
+        },
         catch: (cause) =>
           new FileSystemError({
             message: `Failed to move extracted files: ${String(cause)}`,
@@ -395,7 +432,7 @@ const extractArchiveEffect = (
             cause,
           }),
       });
-      reportProgress(onProgress, 1);
+      reportProgress(onProgress, 1, 'moving');
     }).pipe(
       Effect.ensuring(
         Effect.promise(() =>

@@ -7,7 +7,12 @@ import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
  */
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { FileSystemError, ipcBoundary, LibraryError } from '@ogi-sdk/errors';
+import {
+  FileSystemError,
+  formatError,
+  ipcBoundary,
+  LibraryError,
+} from '@ogi-sdk/errors';
 import {
   type ChildProcess,
   type SpawnOptions,
@@ -18,6 +23,7 @@ import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { homedir } from 'os';
+import * as path from 'path';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   addDeckGameToSteam,
@@ -50,6 +56,10 @@ import {
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import {
+  recordSikarugirGameMetadata,
+  upsertSikarugirShortcut,
+} from '@/electron/handlers/helpers.app/sikarugir.js';
+import {
   appMetadataSubtrees,
   type DeleteGuardRoots,
   filesystemRoot,
@@ -57,9 +67,15 @@ import {
   sharesDirectoryWithOtherGames,
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
+import {
+  effectiveLaunchMethod,
+  SikarugirRuntime,
+  SikarugirRuntimeLive,
+} from '@/electron/lib/sikarugir/index.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { runElectronEffect } from '@/electron/runtime.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -114,6 +130,95 @@ export type ExecuteWrapperResult = {
   error?: string;
 };
 
+type DirectLaunchSignal =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: string };
+
+/**
+ * Run a Windows game through the Sikarugir wrapper launcher. The launcher
+ * process represents the game itself, so `game:launch` is emitted when it
+ * spawns and `game:exit` when it closes - the same shape the UMU branch uses.
+ */
+function launchSikarugirGameDirectly(
+  appInfo: LibraryInfo,
+  mainWindow?: Electron.BrowserWindow | null
+): Effect.Effect<LaunchGameResult, LibraryError> {
+  return Effect.gen(function* () {
+    const appID = appInfo.appID;
+    const executablePath = path.resolve(appInfo.cwd, appInfo.launchExecutable);
+    const workingDirectory = path.resolve(appInfo.cwd);
+    // Everything after %command% is a game flag; without %command% the whole
+    // argument string is, matching the wrapper-command branch.
+    const afterCommand = parseLaunchArgumentsAfterCommand(
+      appInfo.launchArguments
+    );
+    const flags =
+      afterCommand.length > 0
+        ? afterCommand
+        : resolveLaunchCommand(
+            appInfo.launchExecutable,
+            appInfo.launchArguments
+          ).args;
+
+    const signal = yield* Effect.tryPromise({
+      try: () =>
+        // Register inside the queue so a concurrent removal cannot interleave.
+        enqueueGameOperation(appID, async () => {
+          runningGames.add(appID);
+          let reportSpawn: () => void = () => undefined;
+          let reportFailure: (error: string) => void = () => undefined;
+          const spawnSignal = new Promise<DirectLaunchSignal>((resolve) => {
+            reportSpawn = () => resolve({ ok: true });
+            reportFailure = (error) => resolve({ ok: false, error });
+          });
+          // The session outlives this promise: launchGame only completes when
+          // the launcher process exits, which is the game's exit.
+          void runElectronEffect(
+            Effect.either(
+              Effect.gen(function* () {
+                const runtime = yield* SikarugirRuntime;
+                yield* runtime.launchGame({
+                  executablePath,
+                  workingDirectory,
+                  flags,
+                  onLaunch: () => reportSpawn(),
+                });
+              }).pipe(Effect.provide(SikarugirRuntimeLive))
+            )
+          ).then((result) => {
+            if (result._tag === 'Left') {
+              const message = formatError(result.left);
+              logger.sync.error(`[launch] Sikarugir game failed: ${message}`);
+              // No-op once the launcher already spawned.
+              reportFailure(message);
+            }
+            runningGames.delete(appID);
+            mainWindow?.webContents.send('game:exit', { id: appID });
+          });
+          return spawnSignal;
+        }),
+      catch: (cause) =>
+        new LibraryError({
+          message: `Failed to launch game with Sikarugir: ${String(cause)}`,
+          gameId: appID,
+        }),
+    }).pipe(
+      Effect.onError(() => Effect.sync(() => runningGames.delete(appID)))
+    );
+
+    if (!signal.ok) {
+      sendNotification({
+        message: `Failed to launch game: ${signal.error}`,
+        id: generateNotificationId(),
+        type: 'error',
+      });
+      return { success: false, error: signal.error };
+    }
+    mainWindow?.webContents.send('game:launch', { id: appID });
+    return { success: true };
+  });
+}
+
 export function launchGameFromLibrary(
   appid: number | string,
   mainWindow?: Electron.BrowserWindow | null,
@@ -130,11 +235,12 @@ export function launchGameFromLibrary(
       return { success: false, error: 'Invalid app ID' };
     }
 
-    let appInfo = loadLibraryInfo(parsedAppId);
-    if (!appInfo) {
+    const loadedAppInfo = loadLibraryInfo(parsedAppId);
+    if (!loadedAppInfo) {
       logger.sync.info('[launch] Game not found');
       return { success: false, error: 'Game not found' };
     }
+    let appInfo: LibraryInfo = loadedAppInfo;
 
     if (
       isLinux() &&
@@ -159,9 +265,10 @@ export function launchGameFromLibrary(
           }),
       });
       if (!migration.success) return migration;
-      appInfo = loadLibraryInfo(parsedAppId);
-      if (!appInfo)
+      const migratedAppInfo = loadLibraryInfo(parsedAppId);
+      if (!migratedAppInfo)
         return { success: false, error: 'Game disappeared during migration' };
+      appInfo = migratedAppInfo;
 
       if (mainWindow && oldSteamAppId !== undefined) {
         const shortcutResult = yield* addUmuGameToSteam(mainWindow, {
@@ -233,6 +340,115 @@ export function launchGameFromLibrary(
       // Already tracked by the pre-await add above; do not re-add here or a
       // fast crash's onExit delete would be resurrected.
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+      return { success: true };
+    }
+
+    if (
+      process.platform === 'darwin' &&
+      appInfo.launchExecutable.toLowerCase().endsWith('.exe')
+    ) {
+      logger.sync.info(`[launch] Using Sikarugir mode for ${appInfo.name}`);
+      const launchMethod = effectiveLaunchMethod(appInfo.sikarugir);
+      if (!appInfo.sikarugir) {
+        const preparation = yield* Effect.either(
+          Effect.gen(function* () {
+            const runtime = yield* SikarugirRuntime;
+            const setupState = yield* runtime.setupState;
+            // Direct launch runs the game through the wrapper launcher, so it
+            // only needs the wrapper and its prefix - not a Steam login.
+            if (launchMethod === 'direct') {
+              if (
+                setupState.state === 'wrapper-missing' ||
+                setupState.state === 'prefix-missing'
+              ) {
+                return {
+                  ready: false as const,
+                  error: 'Finish Windows-game support setup before playing.',
+                };
+              }
+              return {
+                ready: true as const,
+                appInfo: yield* recordSikarugirGameMetadata(appInfo),
+              };
+            }
+            if (
+              setupState.state !== 'ready' ||
+              setupState.steamAccountSelectionRequired
+            ) {
+              const needsSteamSignIn =
+                setupState.state === 'steam-login-required' ||
+                (setupState.state === 'ready' &&
+                  setupState.steamAccountSelectionRequired);
+              return {
+                ready: false as const,
+                error: needsSteamSignIn
+                  ? 'Finish the Windows Steam sign-in and account selection before playing.'
+                  : 'Finish Windows-game support setup before playing.',
+              };
+            }
+            return {
+              ready: true as const,
+              appInfo: yield* upsertSikarugirShortcut(appInfo),
+            };
+          }).pipe(Effect.provide(SikarugirRuntimeLive))
+        );
+        if (preparation._tag === 'Left' || !preparation.right.ready) {
+          const error =
+            preparation._tag === 'Left'
+              ? formatError(preparation.left)
+              : (preparation.right.error ??
+                'Finish Windows-game support setup before playing.');
+          logger.sync.error(`[launch] Sikarugir preparation failed: ${error}`);
+          sendNotification({
+            message: error,
+            id: generateNotificationId(),
+            type: 'error',
+          });
+          return { success: false, error };
+        }
+        appInfo = preparation.right.appInfo;
+      }
+      const sikarugir = appInfo.sikarugir;
+      if (!sikarugir) {
+        return {
+          success: false,
+          error: 'Finish Windows-game support setup before playing.',
+        };
+      }
+
+      if (launchMethod === 'direct') {
+        return yield* launchSikarugirGameDirectly(appInfo, mainWindow);
+      }
+
+      const result = yield* Effect.either(
+        Effect.gen(function* () {
+          const runtime = yield* SikarugirRuntime;
+          yield* runtime.launchSteam(sikarugir);
+        }).pipe(Effect.provide(SikarugirRuntimeLive))
+      );
+      if (result._tag === 'Left') {
+        logger.sync.error(
+          `[launch] Sikarugir launch failed: ${result.left.message}`
+        );
+        sendNotification({
+          message: `Failed to launch game: ${result.left.message}`,
+          id: generateNotificationId(),
+          type: 'error',
+        });
+        return { success: false, error: result.left.message };
+      }
+
+      mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+      if (!sikarugir.steamLaunchId) {
+        sendNotification({
+          message: `Windows Steam opened. Select ${appInfo.name} inside Steam to play.`,
+          id: generateNotificationId(),
+          type: 'info',
+        });
+      }
+      // The wrapper cannot observe the game's exit, so this is a hand-off:
+      // resolve the launch immediately instead of pinning the UI on PLAYING.
+      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
       return { success: true };
     }
 
@@ -580,10 +796,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         const appInfo = yield* Effect.sync(() => loadLibraryInfo(appid));
         if (!appInfo) return { status: 'success' as const };
 
-        let detectedSteamAppId =
-          appInfo.umu?.steamShortcutId ?? appInfo.umu?.steamShortcutReaddId;
+        const usesSikarugirShortcut =
+          process.platform === 'darwin' && Boolean(appInfo.sikarugir);
+        let detectedSteamAppId = usesSikarugirShortcut
+          ? undefined
+          : (appInfo.umu?.steamShortcutId ?? appInfo.umu?.steamShortcutReaddId);
         let steamCleanupWarning: string | undefined;
-        if (detectedSteamAppId === undefined) {
+        if (!usesSikarugirShortcut && detectedSteamAppId === undefined) {
           const lookup = yield* Effect.either(findSteamAppIdForGame(appid));
           if (lookup._tag === 'Right') {
             detectedSteamAppId = lookup.right;
@@ -603,7 +822,25 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           (removal) =>
             Effect.gen(function* () {
               let warning = steamCleanupWarning;
-              if (detectedSteamAppId !== undefined) {
+              if (usesSikarugirShortcut) {
+                const shortcutResult = yield* Effect.either(
+                  Effect.gen(function* () {
+                    const runtime = yield* SikarugirRuntime;
+                    yield* runtime.removeShortcut({
+                      gameId: appInfo.appID,
+                      appName: appInfo.name,
+                      executablePath: path.resolve(
+                        appInfo.cwd,
+                        appInfo.launchExecutable
+                      ),
+                      workingDirectory: path.resolve(appInfo.cwd),
+                    });
+                  }).pipe(Effect.provide(SikarugirRuntimeLive))
+                );
+                if (shortcutResult._tag === 'Left') {
+                  warning = `The game was removed from the library, but its Windows Steam shortcut could not be removed: ${formatError(shortcutResult.left)}`;
+                }
+              } else if (detectedSteamAppId !== undefined) {
                 const steamResult = yield* Effect.either(
                   runSteamMutationWithConfirmation(mainWindow, 'remove', {
                     appID: appid,
@@ -813,6 +1050,44 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             }
           }
 
+          if (
+            process.platform === 'darwin' &&
+            data.launchExecutable.toLowerCase().endsWith('.exe')
+          ) {
+            // Persist first so a runtime failure still leaves the game in
+            // the library where setup can be retried.
+            saveLibraryInfo(data.appID, data);
+            addToInternalsApps(data.appID);
+            const setupResult = yield* Effect.either(
+              Effect.gen(function* () {
+                const runtime = yield* SikarugirRuntime;
+                const setupState = yield* runtime.setupState;
+
+                if (setupState.state === 'steam-login-required') {
+                  return 'setup-steam-login-required' as const;
+                }
+                if (setupState.state !== 'ready') {
+                  return 'setup-windows-support-required' as const;
+                }
+                if (setupState.steamAccountSelectionRequired) {
+                  return 'setup-windows-support-required' as const;
+                }
+                if (data.redistributables?.length) {
+                  return 'setup-prefix-required' as const;
+                }
+                yield* upsertSikarugirShortcut(data);
+                return 'setup-success' as const;
+              }).pipe(Effect.provide(SikarugirRuntimeLive))
+            );
+            if (setupResult._tag === 'Left') {
+              logger.sync.error(
+                `[setup] Sikarugir setup failed: ${setupResult.left.message}`
+              );
+              return 'setup-failed';
+            }
+            return setupResult.right;
+          }
+
           // Native applications do not need a Wine prefix.
           saveLibraryInfo(data.appID, data);
           addToInternalsApps(data.appID);
@@ -911,6 +1186,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             loadLibraryInfo(data.appID)
           );
           if (!existing) return 'app-not-found';
+          // Captured before Object.assign mutates `existing` via `appData`.
+          const previousExecutablePath = path.resolve(
+            existing.cwd,
+            existing.launchExecutable
+          );
+          const previousWorkingDirectory = path.resolve(existing.cwd);
 
           const requestedUmu =
             data.umu ??
@@ -970,6 +1251,62 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           }
 
           saveLibraryInfo(data.appID, appData);
+          if (process.platform === 'darwin' && existing.sikarugir) {
+            if (data.launchExecutable.toLowerCase().endsWith('.exe')) {
+              const shortcutUpdate = yield* Effect.either(
+                upsertSikarugirShortcut(appData).pipe(
+                  Effect.provide(SikarugirRuntimeLive)
+                )
+              );
+              if (shortcutUpdate._tag === 'Left') {
+                const message = formatError(shortcutUpdate.left);
+                logger.sync.error(
+                  `[update] Could not update the Windows Steam shortcut: ${message}`
+                );
+                // Drop the stale shortcut metadata so the next Play re-inserts
+                // it from the updated paths instead of launching the old ones.
+                delete appData.sikarugir;
+                saveLibraryInfo(data.appID, appData);
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: `The game was updated, but its Windows Steam shortcut could not be updated: ${message}`,
+                    gameId: data.appID,
+                  })
+                );
+              }
+            } else {
+              // The update switched the game to a native executable: retire
+              // the Windows Steam shortcut and its metadata.
+              const shortcutRemoval = yield* Effect.either(
+                Effect.gen(function* () {
+                  const runtime = yield* SikarugirRuntime;
+                  yield* runtime.removeShortcut({
+                    gameId: existing.appID,
+                    appName: existing.name,
+                    executablePath: previousExecutablePath,
+                    workingDirectory: previousWorkingDirectory,
+                  });
+                }).pipe(Effect.provide(SikarugirRuntimeLive))
+              );
+              if (shortcutRemoval._tag === 'Left') {
+                // Keep the metadata so removeApp or a later update retries
+                // the cleanup instead of orphaning the shortcut.
+                const message = formatError(shortcutRemoval.left);
+                logger.sync.warn(
+                  `[update] Could not remove the Windows Steam shortcut: ${message}`
+                );
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: `The game was updated, but its Windows Steam shortcut could not be removed: ${message}`,
+                    gameId: data.appID,
+                  })
+                );
+              } else {
+                delete appData.sikarugir;
+                saveLibraryInfo(data.appID, appData);
+              }
+            }
+          }
           return 'success';
         });
       }

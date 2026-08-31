@@ -12,9 +12,9 @@ import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
 import {
-  addonServer,
   fetchAddonsWithConfigure,
   findAddonsSupportingStorefront,
+  getAddonServerPromise,
   isAddonEventAvailable,
   type SearchResultWithAddon,
   startDownloadEffect,
@@ -113,6 +113,7 @@ async function loadUpdateSources() {
   const detailAddons = await runFrontendEffect(
     findAddonsSupportingStorefront(storefront, 'game-details')
   );
+  const addonServer = await getAddonServerPromise();
   let response: StoreData | undefined;
   for (const addon of detailAddons) {
     try {

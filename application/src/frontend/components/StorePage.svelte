@@ -22,9 +22,9 @@ import {
   viewOpenedWhenChanged,
 } from '@/frontend/store.svelte';
 import {
-  addonServer,
   fetchAddonsWithConfigure,
   findAddonsSupportingStorefront,
+  getAddonServerPromise,
   isAddonEventAvailable,
   runTask,
   type SearchResultWithAddon,
@@ -215,6 +215,7 @@ async function loadCustomStoreData() {
   const detailAddons = await runFrontendEffect(
     findAddonsSupportingStorefront(storefront, 'game-details')
   );
+  const addonServer = await getAddonServerPromise();
   let response: StoreData | undefined;
   for (const addon of detailAddons) {
     try {

@@ -8,9 +8,12 @@ export function captureOwnershipFiles(
   previous: OwnershipManifest | undefined
 ): OwnershipManifest['files'] {
   const installedByHash = new Map<string, ScannedFile[]>();
+  const installedByPath = new Map<string, ScannedFile>();
   for (const file of installed) {
     const candidates = installedByHash.get(file.sha256) ?? [];
-    installedByHash.set(file.sha256, [...candidates, file]);
+    candidates.push(file);
+    installedByHash.set(file.sha256, candidates);
+    installedByPath.set(file.path, file);
   }
   const previousBySource = new Map(
     previous?.files.flatMap((file) =>
@@ -19,29 +22,25 @@ export function captureOwnershipFiles(
   );
   const unchangedPreexisting = new Set(
     beforeFiles
-      .filter((before) =>
-        installed.some(
-          (file) => file.path === before.path && file.sha256 === before.sha256
-        )
+      .filter(
+        (before) => installedByPath.get(before.path)?.sha256 === before.sha256
       )
       .map((file) => file.path)
   );
   const files: OwnershipManifest['files'][number][] = [];
   for (const entry of manifest.entries) {
     const previousFile = previousBySource.get(entry.path);
-    const sameOutput = previousFile
-      ? installed.find(
-          (file) =>
-            file.path === previousFile.installedPath &&
-            file.sha256 === entry.sha256
-        )
+    const previousOutput = previousFile
+      ? installedByPath.get(previousFile.installedPath)
       : undefined;
-    const samePath = installed.find(
-      (file) =>
-        file.path === entry.path &&
-        file.sha256 === entry.sha256 &&
-        (!previous || !unchangedPreexisting.has(file.path))
-    );
+    const sameOutput =
+      previousOutput?.sha256 === entry.sha256 ? previousOutput : undefined;
+    const pathCandidate = installedByPath.get(entry.path);
+    const samePath =
+      pathCandidate?.sha256 === entry.sha256 &&
+      (!previous || !unchangedPreexisting.has(pathCandidate.path))
+        ? pathCandidate
+        : undefined;
     const hashMatches = (installedByHash.get(entry.sha256) ?? []).filter(
       (file) => !unchangedPreexisting.has(file.path)
     );
@@ -61,9 +60,7 @@ export function captureOwnershipFiles(
   for (const generated of previous?.files ?? []) {
     if (generated.sourcePath || capturedPaths.has(generated.installedPath))
       continue;
-    const output = installed.find(
-      (file) => file.path === generated.installedPath
-    );
+    const output = installedByPath.get(generated.installedPath);
     if (!output) continue;
     files.push({
       installedPath: output.path,

@@ -21,6 +21,7 @@ import {
   normalizeAddonLink,
   parseAddonLink,
 } from '@/electron/lib/addon-links.js';
+import { isNixOSCommandResult } from '@/electron/lib/nix-detection.js';
 import { sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -305,12 +306,8 @@ export let IS_NIXOS = false;
 function detectNixOS(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     try {
-      exec('command -v nixos-rebuild', (error, _stdout, stderr) => {
-        if (error) {
-          resolve(false);
-          return;
-        }
-        resolve(stderr.includes('nixos-rebuild'));
+      exec('command -v nixos-rebuild', (error, stdout) => {
+        resolve(isNixOSCommandResult(error, stdout));
       });
     } catch {
       resolve(false);

@@ -1,4 +1,5 @@
-import { gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { gzip } from 'node:zlib';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schema } from 'effect';
 import {
@@ -14,6 +15,28 @@ import {
 const logger = createLogger(LOGGER_PREFIXES.electron);
 const requestTimeoutMs = 3_000;
 const maximumManifestBytes = 8 * 1024 * 1024;
+const gzipAsync = promisify(gzip);
+
+/** Reads at most maximumManifestBytes; a lying content-length cannot force unbounded buffering. */
+async function readBoundedText(
+  response: Response
+): Promise<string | undefined> {
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maximumManifestBytes) {
+      await reader.cancel();
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 /** OGI_UPDATE_MANIFEST_URL overrides the setting; setting it to an empty string disables manifest exchange even when a URL is configured. */
 function endpoint(): Effect.Effect<string | undefined> {
@@ -67,8 +90,8 @@ function fetchCommunityManifest(
       ) {
         return undefined;
       }
-      const text = await response.text();
-      if (Buffer.byteLength(text) > maximumManifestBytes) return undefined;
+      const text = await readBoundedText(response);
+      if (text === undefined) return undefined;
       const body: unknown = JSON.parse(text);
       const candidate =
         typeof body === 'object' && body !== null && 'manifest' in body
@@ -112,7 +135,7 @@ function postCommunityManifest(
           'Content-Type': 'application/json',
           'Content-Encoding': 'gzip',
         },
-        body: gzipSync(canonicalJson(manifest)),
+        body: await gzipAsync(canonicalJson(manifest)),
         signal: AbortSignal.timeout(requestTimeoutMs),
       });
       if (!response.ok) {

@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { LibraryInfo, SearchResult } from '@ogi-sdk/connect';
+import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { ConfigurationBuilder } from 'ogi-addon/config';
@@ -7,12 +8,14 @@ import { onDestroy, onMount, tick } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { fly, slide } from 'svelte/transition';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import AddonFailurePromptModal from '@/frontend/components/built/AddonFailurePromptModal.svelte';
 import UpdateAppModal from '@/frontend/components/built/UpdateAppModal.svelte';
 import GameConfiguration from '@/frontend/components/GameConfiguration.svelte';
 import Image from '@/frontend/components/Image.svelte';
 import PlayIcon from '@/frontend/Icons/PlayIcon.svelte';
 import SettingsFilled from '@/frontend/Icons/SettingsFilled.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
+import { createLaunchPrompt } from '@/frontend/lib/core/launch-prompt.svelte';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { addToSteam } from '@/frontend/lib/core/steam';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
@@ -35,8 +38,8 @@ import {
   setHeaderBackButton,
 } from '@/frontend/store.svelte';
 import {
-  addonServer,
   fetchAddonsWithConfigure,
+  getAddonServerPromise,
   isAddonEventAvailable,
   runLaunchAppAddons,
   runTask,
@@ -110,8 +113,19 @@ async function doesLinkExist(url: string | undefined) {
 let playButton: HTMLButtonElement | undefined = $state(undefined);
 let openedGameConfiguration = $state(false);
 
+// Prompt state: lets the user launch even when the addon pre-launch step failed
+const addonFailurePrompt = createLaunchPrompt();
+
 async function launchGame() {
-  if ($gamesLaunched[libraryInfo.appID] || hasActiveUpdateDownload) return;
+  if (hasActiveUpdateDownload) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `Finish or cancel the update for ${libraryInfo.name} before launching it.`,
+      type: 'warning',
+    });
+    return;
+  }
+  if ($gamesLaunched[libraryInfo.appID]) return;
   if (!playButton) return;
   logger.sync.info('Launching game with appID: ' + libraryInfo.appID);
   playButton.setAttribute('data-error', 'false');
@@ -132,22 +146,61 @@ async function launchGame() {
     await runFrontendEffect(runLaunchAppAddons(libraryInfo, 'pre'));
   } catch (error) {
     logger.sync.error(error);
-    // remove the game from the gamesLaunched state first so the play button is restored
-    gamesLaunched.update((games) => {
-      delete games[libraryInfo.appID];
-      return games;
-    });
-    // wait for the DOM to update so playButton is restored
-    await tick();
-    if (playButton) {
-      playButton.setAttribute('data-error', 'true');
+    // Ask the user whether to continue launching despite the addon failure
+    const proceed = await addonFailurePrompt.request(
+      formatError(error) || 'The addon pre-launch step failed.'
+    );
+    if (!proceed) {
+      // remove the game from the gamesLaunched state first so the play button is restored
+      gamesLaunched.update((games) => {
+        delete games[libraryInfo.appID];
+        return games;
+      });
+      // wait for the DOM to update so playButton is restored
+      await tick();
+      if (playButton) {
+        playButton.setAttribute('data-error', 'true');
+      }
+      return;
     }
-    return;
+    logger.sync.warn('Launching game despite addon pre-launch failure');
   }
 
   logger.sync.info('pre-launch complete');
 
-  await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
+  // An update may have started while pre-launch awaited; recheck before the RPC.
+  if (hasActiveUpdateDownload) {
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
+    await tick();
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: `An update for ${libraryInfo.name} started; launch it once the update finishes.`,
+      type: 'warning',
+    });
+    return;
+  }
+
+  try {
+    await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
+  } catch (error) {
+    // Reset the launch state or the play button stays stuck in WAITING.
+    logger.sync.error('Launch RPC failed:', error);
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
+    await tick();
+    playButton?.setAttribute('data-error', 'true');
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: formatError(error) || 'Failed to launch game',
+      type: 'error',
+    });
+    return;
+  }
 
   logger.sync.info('launchGame complete');
   if (!window.electronAPI.fs.exists('./internals')) {
@@ -226,11 +279,18 @@ function onFinish(data: any) {
   libraryInfo.cwd = data.cwd;
   libraryInfo.launchExecutable = data.launchExecutable;
   libraryInfo.launchArguments = data.launchArguments;
-  if (libraryInfo.umu && Array.isArray(data.dllOverrides)) {
+  if (libraryInfo.umu) {
     libraryInfo.umu = {
       ...libraryInfo.umu,
-      dllOverrides:
-        data.dllOverrides.length > 0 ? data.dllOverrides : undefined,
+      ...(Array.isArray(data.dllOverrides) && {
+        dllOverrides:
+          data.dllOverrides.length > 0 ? data.dllOverrides : undefined,
+      }),
+      ...(typeof data.protonVersion === 'string' && {
+        // 'umu-proton' is umu's default; storing it explicitly is redundant.
+        protonVersion:
+          data.protonVersion === 'umu-proton' ? undefined : data.protonVersion,
+      }),
     };
   }
   window.electronAPI.fs.write(
@@ -242,6 +302,8 @@ function onFinish(data: any) {
 onDestroy(() => {
   unsubscribe();
   unsubscribe2();
+  // Never leave the launch flow hanging if the page unmounts mid-prompt
+  addonFailurePrompt.answer(false);
   clearHeaderBackButton();
 });
 
@@ -408,6 +470,7 @@ onMount(async () => {
   );
 
   if (addonsWithStorefront.length === 0) return;
+  const addonServer = await getAddonServerPromise();
   for (const addon of addonsWithStorefront) {
     searchingAddons[addon.id] = undefined;
     (
@@ -452,6 +515,14 @@ function handleRunTask(task: SearchResult, addonID: string) {
 
 {#if openedGameConfiguration}
   <GameConfiguration gameInfo={libraryInfo} {onFinish} {exitPlayPage} />
+{/if}
+
+{#if addonFailurePrompt.message !== null}
+  <AddonFailurePromptModal
+    gameName={libraryInfo.name}
+    message={addonFailurePrompt.message}
+    onAnswer={addonFailurePrompt.answer}
+  />
 {/if}
 
 {#if showUpdateModal && updateInfo}

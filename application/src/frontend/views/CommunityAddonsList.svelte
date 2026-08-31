@@ -1,6 +1,5 @@
 <script lang="ts">
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect } from 'effect';
 import { fade } from 'svelte/transition';
 import { parseAddonLink } from '@/electron/lib/addon-links';
 import DeleteAddonWarningModal from '@/frontend/components/built/DeleteAddonWarningModal.svelte';
@@ -10,7 +9,6 @@ import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
-import { reconnectClientSdk } from '@/frontend/lib/core/ipc';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
@@ -45,23 +43,6 @@ async function installAddon(marketplaceURL: string, addon: CommunityAddon) {
       electronRpc.installAddons([addonWithMarketplace])
     ),
   };
-  await runFrontendEffect(
-    reconnectClientSdk().pipe(
-      Effect.catchAll((error) =>
-        Effect.sync(() => {
-          logger.sync.error(
-            'Failed to reconnect after installing addon:',
-            error
-          );
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            message: `Failed to finish installing ${addon.name}`,
-            type: 'error',
-          });
-        })
-      )
-    )
-  );
 }
 
 function addonConfigMatchesSource(configAddon: string, addonSource: string) {
@@ -103,25 +84,7 @@ async function deleteAddon(addon: CommunityAddon) {
   currentAddons = JSON.parse(
     window.electronAPI.fs.read('./config/option/general.json')
   );
-  await runFrontendEffect(
-    reconnectClientSdk().pipe(
-      Effect.catchAll((error) =>
-        Effect.sync(() => {
-          logger.sync.error('Failed to reconnect after deleting addon:', error);
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            message: `Deleted ${addon.name}, but failed to reconnect`,
-            type: 'error',
-          });
-        })
-      ),
-      Effect.ensuring(
-        Effect.sync(() => {
-          deleteConfirmationModalAddon = null;
-        })
-      )
-    )
-  );
+  deleteConfirmationModalAddon = null;
 }
 
 async function deleteAddonWarning(addon: CommunityAddon) {

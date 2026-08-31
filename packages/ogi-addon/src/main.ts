@@ -3,6 +3,10 @@ import type {
   AddonClientToServerEventArgs,
   AddonClientToServerEventName,
   AddonClientToServerWebsocketMessage,
+  AddonDownloadAck,
+  AddonDownloadRequest,
+  AddonDownloadStatus,
+  AddonDownloadStatusUpdate,
   AddonNotificationMessage,
   AddonProtocolEventListenerTypes,
   AddonSDKLifecycleEventListenerTypes,
@@ -25,7 +29,7 @@ import {
   ValidationError,
 } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect, Layer, ManagedRuntime, Schema } from 'effect';
+import { Deferred, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import Fuse, { IFuseOptions } from 'fuse.js';
 import { Configuration, DefiniteConfig } from './config/Configuration';
 import { ConfigurationBuilder } from './config/ConfigurationBuilder';
@@ -44,6 +48,11 @@ export type {
   AddonClientToServerEventArgs,
   AddonClientToServerEventName,
   AddonClientToServerWebsocketMessage,
+  AddonDownloadAck,
+  AddonDownloadFile,
+  AddonDownloadRequest,
+  AddonDownloadStatus,
+  AddonDownloadStatusUpdate,
   AddonNotificationMessage,
   AddonProtocolEventListenerTypes,
   AddonSDKLifecycleEventListenerTypes,
@@ -73,6 +82,108 @@ export type {
 
 /** @deprecated Use {@link AddonNotificationMessage}. */
 export type Notification = AddonNotificationMessage;
+
+type AddonDownloadProgress = {
+  progress: number;
+  downloadSpeed: number;
+  queuePosition?: number;
+  part?: number;
+  totalParts?: number;
+};
+
+type AddonDownloadStatusEvent = {
+  status: AddonDownloadStatus;
+  error?: string;
+};
+
+export class AddonDownload {
+  public queuePosition: number;
+  private readonly progressListeners: Array<
+    (progress: AddonDownloadProgress) => void
+  > = [];
+  private readonly statusListeners: Array<
+    (status: AddonDownloadStatusEvent) => void
+  > = [];
+
+  public constructor(
+    public readonly id: string,
+    queuePosition: number,
+    private readonly completion: Deferred.Deferred<void, Error>,
+    private readonly sendAbort: () => Effect.Effect<void, unknown>,
+    private readonly schedule: EffectScheduler
+  ) {
+    this.queuePosition = queuePosition;
+  }
+
+  public on(
+    event: 'progress',
+    callback: (progress: AddonDownloadProgress) => void
+  ): this;
+  public on(
+    event: 'status',
+    callback: (status: AddonDownloadStatusEvent) => void
+  ): this;
+  public on(
+    event: 'progress' | 'status',
+    callback:
+      | ((progress: AddonDownloadProgress) => void)
+      | ((status: AddonDownloadStatusEvent) => void)
+  ): this {
+    if (event === 'progress') {
+      this.progressListeners.push(
+        callback as (progress: AddonDownloadProgress) => void
+      );
+    } else {
+      this.statusListeners.push(
+        callback as (status: AddonDownloadStatusEvent) => void
+      );
+    }
+    return this;
+  }
+
+  public wait(): Promise<void> {
+    return Effect.runPromise(Deferred.await(this.completion));
+  }
+
+  public abort(): void {
+    this.schedule(this.sendAbort());
+  }
+
+  public dispatch(update: AddonDownloadStatusUpdate): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      if (update.kind === 'progress') {
+        if (update.queuePosition !== undefined)
+          this.queuePosition = update.queuePosition;
+        const progress: AddonDownloadProgress = {
+          progress: update.progress,
+          downloadSpeed: update.downloadSpeed,
+          queuePosition: update.queuePosition,
+          part: update.part,
+          totalParts: update.totalParts,
+        };
+        this.progressListeners.forEach((listener) => listener(progress));
+        return;
+      }
+
+      if (update.status === 'completed') {
+        yield* Deferred.succeed(this.completion, undefined).pipe(Effect.asVoid);
+      } else if (update.status === 'error' || update.status === 'cancelled') {
+        yield* Deferred.fail(
+          this.completion,
+          new Error(update.error ?? update.status)
+        ).pipe(Effect.asVoid);
+      }
+      const status = { status: update.status, error: update.error };
+      this.statusListeners.forEach((listener) => listener(status));
+    });
+  }
+}
+
+const makeWarmRuntime = (): ManagedRuntime.ManagedRuntime<never, never> => {
+  const runtime = ManagedRuntime.make(Layer.empty);
+  runtime.runSync(Effect.void);
+  return runtime;
+};
 
 /**
  * Addon SDK listener signatures. Protocol commands come from `addonProtocol` in
@@ -109,11 +220,11 @@ export type EventListenerTypes = AddonSDKLifecycleEventListenerTypes<
  */
 export default class OGIAddon {
   public eventEmitter = new events.EventEmitter();
-  public addonWSListener: OGIAddonWSListener;
+  private readonly addonWSListener: OGIAddonWSListener;
   public addonInfo: OGIAddonConfiguration;
   public config: Configuration = new Configuration({});
   private eventsAvailable: OGIAddonSDKEventListener[] = [];
-  private readonly runtime = ManagedRuntime.make(Layer.empty);
+  private readonly runtime = makeWarmRuntime();
   private taskHandlers: Map<
     string,
     (
@@ -132,8 +243,11 @@ export default class OGIAddon {
     // The constructor remains the synchronous compatibility boundary for addons.
     this.addonWSListener = this.runtime.runSync(
       logger.observe(
-        OGIAddonWSListener.make(this, this.eventEmitter, (effect) =>
-          this.runBackground(effect)
+        OGIAddonWSListener.make(
+          this,
+          this.eventEmitter,
+          (effect) => this.runBackground(effect),
+          () => this.sendEventsAvailable()
         )
       )
     );
@@ -154,7 +268,7 @@ export default class OGIAddon {
     return this.runtime.runPromise(logger.observe(effect));
   }
 
-  public closeEffect(): Effect.Effect<void, NetworkError> {
+  private closeEffect(): Effect.Effect<void, NetworkError> {
     return this.addonWSListener.close();
   }
 
@@ -188,7 +302,7 @@ export default class OGIAddon {
     return this.eventEmitter.emit(event, ...args);
   }
 
-  public sendEventsAvailable(): Effect.Effect<
+  private sendEventsAvailable(): Effect.Effect<
     void,
     NetworkError | ValidationError
   > {
@@ -200,7 +314,7 @@ export default class OGIAddon {
       .pipe(Effect.asVoid);
   }
 
-  public notifyEffect(
+  private notifyEffect(
     notification: AddonNotificationMessage
   ): Effect.Effect<void, NetworkError | ValidationError> {
     return this.addonWSListener
@@ -219,7 +333,7 @@ export default class OGIAddon {
    * @param storefront {string}
    * @returns {Promise<StoreData>}
    */
-  public getAppDetailsEffect(
+  private getAppDetailsEffect(
     appID: number,
     storefront: string
   ): Effect.Effect<StoreData | undefined, NetworkError | ValidationError> {
@@ -237,7 +351,7 @@ export default class OGIAddon {
     return this.runPromise(this.getAppDetailsEffect(appID, storefront));
   }
 
-  public searchGameEffect(
+  private searchGameEffect(
     query: string,
     storefront: string
   ): Effect.Effect<BasicLibraryInfo[], NetworkError | ValidationError> {
@@ -255,11 +369,57 @@ export default class OGIAddon {
     return this.runPromise(this.searchGameEffect(query, storefront));
   }
 
+  private downloadEffect(
+    request: AddonDownloadRequest
+  ): Effect.Effect<AddonDownload, AddonError> {
+    return Effect.gen(this, function* () {
+      const ack = yield* this.addonWSListener
+        .requestResponse<AddonDownloadAck>('download-request', request)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new AddonError({
+                message: formatError(error),
+                addonName: this.addonInfo.name,
+              })
+          )
+        );
+      if ('error' in ack) {
+        return yield* Effect.fail(
+          new AddonError({
+            message: ack.error,
+            addonName: this.addonInfo.name,
+          })
+        );
+      }
+      const completion = yield* Deferred.make<void, Error>();
+      const download = new AddonDownload(
+        ack.id,
+        ack.queuePosition,
+        completion,
+        () =>
+          this.addonWSListener
+            .send('download-action', {
+              downloadID: ack.id,
+              action: 'abort',
+            })
+            .pipe(Effect.asVoid),
+        (effect) => this.runBackground(effect)
+      );
+      yield* this.addonWSListener.registerDownload(download);
+      return download;
+    });
+  }
+
+  public download(request: AddonDownloadRequest): Promise<AddonDownload> {
+    return this.runPromise(this.downloadEffect(request));
+  }
+
   /**
    * Notify the OGI Addon Server that you are performing a background task. This can be used to help users understand what is happening in the background.
    * @returns {Promise<Task>} A Task instance for managing the background task.
    */
-  public taskEffect(): Effect.Effect<Task, NetworkError | ValidationError> {
+  private taskEffect(): Effect.Effect<Task, NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
       const id = yield* randomMessageId();
       const progress = 0;
@@ -422,15 +582,6 @@ export class Task {
    * Log a message to the task. Returns this for chaining.
    * @param message {string} The message to log.
    */
-  logEffect(
-    message: string
-  ): Effect.Effect<void, NetworkError | ValidationError> {
-    return Effect.sync(() => {
-      if (this.event) this.event.log(message);
-      else this.logs.push(message);
-    }).pipe(Effect.zipRight(this.update()));
-  }
-
   log(message: string): this {
     if (this.event) this.event.log(message);
     else {
@@ -444,15 +595,6 @@ export class Task {
    * Set the progress of the task (0-100). Returns this for chaining.
    * @param progress {number} The progress value (0-100).
    */
-  setProgressEffect(
-    progress: number
-  ): Effect.Effect<void, NetworkError | ValidationError> {
-    return Effect.sync(() => {
-      if (this.event) this.event.progress = progress;
-      else this.progress = progress;
-    }).pipe(Effect.zipRight(this.update()));
-  }
-
   setProgress(progress: number): this {
     if (this.event) this.event.progress = progress;
     else {
@@ -465,13 +607,6 @@ export class Task {
   /**
    * Complete the task successfully.
    */
-  completeEffect(): Effect.Effect<void, NetworkError | ValidationError> {
-    return Effect.sync(() => {
-      if (this.event) this.event.complete();
-      else this.finished = true;
-    }).pipe(Effect.zipRight(this.update()));
-  }
-
   complete(): void {
     if (this.event) this.event.complete();
     else {
@@ -484,15 +619,6 @@ export class Task {
    * Fail the task with an error message.
    * @param message {string} The error message.
    */
-  failEffect(
-    message: string
-  ): Effect.Effect<void, NetworkError | ValidationError> {
-    return Effect.sync(() => {
-      if (this.event) this.event.fail(message);
-      else this.failed = message;
-    }).pipe(Effect.zipRight(this.update()));
-  }
-
   fail(message: string): void {
     if (this.event) this.event.fail(message);
     else {
@@ -511,31 +637,20 @@ export class Task {
    * @returns {Promise<U>} The user's input with types matching the configuration options.
    * @throws {Error} If called on a WebSocket-based task.
    */
-  askForInputEffect<U extends Record<string, string | number | boolean>>(
+  askForInput<U extends Record<string, string | number | boolean>>(
     name: string,
     description: string,
     screen: ConfigurationBuilder<U>
-  ): Effect.Effect<U, AddonError> {
+  ): Promise<U> {
     if (!this.event) {
-      return Effect.fail(
+      return Promise.reject(
         new AddonError({
           message:
             'askForInput() is only available for EventResponse-based tasks (onTask handlers)',
         })
       );
     }
-    return this.event.askForInputEffect(name, description, screen);
-  }
-
-  /** Promise compatibility adapter. */
-  askForInput<U extends Record<string, string | number | boolean>>(
-    name: string,
-    description: string,
-    screen: ConfigurationBuilder<U>
-  ): Promise<U> {
-    return Effect.runPromise(
-      logger.observe(this.askForInputEffect(name, description, screen))
-    );
+    return this.event.askForInput(name, description, screen);
   }
 
   /**
@@ -642,6 +757,11 @@ class OGIAddonWSListener {
   public readonly eventEmitter: events.EventEmitter;
   public readonly addon: OGIAddon;
   private configConnected = false;
+  private readonly downloads = new Map<string, AddonDownload>();
+  private readonly pendingDownloadUpdates = new Map<
+    string,
+    AddonDownloadStatusUpdate[]
+  >();
 
   private constructor(
     addon: OGIAddon,
@@ -652,7 +772,11 @@ class OGIAddonWSListener {
       AddonClientToServerWebsocketMessage
     >,
     private readonly secret: string,
-    private readonly schedule: EffectScheduler
+    private readonly schedule: EffectScheduler,
+    private readonly sendEventsAvailable: () => Effect.Effect<
+      void,
+      NetworkError | ValidationError
+    >
   ) {
     this.addon = addon;
     this.eventEmitter = eventEmitter;
@@ -661,7 +785,11 @@ class OGIAddonWSListener {
   public static make(
     addon: OGIAddon,
     eventEmitter: events.EventEmitter,
-    schedule: EffectScheduler
+    schedule: EffectScheduler,
+    sendEventsAvailable: () => Effect.Effect<
+      void,
+      NetworkError | ValidationError
+    >
   ): Effect.Effect<OGIAddonWSListener, AddonError | NetworkError> {
     return Effect.gen(function* () {
       const secret = process.argv
@@ -705,7 +833,8 @@ class OGIAddonWSListener {
         socket,
         transport,
         secret,
-        schedule
+        schedule,
+        sendEventsAvailable
       );
       yield* listener.registerMessageReceiver();
       return listener;
@@ -770,6 +899,33 @@ class OGIAddonWSListener {
     return this.configConnected;
   }
 
+  public registerDownload(download: AddonDownload): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      this.downloads.set(download.id, download);
+      const buffered = this.pendingDownloadUpdates.get(download.id);
+      if (!buffered) return;
+      this.pendingDownloadUpdates.delete(download.id);
+      for (const update of buffered) {
+        yield* this.dispatchDownloadUpdate(download, update);
+      }
+    });
+  }
+
+  private dispatchDownloadUpdate(
+    download: AddonDownload,
+    update: AddonDownloadStatusUpdate
+  ): Effect.Effect<void> {
+    if (
+      update.kind === 'status' &&
+      (update.status === 'completed' ||
+        update.status === 'error' ||
+        update.status === 'cancelled')
+    ) {
+      this.downloads.delete(update.id);
+    }
+    return download.dispatch(update);
+  }
+
   private onOpen(): Effect.Effect<void, NetworkError | ValidationError> {
     return Effect.gen(this, function* () {
       yield* logger.info('Connected to OGI Addon Server');
@@ -814,6 +970,7 @@ class OGIAddonWSListener {
       'catalog',
       'task-run',
       'launch-app',
+      'download-status',
     ];
     return Effect.forEach(
       protocolEvents,
@@ -829,6 +986,20 @@ class OGIAddonWSListener {
     message: AddonServerToClientWebsocketMessage
   ): Effect.Effect<void> {
     return Effect.gen(this, function* () {
+      if (message.event === 'download-status') {
+        const update = message.args as AddonDownloadStatusUpdate;
+        const download = this.downloads.get(update.id);
+        if (!download) {
+          // The ack fiber may not have registered the handle yet; buffer so
+          // registerDownload can replay these in order instead of dropping.
+          const buffered = this.pendingDownloadUpdates.get(update.id) ?? [];
+          buffered.push(update);
+          this.pendingDownloadUpdates.set(update.id, buffered);
+          return;
+        }
+        yield* this.dispatchDownloadUpdate(download, update);
+        return;
+      }
       const id = message.id;
       if (!id) {
         return yield* Effect.fail(
@@ -847,17 +1018,21 @@ class OGIAddonWSListener {
                 message: `Invalid addon configuration: ${formatError(cause)}`,
               }),
           });
+          if (!this.configConnected) {
+            this.configConnected = true;
+            const connectEvent = this.makeEventResponse<void>();
+            // Game-specific launches (Steam shortcut) set OGI_GAME_LAUNCH so
+            // addons can selectively start only the components they need.
+            this.eventEmitter.emit('connect', connectEvent, {
+              gameSpecificLaunch: process.env.OGI_GAME_LAUNCH === '1',
+            });
+            this.schedule(this.runDeferred(connectEvent));
+            yield* this.sendEventsAvailable();
+          }
           yield* this.respondToMessage(
             id,
             result[0] ? { success: true } : { success: false, error: result[1] }
           );
-          if (!this.configConnected) {
-            this.configConnected = true;
-            const connectEvent = this.makeEventResponse<void>();
-            this.eventEmitter.emit('connect', connectEvent);
-            this.schedule(this.runDeferredEffect(connectEvent));
-            yield* this.addon.sendEventsAvailable();
-          }
           return;
         }
         case 'search':
@@ -919,26 +1094,29 @@ class OGIAddonWSListener {
 
   private makeEventResponse<T>(): EventResponse<T> {
     return new EventResponse<T>((screen, name, description) =>
-      this.userInputAsked(screen, name, description).pipe(
-        Effect.mapError(
-          (error) => new AddonError({ message: formatError(error) })
+      Effect.runPromise(
+        logger.observe(
+          this.userInputAsked(screen, name, description).pipe(
+            Effect.mapError(
+              (error) => new AddonError({ message: formatError(error) })
+            )
+          )
         )
       )
     );
   }
 
-  private runDeferredEffect(
-    event: EventResponse<unknown>
-  ): Effect.Effect<void> {
-    return Effect.gen(function* () {
+  /** Promise pump over the event's deferred work, wrapped for the Effect scheduler. */
+  private runDeferred(event: EventResponse<unknown>): Effect.Effect<void> {
+    return Effect.promise(async () => {
       while (!event.resolved) {
-        const deferred = yield* event.awaitDeferredEffect();
-        if (!deferred) return;
-        yield* deferred.pipe(
-          Effect.catchAll((error) =>
-            Effect.sync(() => event.fail(formatError(error)))
-          )
-        );
+        const work = await event.nextDeferred();
+        if (!work) return;
+        try {
+          await work();
+        } catch (cause) {
+          event.fail(formatError(cause));
+        }
       }
     });
   }
@@ -967,7 +1145,7 @@ class OGIAddonWSListener {
       Effect.gen(this, function* () {
         const event = this.makeEventResponse<SetupResponse>();
         this.eventEmitter.emit('setup', message.args, event);
-        yield* Effect.forkScoped(this.runDeferredEffect(event));
+        yield* Effect.forkScoped(this.runDeferred(event));
         yield* Effect.forkScoped(this.reportDeferred(event, message.id!));
         const result = yield* this.waitForEventToRespond(event);
         yield* this.respondToMessage(message.id!, result.data, event);
@@ -994,7 +1172,7 @@ class OGIAddonWSListener {
           info: SearchResult;
         };
         this.eventEmitter.emit('request-dl', appID, info, event);
-        yield* Effect.forkScoped(this.runDeferredEffect(event));
+        yield* Effect.forkScoped(this.runDeferred(event));
         const result = yield* this.waitForEventToRespond(event);
         if (event.failed) {
           yield* this.respondToMessage(message.id!, undefined, event);
@@ -1113,7 +1291,7 @@ class OGIAddonWSListener {
           return;
         }
         emit(event);
-        yield* Effect.forkScoped(this.runDeferredEffect(event));
+        yield* Effect.forkScoped(this.runDeferred(event));
         const result = yield* this.waitForEventToRespond(event);
         yield* this.respondToMessage(message.id!, result.data, event);
       })
@@ -1128,7 +1306,7 @@ class OGIAddonWSListener {
       Effect.gen(this, function* () {
         const event = new EventResponse<T>();
         emit(event);
-        yield* Effect.forkScoped(this.runDeferredEffect(event));
+        yield* Effect.forkScoped(this.runDeferred(event));
         const result = yield* this.waitForEventToRespond(event);
         yield* this.respondToMessage(message.id!, result.data, event);
       })

@@ -4,9 +4,10 @@ import { exec, spawn } from 'child_process';
 import { Effect } from 'effect';
 import * as fsSync from 'fs';
 import * as fs from 'fs/promises';
+import * as os from 'os';
 import { join } from 'path';
 import semver from 'semver';
-import { addToDesktop } from '@/electron/handlers/handler.app.js';
+import { addToDesktop } from '@/electron/handlers/helpers.app/desktop-shortcut.js';
 import { normalizeAddonLink } from '@/electron/lib/addon-links.js';
 import { migrateLegacySteamGridDbKey } from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification, VERSION } from '@/electron/main.js';
@@ -278,6 +279,24 @@ let migrations: {
           )
         )
       ),
+  },
+  'repair-desktop-shortcut-icon': {
+    from: '2.5.0',
+    to: '4.3.0',
+    description:
+      'Rewrites the desktop shortcut so its icon lives in the OGI data dir instead of the update dir the updater wipes.',
+    platform: 'linux',
+    run: () =>
+      Effect.gen(function* () {
+        const desktopFilePath = join(
+          os.homedir(),
+          'Desktop',
+          'OpenGameInstaller.desktop'
+        );
+        // If the user removed the shortcut, respect that and do nothing.
+        if (!fsSync.existsSync(desktopFilePath)) return;
+        yield* addToDesktop();
+      }),
   },
   'migrate-addon-source-associations': {
     from: '0.0.0',

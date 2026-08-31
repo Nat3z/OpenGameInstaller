@@ -6,11 +6,10 @@ import core from '@/frontend/lib/core';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
-  addonServer,
   fetchAddonsWithConfigure,
+  getAddonServer,
   isAddonEventAvailable,
   queryConnectedAddons,
-  reconnectClientSdk,
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
 
@@ -18,14 +17,13 @@ const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let updateCheckRunId = 0;
 
-document.addEventListener('addon-runtime-ready', () => {
-  void onAddonRuntimeReady();
+document.addEventListener('addon-manifests-ready', () => {
+  void onAddonManifestsReady();
 });
 
-async function onAddonRuntimeReady() {
+async function onAddonManifestsReady() {
   await runFrontendEffect(
     Effect.gen(function* () {
-      yield* reconnectClientSdk();
       yield* fetchAddonsWithConfigure();
       yield* checkForAppUpdates();
     }).pipe(
@@ -53,6 +51,7 @@ function checkForAppUpdates() {
         }),
     });
     const connectedAddons = yield* queryConnectedAddons();
+    const addonServer = yield* getAddonServer();
     yield* Effect.forEach(
       library,
       (app) =>

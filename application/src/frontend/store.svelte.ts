@@ -81,6 +81,8 @@ export type DownloadStatusAndInfo = SearchResult & {
   };
   // Manifest data from the search result, passed to the setup handler
   manifest?: Record<string, unknown>;
+  // Raw file download enqueued by an addon via addon.download(); skips the setup phase
+  isAddonDownload?: boolean;
 };
 
 export type DeferredTask = {
@@ -166,12 +168,12 @@ export const redistributableInstalls: Writable<
 // OOBE logs for the out-of-box experience
 export type OOBELog = {
   logs: string[];
-  isActive: boolean;
+  status: 'idle' | 'running' | 'failed';
 };
 
 export const oobeLog: Writable<OOBELog> = writable({
   logs: [],
-  isActive: false,
+  status: 'idle',
 });
 
 export const currentStorePageOpened: Writable<number | undefined> = writable();

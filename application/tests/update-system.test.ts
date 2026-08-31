@@ -4,6 +4,7 @@ import {
   canonicalJson,
   isSafeRelativePath,
   type OwnershipManifest,
+  sha256,
   sourceSetIdentity,
   type UpdateManifest,
   UpdateManifestSchema,
@@ -72,11 +73,32 @@ describe('update model', () => {
       '{"a":{"b":1,"d":2},"z":1}'
     );
     expect(
-      sourceSetIdentity([{ url: 'https://a' }, { url: 'https://b' }])
-        .sourceSetKey
+      sourceSetIdentity([
+        { url: 'https://a', size: 1 },
+        { url: 'https://b', size: 2 },
+      ]).sourceSetKey
     ).not.toBe(
-      sourceSetIdentity([{ url: 'https://b' }, { url: 'https://a' }])
+      sourceSetIdentity([
+        { url: 'https://b', size: 2 },
+        { url: 'https://a', size: 1 },
+      ]).sourceSetKey
+    );
+  });
+
+  test('binds the source-set key to content identity, not just the URL', () => {
+    const base = sourceSetIdentity([{ url: 'https://a', size: 800 }]);
+    expect(
+      sourceSetIdentity([{ url: 'https://a', size: 801 }]).sourceSetKey
+    ).not.toBe(base.sourceSetKey);
+    expect(
+      sourceSetIdentity([{ url: 'https://a', size: 800, etag: '"v2"' }])
         .sourceSetKey
+    ).not.toBe(base.sourceSetKey);
+    // The community server re-derives the key from a stored manifest's own
+    // sources array, so that derivation must stay byte-identical.
+    const source = { index: 0, urlHash: sha256('https://a'), size: 800 };
+    expect(sha256(canonicalJson([{ s: source.size, u: source.urlHash }]))).toBe(
+      base.sourceSetKey
     );
   });
 
@@ -98,17 +120,28 @@ describe('update model', () => {
     ).toBeUndefined();
   });
 
-  test('rejects duplicate paths and out-of-source ranges', async () => {
+  test('rejects duplicate entry paths', async () => {
     const valid = manifest();
     const invalid = {
       ...valid,
       entries: [
         valid.entries[0],
-        {
-          ...valid.entries[1],
-          path: valid.entries[0].path,
-          range: { start: 790, end: 900 },
-        },
+        { ...valid.entries[1], path: valid.entries[0].path },
+      ],
+    };
+    const result = await Effect.runPromise(
+      Schema.decodeUnknown(UpdateManifestSchema)(invalid).pipe(Effect.either)
+    );
+    expect(result._tag).toBe('Left');
+  });
+
+  test('rejects out-of-source entry ranges', async () => {
+    const valid = manifest();
+    const invalid = {
+      ...valid,
+      entries: [
+        valid.entries[0],
+        { ...valid.entries[1], range: { start: 790, end: 900 } },
       ],
     };
     const result = await Effect.runPromise(

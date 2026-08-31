@@ -155,7 +155,11 @@ export const ElectronRpc = {
       'app.removeApp',
       [Schema.Number],
       opaque<
-        | { status: 'success'; warning?: string }
+        | {
+            status: 'success';
+            warning?: string;
+            filesDeleted?: boolean;
+          }
         | { status: 'cancelled'; message: string }
         | { status: 'error'; error: string }
       >()
@@ -170,7 +174,6 @@ export const ElectronRpc = {
       Schema.Literal(
         'setup-failed',
         'setup-success',
-        'setup-redistributables-failed',
         'setup-redistributables-success',
         'setup-prefix-required'
       )
@@ -202,7 +205,7 @@ export const ElectronRpc = {
     installRedistributables: rpc(
       'app.installRedistributables',
       [Schema.Number, OptionalString],
-      Schema.Literal('success', 'failed', 'not-found')
+      Schema.Literal('success', 'partial', 'failed', 'not-found')
     ),
     checkUmuInstalled: rpc('app.checkUmuInstalled', [], Schema.Boolean),
     installUmu: rpc(
@@ -218,7 +221,7 @@ export const ElectronRpc = {
     installRedistributablesUmu: rpc(
       'app.installRedistributablesUmu',
       [Schema.Number],
-      Schema.Literal('success', 'failed', 'not-found')
+      Schema.Literal('success', 'partial', 'failed', 'not-found')
     ),
     migrateToUmu: rpc(
       'app.migrateToUmu',
@@ -263,6 +266,19 @@ export const ElectronRpc = {
         | { status: 'cancelled'; message: string }
         | { status: 'error'; error: string }
       >()
+    ),
+    getSteamCompatibilityTools: rpc(
+      'app.getSteamCompatibilityTools',
+      [],
+      Schema.mutable(
+        Schema.Array(
+          Schema.Struct({
+            id: Schema.String,
+            name: Schema.String,
+            installPath: Schema.String,
+          })
+        )
+      )
     ),
     removeFromSteam: rpc(
       'app.removeFromSteam',
@@ -543,6 +559,7 @@ export const ElectronRpc = {
     setActive: rpc('powerSave.setActive', [Schema.Boolean], Void),
   },
   installAddons: rpc('installAddons', [StringArray], StringArray),
+  ensureAddonsSpawned: rpc('ensureAddonsSpawned', [], Void),
   restartAddonServer: rpc('restartAddonServer', [], Void),
   deleteInstalledAddon: rpc(
     'deleteInstalledAddon',

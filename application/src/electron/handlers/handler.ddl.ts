@@ -40,6 +40,7 @@ import {
   removeQueueCancel,
 } from '@/electron/rpc/queue-cancel.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
+import { setAddonDownloadContext } from '@/electron/server/addon-downloads.js';
 import {
   clearDownloadHandshake,
   type DownloadHandshakeResult,
@@ -126,7 +127,7 @@ class ThrottleStream extends Transform {
   }
 }
 
-interface DownloadJob {
+export interface DownloadJob {
   link: string;
   path: string;
   headers?: Record<string, string>;
@@ -178,7 +179,7 @@ interface ConnectionHealthMonitor {
   readonly run: Effect.Effect<never>;
 }
 
-type DownloadStatus =
+export type DownloadStatus =
   | 'queued'
   | 'downloading'
   | 'merging'
@@ -193,8 +194,30 @@ type DownloadEffectRunner = <E>(
 
 interface DownloadLifecycle {
   readonly runEffect: DownloadEffectRunner;
-  readonly onStatusChange: () => void;
-  readonly onTerminal: (id: string) => void;
+  readonly onStatusChange: (status: DownloadStatus) => void;
+  readonly onTerminal: (
+    id: string,
+    outcome: 'completed' | 'failed' | 'cancelled',
+    error?: string
+  ) => void;
+  readonly onProgress?: (data: DownloadProgress) => void;
+  readonly preservePartialFilesOnCancel?: boolean;
+}
+
+export interface DownloadProgress {
+  progress: number;
+  downloadSpeed: number;
+  queuePosition?: number;
+  part: number;
+  totalParts: number;
+  status: DownloadStatus;
+}
+
+export interface DownloadHooks {
+  readonly onProgress?: DownloadLifecycle['onProgress'];
+  readonly onTerminal?: DownloadLifecycle['onTerminal'];
+  readonly onStatusChange?: DownloadLifecycle['onStatusChange'];
+  readonly preservePartialFilesOnCancel?: boolean;
 }
 
 const standaloneDownloadLifecycle: DownloadLifecycle = {
@@ -270,7 +293,7 @@ export class Download {
 
   public set status(newStatus: DownloadStatus) {
     this._status = newStatus;
-    this.lifecycle.onStatusChange();
+    this.lifecycle.onStatusChange(newStatus);
   }
 
   private mainWindow: BrowserWindow;
@@ -508,7 +531,7 @@ export class Download {
         this.removeCancelHandler();
         this.reportHandshake({ status: 'error', error: 'Download cancelled' });
         clearDownloadHandshake(this.id);
-        this.lifecycle.onTerminal(this.id);
+        this.lifecycle.onTerminal(this.id, 'cancelled');
         return;
       }
 
@@ -1849,12 +1872,14 @@ export class Download {
         this.cleanupPart();
       }
 
-      yield* this.cleanupAllFiles();
+      if (!this.lifecycle.preservePartialFilesOnCancel) {
+        yield* this.cleanupAllFiles();
+      }
       this.removeCancelHandler();
       this.sendIpc('ddl:download-cancelled', { id: this.id });
       this.taskFinisher();
       clearDownloadHandshake(this.id);
-      this.lifecycle.onTerminal(this.id);
+      this.lifecycle.onTerminal(this.id, 'cancelled');
       logger.sync.info('[direct] Download Cancelled', this.id);
     }).pipe(Effect.ignore);
   }
@@ -1902,7 +1927,7 @@ export class Download {
       this.removeCancelHandler();
       this.taskFinisher();
       clearDownloadHandshake(this.id);
-      this.lifecycle.onTerminal(this.id);
+      this.lifecycle.onTerminal(this.id, 'completed');
     });
   }
 
@@ -1953,7 +1978,7 @@ export class Download {
           this.removeCancelHandler();
           this.taskFinisher();
           clearDownloadHandshake(this.id);
-          this.lifecycle.onTerminal(this.id);
+          this.lifecycle.onTerminal(this.id, 'failed', error.message);
         })
       ),
       Effect.ignore
@@ -2390,8 +2415,7 @@ export class Download {
             if (incompletePart) currentPartNumber = incompletePart.index + 1;
           }
 
-          this.sendIpc('ddl:download-progress', {
-            id: this.id,
+          this.sendProgress({
             progress:
               this.multiPartTotalBytes > 0
                 ? totalDownloaded / this.multiPartTotalBytes
@@ -2399,8 +2423,6 @@ export class Download {
             downloadSpeed: elapsedTime > 0 ? totalDownloaded / elapsedTime : 0,
             fileSize: this.multiPartTotalBytes,
             part: currentPartNumber,
-            status: this.status,
-            totalParts: this.totalParts,
             queuePosition: 1,
           });
         })
@@ -2680,18 +2702,34 @@ export class Download {
     progress?: number;
     downloadSpeed?: number;
     queuePosition?: number;
+    fileSize?: number;
+    part?: number;
     processingPhase?: 'Merging chunks';
   }) {
+    const progress = data.progress ?? 0;
+    const downloadSpeed = data.downloadSpeed ?? 0;
+    const queuePosition = data.queuePosition ?? 1;
+    const part = data.part ?? this.currentPart;
     this.sendIpc('ddl:download-progress', {
       id: this.id,
-      progress: data.progress ?? 0,
-      downloadSpeed: data.downloadSpeed ?? 0,
-      fileSize: this.useParallel ? this.parallelTotalSize : this.totalSize,
-      part: this.currentPart,
+      progress,
+      downloadSpeed,
+      fileSize:
+        data.fileSize ??
+        (this.useParallel ? this.parallelTotalSize : this.totalSize),
+      part,
       status: this.status,
       totalParts: this.totalParts,
-      queuePosition: data.queuePosition ?? 1,
+      queuePosition,
       processingPhase: data.processingPhase,
+    });
+    this.lifecycle.onProgress?.({
+      progress,
+      downloadSpeed,
+      queuePosition,
+      part,
+      totalParts: this.totalParts,
+      status: this.status,
     });
   }
 
@@ -2797,11 +2835,12 @@ interface ActiveDownload {
   fiber?: Fiber.RuntimeFiber<void, DownloadError>;
 }
 
-interface DownloadServiceShape {
+export interface DownloadServiceShape {
   readonly start: (
     jobs: DownloadJob[],
-    part?: number
-  ) => Effect.Effect<unknown, DownloadError>;
+    part?: number,
+    hooks?: DownloadHooks
+  ) => Effect.Effect<DownloadHandshakeResult, DownloadError>;
   readonly pause: (id: string) => Effect.Effect<void, DownloadNotActive>;
   readonly resume: (
     id: string
@@ -2837,17 +2876,34 @@ const makeDownloadService = (
       }));
 
     const service: DownloadServiceShape = {
-      start: (jobs, part) =>
+      start: (jobs, part, hooks) =>
         Effect.gen(function* () {
           yield* checkParallelChunkCount(downloads()).pipe(
             Effect.mapError(
               (cause) => new DownloadError({ message: cause.message, cause })
             )
           );
-          const download = new Download(mainWindow, jobs, part, {
+          const baseLifecycle: DownloadLifecycle = {
             runEffect: runInScope,
             onStatusChange: () => {},
-            onTerminal: (id) => activeDownloads.delete(id),
+            onTerminal: (id) => {
+              activeDownloads.delete(id);
+            },
+          };
+          const download = new Download(mainWindow, jobs, part, {
+            runEffect: baseLifecycle.runEffect,
+            onStatusChange: (status) => {
+              baseLifecycle.onStatusChange(status);
+              hooks?.onStatusChange?.(status);
+            },
+            onTerminal: (id, outcome, error) => {
+              baseLifecycle.onTerminal(id, outcome, error);
+              hooks?.onTerminal?.(id, outcome, error);
+            },
+            onProgress: hooks?.onProgress ?? baseLifecycle.onProgress,
+            preservePartialFilesOnCancel:
+              hooks?.preservePartialFilesOnCancel ??
+              baseLifecycle.preservePartialFilesOnCancel,
           });
           const active: ActiveDownload = {
             download,
@@ -2948,6 +3004,7 @@ export const DownloadServiceLive = (
 
 export default function handler(mainWindow: BrowserWindow) {
   const service = Effect.runSync(makeDownloadService(mainWindow));
+  setAddonDownloadContext(service, mainWindow);
   const layer = Layer.succeed(DownloadService, service);
   const run = <A, E>(effect: Effect.Effect<A, E, DownloadService>) =>
     runEffectBoundary(effect.pipe(Effect.provide(layer)));

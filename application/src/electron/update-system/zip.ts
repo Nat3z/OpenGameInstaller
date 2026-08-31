@@ -1,19 +1,22 @@
 import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { FileSystemError } from '@ogi-sdk/errors';
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { hashFile, hashFiles } from './hash.js';
 import {
   isSafeRelativePath,
   sourceSetIdentity,
   type UpdateEntry,
   type UpdateManifest,
+  UpdateManifestSchema,
 } from './model.js';
 
 const LOCAL_HEADER = 0x04034b50;
 const CENTRAL_HEADER = 0x02014b50;
 const END_OF_CENTRAL_DIRECTORY = 0x06054b50;
 const MAX_EOCD_SIZE = 65_557;
+const MAX_CENTRAL_DIRECTORY_BYTES = 64 * 1024 * 1024;
+const ZIP64_SENTINEL = 0xffffffff;
 
 interface ParsedEntry {
   readonly path: string;
@@ -42,8 +45,19 @@ async function readExactly(
   position: number
 ): Promise<Buffer> {
   const buffer = Buffer.alloc(length);
-  const { bytesRead } = await handle.read(buffer, 0, length, position);
-  if (bytesRead !== length) throw new Error('Unexpected end of ZIP archive');
+  let total = 0;
+  // handle.read may legally return fewer bytes than requested on a regular
+  // file, so loop until the buffer is full or the file genuinely ends.
+  while (total < length) {
+    const { bytesRead } = await handle.read(
+      buffer,
+      total,
+      length - total,
+      position + total
+    );
+    if (bytesRead === 0) throw new Error('Unexpected end of ZIP archive');
+    total += bytesRead;
+  }
   return buffer;
 }
 
@@ -67,10 +81,17 @@ async function parseZip(path: string): Promise<readonly ParsedEntry[]> {
       centralDisk !== 0 ||
       entriesOnDisk !== entryCount ||
       entryCount === 0xffff ||
-      centralSize === 0xffffffff ||
-      centralOffset === 0xffffffff
+      centralSize === ZIP64_SENTINEL ||
+      centralOffset === ZIP64_SENTINEL
     ) {
       throw new Error('Multipart and ZIP64 archives require a full download');
+    }
+    // centralSize comes from the archive; bound it before allocating.
+    if (
+      centralSize > MAX_CENTRAL_DIRECTORY_BYTES ||
+      centralOffset + centralSize > stat.size
+    ) {
+      throw new Error('ZIP central directory exceeds its bounds');
     }
 
     const central = await readExactly(handle, centralSize, centralOffset);
@@ -78,6 +99,9 @@ async function parseZip(path: string): Promise<readonly ParsedEntry[]> {
     let parsedEntryCount = 0;
     let offset = 0;
     while (offset < central.length) {
+      if (offset + 46 > central.length) {
+        throw new Error('Truncated ZIP central directory entry');
+      }
       if (central.readUInt32LE(offset) !== CENTRAL_HEADER) {
         throw new Error('Invalid ZIP central directory entry');
       }
@@ -91,6 +115,19 @@ async function parseZip(path: string): Promise<readonly ParsedEntry[]> {
       const commentLength = central.readUInt16LE(offset + 32);
       const disk = central.readUInt16LE(offset + 34);
       const localOffset = central.readUInt32LE(offset + 42);
+      if (
+        offset + 46 + nameLength + extraLength + commentLength >
+        central.length
+      ) {
+        throw new Error('Truncated ZIP central directory entry');
+      }
+      if (
+        compressedSize === ZIP64_SENTINEL ||
+        size === ZIP64_SENTINEL ||
+        localOffset === ZIP64_SENTINEL
+      ) {
+        throw new Error('ZIP64 entries require a full download');
+      }
       const name = central.subarray(offset + 46, offset + 46 + nameLength);
       const relativePath = name.toString(
         (flags & 0x800) !== 0 ? 'utf8' : 'latin1'
@@ -114,6 +151,20 @@ async function parseZip(path: string): Promise<readonly ParsedEntry[]> {
       }
       const localNameLength = local.readUInt16LE(26);
       const localExtraLength = local.readUInt16LE(28);
+      // Extractors read the LOCAL header's filename; a hostile archive can
+      // pair a safe central-directory name with a traversal local name, so
+      // the two must match exactly.
+      const localName = await readExactly(
+        handle,
+        localNameLength,
+        localOffset + 30
+      );
+      if (
+        localName.toString((flags & 0x800) !== 0 ? 'utf8' : 'latin1') !==
+        relativePath
+      ) {
+        throw new Error('ZIP local header filename mismatch');
+      }
       entries.push({
         path: relativePath,
         crc32,
@@ -131,6 +182,20 @@ async function parseZip(path: string): Promise<readonly ParsedEntry[]> {
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * Structural preflight for a downloaded archive: rejects traversal paths,
+ * encrypted entries, and ZIP64/multipart layouts BEFORE anything extracts it.
+ */
+export function validateZipStructure(
+  archivePath: string
+): Effect.Effect<void, FileSystemError> {
+  return Effect.tryPromise({
+    try: () => parseZip(archivePath),
+    catch: (cause) =>
+      zipError(archivePath, `Unable to inspect ZIP: ${String(cause)}`),
+  }).pipe(Effect.asVoid);
 }
 
 export interface BuildZipManifestInput {
@@ -164,8 +229,14 @@ export function buildZipManifest(
     );
     const hashes = yield* hashFilesInBatches(extractedFiles);
     const archiveHash = yield* hashFile(input.archivePath);
-    const identity = sourceSetIdentity([{ url: input.canonicalUrl }]);
-    return {
+    const identity = sourceSetIdentity([
+      {
+        url: input.canonicalUrl,
+        size: archiveStat.size,
+        ...(input.etag ? { etag: input.etag } : {}),
+      },
+    ]);
+    const manifest: UpdateManifest = {
       schemaVersion: 1,
       encoding: 'canonical-json',
       sourceSetKey: identity.sourceSetKey,
@@ -198,6 +269,20 @@ export function buildZipManifest(
         },
       })),
     };
+    // The parser can produce structurally impossible combinations from a
+    // malformed archive; decode before the manifest is submitted anywhere.
+    return yield* Schema.decodeUnknown(UpdateManifestSchema, {
+      onExcessProperty: 'error',
+    })(manifest).pipe(
+      Effect.mapError(
+        (cause) =>
+          new FileSystemError({
+            message: `Built manifest failed validation: ${String(cause)}`,
+            path: input.archivePath,
+            cause,
+          })
+      )
+    );
   });
 }
 

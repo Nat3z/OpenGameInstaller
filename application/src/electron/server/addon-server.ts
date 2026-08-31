@@ -6,6 +6,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schema } from 'effect';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { runElectronSync } from '@/electron/runtime.js';
+import { attachAddonDownloadBridge } from '@/electron/server/addon-downloads.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -61,6 +62,7 @@ const createAddonServer = (): AddonServer => {
       id: `addon-disconnect-${Math.random().toString(36).slice(2)}`,
     });
   });
+  attachAddonDownloadBridge(server);
   return server;
 };
 

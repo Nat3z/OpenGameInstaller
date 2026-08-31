@@ -76,6 +76,8 @@ export type DownloadStatusAndInfo = SearchResult & {
   clearOldFilesBeforeUpdate?: boolean;
   // Manifest data from the search result, passed to the setup handler
   manifest?: Record<string, unknown>;
+  // Raw file download enqueued by an addon via addon.download(); skips the setup phase
+  isAddonDownload?: boolean;
 };
 
 export type DeferredTask = {

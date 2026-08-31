@@ -79,6 +79,48 @@ export type BasicLibraryInfo = {
   storefront: string;
 };
 
+export type AddonDownloadFile = {
+  link: string;
+  path: string;
+  headers?: Record<string, string>;
+};
+
+export type AddonDownloadRequest = {
+  name: string;
+  files: AddonDownloadFile[];
+  appID?: number;
+  capsuleImage?: string;
+};
+
+export type AddonDownloadAck =
+  | { id: string; queuePosition: number }
+  | { error: string };
+
+export type AddonDownloadStatus =
+  | 'queued'
+  | 'downloading'
+  | 'paused'
+  | 'completed'
+  | 'error'
+  | 'cancelled';
+
+export type AddonDownloadStatusUpdate =
+  | {
+      id: string;
+      kind: 'progress';
+      progress: number;
+      downloadSpeed: number;
+      queuePosition?: number;
+      part?: number;
+      totalParts?: number;
+    }
+  | {
+      id: string;
+      kind: 'status';
+      status: AddonDownloadStatus;
+      error?: string;
+    };
+
 export interface CatalogSection {
   name: string;
   description: string;

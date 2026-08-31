@@ -4,6 +4,7 @@ import { FileSystemError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
+import type { AddonDownloadCardPayload } from '@/electron/server/addon-downloads';
 import { getApp } from '@/frontend/lib/core/library';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
@@ -171,9 +172,7 @@ async function processDownloadComplete(
   const filesNotToMove = [
     ...(downloadedItem.files ?? []).map((file) => file.name),
     basename(downloadedItem.downloadPath),
-    ...(isTorrent
-      ? [basename(downloadedItem.downloadPath) + '.torrent']
-      : []),
+    ...(isTorrent ? [basename(downloadedItem.downloadPath) + '.torrent'] : []),
     'old_files',
   ];
   const filesToMove = currentFiles.filter(
@@ -626,6 +625,38 @@ document.addEventListener(
   handleDownloadCancelled
 );
 
+// -- Addon-enqueued downloads (raw files, no setup phase) --
+
+document.addEventListener('ddl:addon-download-created', (event: Event) => {
+  if (!isCustomEvent(event)) return;
+  const payload = event.detail as AddonDownloadCardPayload;
+  if (getDownloadItem(payload.id)) return;
+  const card: DownloadStatusAndInfo = {
+    downloadType: 'direct',
+    id: payload.id,
+    name: payload.name,
+    appID: payload.appID,
+    status: 'downloading',
+    progress: 0,
+    downloadPath: payload.downloadPath,
+    files: payload.files.map((file) => ({
+      name: basename(file.path),
+      path: file.path,
+      downloadURL: '',
+    })),
+    downloadSpeed: 0,
+    downloadSize: 0,
+    addonSource: payload.addonSource,
+    capsuleImage: payload.capsuleImage,
+    coverImage: payload.coverImage,
+    storefront: payload.storefront,
+    queuePosition: payload.queuePosition,
+    totalParts: payload.totalParts,
+    isAddonDownload: true,
+  };
+  currentDownloads.update((downloads) => [...downloads, card]);
+});
+
 // -- Download Complete --
 
 document.addEventListener('torrent:download-complete', async (event: Event) => {
@@ -635,6 +666,16 @@ document.addEventListener('torrent:download-complete', async (event: Event) => {
 
 document.addEventListener('ddl:download-complete', async (event: Event) => {
   if (!isCustomEvent(event)) return;
+  // Addon-enqueued raw downloads finish here; they never enter the setup phase.
+  if (getDownloadItem(event.detail.id)?.isAddonDownload) {
+    updateDownloadStatus(event.detail.id, {
+      status: 'setup-complete',
+      progress: 1,
+      downloadSpeed: 0,
+      queuePosition: undefined,
+    });
+    return;
+  }
   await processDownloadComplete(event.detail.id, false);
 });
 

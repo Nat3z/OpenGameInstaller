@@ -79,7 +79,11 @@ const extractArchive = (arg: {
       extraction(archivePath, arg.outputDir, (progress, stage) => {
         if (!arg.downloadId) return;
         const now = Date.now();
-        if (stage === lastStage && progress !== 1 && now - lastProgressSent < 100)
+        if (
+          stage === lastStage &&
+          progress !== 1 &&
+          now - lastProgressSent < 100
+        )
           return;
         lastProgressSent = now;
         lastStage = stage;

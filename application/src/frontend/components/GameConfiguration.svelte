@@ -175,7 +175,7 @@ let isRemoving = $derived(
 );
 
 // Close the play page once the background deletion we started finishes;
-// GameManager handles the completion/error notification globally.
+// the main process sends the completion/error notification.
 $effect(() => {
   if (removalStarted && removalTask && removalTask.status !== 'running') {
     exitPlayPage();

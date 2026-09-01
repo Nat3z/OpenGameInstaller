@@ -4,11 +4,7 @@ import { Effect } from 'effect';
 import { getAllApps } from '@/frontend/lib/core/library';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
-import {
-  createNotification,
-  gameRemovalTasks,
-  gamesLaunched,
-} from '@/frontend/store.svelte';
+import { gameRemovalTasks, gamesLaunched } from '@/frontend/store.svelte';
 import { runLaunchAppAddons } from '@/frontend/utils';
 import type { GameRemovalProgress } from '@/lib/electron-rpc.js';
 
@@ -53,14 +49,12 @@ document.addEventListener('game:launch-error', (event: Event) => {
   });
 });
 
-// Upserts a removal task and notifies once when it reaches a terminal state,
-// whether that arrives by IPC event or from the startup snapshot. A terminal
-// task is final: stale progress events queued during a reload are ignored.
+// Upserts a removal task from an IPC event or the startup snapshot. A terminal
+// task is final: stale progress events queued during a reload are ignored. The
+// main process sends the completion/failure notification itself.
 function recordRemovalProgress(payload: GameRemovalProgress) {
-  let previousStatus: GameRemovalProgress['status'] | undefined;
   gameRemovalTasks.update((tasks) => {
     const existing = tasks.find((task) => task.id === payload.id);
-    previousStatus = existing?.status;
     if (existing && existing.status !== 'running') return tasks;
     if (existing) {
       return tasks.map((task) =>
@@ -69,20 +63,6 @@ function recordRemovalProgress(payload: GameRemovalProgress) {
     }
     return [...tasks, { ...payload, timestamp: Date.now() }];
   });
-  if (previousStatus !== undefined && previousStatus !== 'running') return;
-  if (payload.status === 'completed') {
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: `${payload.gameName} removed from library and files deleted`,
-      type: 'success',
-    });
-  } else if (payload.status === 'error') {
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: `${payload.gameName} was removed from the library, but its files could not be deleted: ${payload.error}`,
-      type: 'error',
-    });
-  }
 }
 
 document.addEventListener('game:removal-progress', (event: Event) => {
@@ -91,7 +71,7 @@ document.addEventListener('game:removal-progress', (event: Event) => {
 
 // Deletions that started or finished before this renderer loaded (e.g. a
 // reload mid-removal) only live in the main process; pull them in so the
-// Tasks view and terminal notifications survive.
+// Tasks view survives.
 runDetached(
   electronRpc.app.getRemovalTasks().pipe(
     Effect.map((tasks) => {

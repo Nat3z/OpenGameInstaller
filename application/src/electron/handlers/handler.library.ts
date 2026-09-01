@@ -48,13 +48,18 @@ import {
   saveLibraryInfo,
   stageLibraryRemoval,
 } from '@/electron/handlers/helpers.app/library.js';
-import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
+import {
+  generateNotificationId,
+  notifyError,
+  notifySuccess,
+} from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import {
   appMetadataSubtrees,
   type DeleteGuardRoots,
   filesystemRoot,
   isProtectedDeletePath,
+  overlapsInstallDirectory,
   sharesDirectoryWithOtherGames,
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
@@ -137,7 +142,9 @@ export function awaitPendingFileDeletions(): Promise<void> {
  * Deletes a removed game's files in the background, streaming throttled
  * `game:removal-progress` events to the renderer and keeping the latest
  * snapshot in `removalTasks`. The removal itself has already been committed;
- * this only cleans up the files on disk.
+ * this only cleans up the files on disk. Only files present when the task
+ * started are removed, and the task stops if a library entry reclaims the
+ * directory, so a reinstall mid-deletion keeps its files.
  */
 function startBackgroundFileDeletion(
   appid: number,
@@ -146,10 +153,24 @@ function startBackgroundFileDeletion(
 ): string {
   const taskId = `removal-${appid}-${++removalSequence}`;
   const base = { id: taskId, appID: appid, gameName };
+  // The main process owns the terminal notification so it fires exactly once
+  // even if the renderer reloads mid-deletion.
   const send = (payload: GameRemovalProgress) => {
     const task = removalTasks.get(taskId);
     if (task) task.snapshot = payload;
     void sendIPCMessage('game:removal-progress', payload);
+    if (payload.status === 'completed') {
+      notifySuccess(`${gameName} removed from library and files deleted`);
+    } else if (payload.status === 'error') {
+      notifyError(
+        `${gameName} was removed from the library, but its files could not be deleted: ${payload.error}`
+      );
+    }
+  };
+  const assertNotReclaimed = () => {
+    if (overlapsInstallDirectory(cwd, getAllLibraryFiles())) {
+      throw new Error('the folder is now used by a game in the library');
+    }
   };
 
   // Serialize against other per-game operations so a launch cannot
@@ -166,6 +187,11 @@ function startBackgroundFileDeletion(
         withFileTypes: true,
       });
       const files = entries.filter((entry) => !entry.isDirectory());
+      // Deepest first so each directory is empty by the time it is removed.
+      const directories = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => join(entry.parentPath, entry.name))
+        .sort((a, b) => b.length - a.length);
       total = files.length;
       send({ ...base, status: 'running', progress: 0, deleted, total });
 
@@ -176,6 +202,7 @@ function startBackgroundFileDeletion(
         const now = Date.now();
         if (now - lastEmit >= 200) {
           lastEmit = now;
+          assertNotReclaimed();
           send({
             ...base,
             status: 'running',
@@ -185,8 +212,12 @@ function startBackgroundFileDeletion(
           });
         }
       }
-      // Sweep the now-empty directory tree.
-      await fsp.rm(cwd, { recursive: true, force: true });
+      // Sweep only directories that are now empty; anything written since the
+      // snapshot (e.g. a reinstall) is left alone.
+      assertNotReclaimed();
+      for (const directory of [...directories, cwd]) {
+        await fsp.rmdir(directory).catch(() => undefined);
+      }
       send({ ...base, status: 'completed', progress: 100, deleted, total });
     } catch (cause) {
       logger.sync.error(

@@ -14,6 +14,7 @@ import {
 } from '@/electron/lib/marketplace-schema';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+import type { GameRemovalProgress } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -102,17 +103,7 @@ export type DeferredTask = {
 };
 
 /** Background game-file deletion started by a lazy library removal. */
-export type GameRemovalTask = {
-  id: string;
-  appID: number;
-  gameName: string;
-  status: 'running' | 'completed' | 'error';
-  progress: number;
-  deleted: number;
-  total: number;
-  error?: string;
-  timestamp: number;
-};
+export type GameRemovalTask = GameRemovalProgress & { timestamp: number };
 
 export type FailedSetup = {
   id: string;

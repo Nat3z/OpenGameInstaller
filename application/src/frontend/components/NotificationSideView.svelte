@@ -4,7 +4,8 @@ import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { fade, fly } from 'svelte/transition';
-import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   type DeferredTask,
   deferredTasks,
@@ -202,9 +203,19 @@ function clearAllNotifications() {
   notificationHistory.set([]);
 }
 
+// Finished removal tasks are also dropped on the main side so they don't
+// reappear from the startup snapshot after a reload.
 function clearFinishedRemovalTasks() {
+  const finished = $gameRemovalTasks
+    .filter((task) => task.status !== 'running')
+    .map((task) => task.id);
+  if (finished.length === 0) return;
   gameRemovalTasks.update((tasks) =>
     tasks.filter((task) => task.status === 'running')
+  );
+  runDetached(
+    electronRpc.app.clearRemovalTasks(finished),
+    'Failed to clear finished game removals'
   );
 }
 

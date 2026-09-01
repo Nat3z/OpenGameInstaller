@@ -59,9 +59,9 @@ import {
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
-import { sendNotification } from '@/electron/main.js';
+import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { ElectronRpc } from '@/lib/electron-rpc.js';
+import { ElectronRpc, type GameRemovalProgress } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -95,39 +95,63 @@ const deleteGuardRoots = (): DeleteGuardRoots => ({
   subtrees: [...appMetadataSubtrees(__dirname), ...systemSubtrees()],
 });
 
-type RemovalProgressPayload = {
-  id: string;
-  appID: number;
-  gameName: string;
-  status: 'running' | 'completed' | 'error';
-  progress: number;
-  deleted: number;
-  total: number;
-  error?: string;
-};
+/**
+ * Background deletions keyed by task id. Snapshots outlive the renderer so a
+ * reload can re-query them; `done` lets shutdown wait for in-flight work.
+ */
+const removalTasks = new Map<
+  string,
+  { snapshot: GameRemovalProgress; done: Promise<void> }
+>();
+
+function removalTaskSnapshots(): GameRemovalProgress[] {
+  return [...removalTasks.values()].map((task) => task.snapshot);
+}
+
+/** Drops finished tasks the renderer has dismissed; running ones stay. */
+function dismissRemovalTasks(ids: string[]): void {
+  for (const id of ids) {
+    if (removalTasks.get(id)?.snapshot.status !== 'running') {
+      removalTasks.delete(id);
+    }
+  }
+}
+
+export function hasPendingFileDeletions(): boolean {
+  return [...removalTasks.values()].some(
+    (task) => task.snapshot.status === 'running'
+  );
+}
+
+/** Resolves once every in-flight deletion has settled. */
+export function awaitPendingFileDeletions(): Promise<void> {
+  return Promise.all([...removalTasks.values()].map((task) => task.done)).then(
+    () => undefined
+  );
+}
 
 /**
  * Deletes a removed game's files in the background, streaming throttled
- * `game:removal-progress` events to the renderer. The removal itself has
- * already been committed; this only cleans up the files on disk.
+ * `game:removal-progress` events to the renderer and keeping the latest
+ * snapshot in `removalTasks`. The removal itself has already been committed;
+ * this only cleans up the files on disk.
  */
 function startBackgroundFileDeletion(
   appid: number,
   cwd: string,
-  gameName: string,
-  mainWindow: Electron.BrowserWindow
+  gameName: string
 ): string {
   const taskId = `removal-${appid}`;
   const base = { id: taskId, appID: appid, gameName };
-  const send = (payload: RemovalProgressPayload) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('game:removal-progress', payload);
-    }
+  const send = (payload: GameRemovalProgress) => {
+    const task = removalTasks.get(taskId);
+    if (task) task.snapshot = payload;
+    void sendIPCMessage('game:removal-progress', payload);
   };
 
   // Serialize against other per-game operations so a launch cannot
   // interleave with the deletion.
-  void enqueueGameOperation(appid, async () => {
+  const done = enqueueGameOperation(appid, async () => {
     let deleted = 0;
     let total = 0;
     try {
@@ -175,6 +199,10 @@ function startBackgroundFileDeletion(
         error: cause instanceof Error ? cause.message : String(cause),
       });
     }
+  });
+  removalTasks.set(taskId, {
+    snapshot: { ...base, status: 'running', progress: 0, deleted: 0, total: 0 },
+    done,
   });
   return taskId;
 }
@@ -743,8 +771,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                     startBackgroundFileDeletion(
                       appid,
                       appInfo.cwd,
-                      appInfo.name,
-                      mainWindow
+                      appInfo.name
                     )
                   );
                 }
@@ -772,6 +799,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             )
         );
       })
+    )
+  );
+
+  const getRemovalTasks = ipcProcedure(
+    ElectronRpc.app.getRemovalTasks,
+    ipcBoundary(() => Effect.succeed(removalTaskSnapshots()))
+  );
+
+  const clearRemovalTasks = ipcProcedure(
+    ElectronRpc.app.clearRemovalTasks,
+    ipcBoundary((_, ids: string[]) =>
+      Effect.sync(() => dismissRemovalTasks(ids))
     )
   );
 
@@ -1056,6 +1095,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     launchGame,
     executeWrapperCommand,
     removeApp,
+    getRemovalTasks,
+    clearRemovalTasks,
     insertApp,
     getAllApps,
     updateAppVersion,

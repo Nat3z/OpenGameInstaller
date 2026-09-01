@@ -783,12 +783,12 @@ app.on('window-all-closed', () => {
 });
 
 // A lazy game removal may still be deleting files; finish it before exiting so
-// no half-deleted directory is left behind with its library entry gone.
-let quitAfterDeletions = false;
+// no half-deleted directory is left behind with its library entry gone. Every
+// quit attempt re-checks, so a deletion started after a deferred quit is
+// still awaited by the retry.
 app.on('will-quit', (event) => {
-  if (quitAfterDeletions || !hasPendingFileDeletions()) return;
+  if (!hasPendingFileDeletions()) return;
   event.preventDefault();
-  quitAfterDeletions = true;
   logger.sync.info('Waiting for pending game file deletions before quitting');
   void awaitPendingFileDeletions().finally(() => app.quit());
 });

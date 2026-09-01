@@ -138,15 +138,36 @@ export function awaitPendingFileDeletions(): Promise<void> {
 }
 
 /**
+ * Renames `from` to `to`, retrying briefly for transient holders such as a
+ * virus scanner. Throws when the directory still cannot be isolated.
+ */
+async function moveDirectoryAside(from: string, to: string): Promise<void> {
+  const attempts = 5;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await fsp.rename(from, to);
+      return;
+    } catch (cause) {
+      if (attempt === attempts) {
+        throw new Error(
+          `its folder could not be moved aside for deletion (${cause instanceof Error ? cause.message : String(cause)})`
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+}
+
+/**
  * Deletes a removed game's files in the background, streaming throttled
  * `game:removal-progress` events to the renderer and keeping the latest
  * snapshot in `removalTasks`. The removal itself has already been committed;
  * this only cleans up the files on disk.
  *
  * The directory is first renamed to a hidden sibling so a reinstall into the
- * original path can never collide with the deletion. If the rename fails
- * (Windows refuses it while any file inside is open), deletion proceeds in
- * place and skips files changed since the snapshot was taken.
+ * original path can never collide with the deletion. If the rename keeps
+ * failing (Windows refuses it while any file inside is open) the task fails
+ * without touching the directory rather than deleting in place.
  */
 function startBackgroundFileDeletion(
   appid: number,
@@ -179,16 +200,12 @@ function startBackgroundFileDeletion(
       if (runningGames.has(appid)) {
         throw new Error('the game is currently running');
       }
-      const startedAt = Date.now();
       const aside = join(
         dirname(cwd),
-        `.${basename(cwd)}.ogi-removing-${startedAt}`
+        `.${basename(cwd)}.ogi-removing-${Date.now()}`
       );
-      const movedAside = await fsp.rename(cwd, aside).then(
-        () => true,
-        () => false
-      );
-      const root = movedAside ? aside : cwd;
+      await moveDirectoryAside(cwd, aside);
+      const root = aside;
       const entries = await fsp.readdir(root, {
         recursive: true,
         withFileTypes: true,
@@ -204,17 +221,7 @@ function startBackgroundFileDeletion(
 
       let lastEmit = Date.now();
       for (const file of files) {
-        const path = join(file.parentPath, file.name);
-        // In place, a file rewritten since the snapshot belongs to whoever
-        // rewrote it (e.g. a reinstall); ctime cannot be backdated.
-        if (!movedAside) {
-          const changed = await fsp.stat(path).then(
-            (stat) => stat.ctimeMs >= startedAt,
-            () => true
-          );
-          if (changed) continue;
-        }
-        await fsp.rm(path, { force: true });
+        await fsp.rm(join(file.parentPath, file.name), { force: true });
         deleted++;
         const now = Date.now();
         if (now - lastEmit >= 200) {
@@ -228,8 +235,7 @@ function startBackgroundFileDeletion(
           });
         }
       }
-      // Sweep only directories that are now empty; anything written since the
-      // snapshot is left alone.
+      // Sweep the now-empty directory tree.
       for (const directory of [...directories, root]) {
         await fsp.rmdir(directory).catch(() => undefined);
       }

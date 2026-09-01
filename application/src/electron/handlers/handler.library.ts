@@ -103,6 +103,9 @@ const removalTasks = new Map<
   string,
   { snapshot: GameRemovalProgress; done: Promise<void> }
 >();
+// Task ids stay unique when a game is re-added and removed again while its
+// earlier task is still displayed.
+let removalSequence = 0;
 
 function removalTaskSnapshots(): GameRemovalProgress[] {
   return [...removalTasks.values()].map((task) => task.snapshot);
@@ -141,7 +144,7 @@ function startBackgroundFileDeletion(
   cwd: string,
   gameName: string
 ): string {
-  const taskId = `removal-${appid}`;
+  const taskId = `removal-${appid}-${++removalSequence}`;
   const base = { id: taskId, appID: appid, gameName };
   const send = (payload: GameRemovalProgress) => {
     const task = removalTasks.get(taskId);

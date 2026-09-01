@@ -161,10 +161,13 @@ function handleDllOverridesSave(dllOverrides: string[]) {
 let canEditDllOverrides = $derived(
   (platform === 'linux' || platform === 'darwin') && !!gameInfo.umu
 );
-// Background file deletion started by this window's removal, if any.
-let removalStarted = $state(false);
+// Background file deletion started by this window's removal, if any. Bound
+// by task id so a stale task from an earlier removal of the same game is
+// never mistaken for this one.
+let removalTaskId: string | undefined = $state();
+let removalStarted = $derived(removalTaskId !== undefined);
 let removalTask = $derived(
-  $gameRemovalTasks.find((task) => task.appID === gameInfo.appID)
+  $gameRemovalTasks.find((task) => task.id === removalTaskId)
 );
 // Treat the moment before the first progress event lands as removing too.
 let isRemoving = $derived(
@@ -232,7 +235,7 @@ async function removeFromList() {
   if (result.deletionTaskId) {
     // Files are deleted lazily in the background; keep the window open to
     // show progress. Closing it leaves the deletion visible as a task.
-    removalStarted = true;
+    removalTaskId = result.deletionTaskId;
     if (result.warning) {
       createNotification({
         id: Math.random().toString(36).substring(7),

@@ -159,37 +159,19 @@ async function moveDirectoryAside(from: string, to: string): Promise<void> {
 }
 
 /**
- * Claims a removed game's directory by renaming it to a hidden sibling before
- * the removal RPC returns, so a later reinstall into the original path can
- * never collide with the background deletion. Serialized against other
- * per-game operations so a launch cannot interleave with the rename. Resolves
- * with the new path.
- */
-function moveGameDirectoryAside(appid: number, cwd: string): Promise<string> {
-  return enqueueGameOperation(appid, async () => {
-    if (runningGames.has(appid)) {
-      throw new Error('the game is currently running');
-    }
-    const aside = join(
-      dirname(cwd),
-      `.${basename(cwd)}.ogi-removing-${Date.now()}`
-    );
-    await moveDirectoryAside(cwd, aside);
-    return aside;
-  });
-}
-
-/**
- * Deletes an already-isolated game directory in the background, streaming
- * throttled `game:removal-progress` events to the renderer and keeping the
- * latest snapshot in `removalTasks`. Nothing else can reach the moved-aside
- * directory, so no per-game queue is needed here.
+ * Removes a game's files in the background. The task is registered before any
+ * filesystem work so shutdown always waits for it. It first claims the
+ * directory by renaming it to a hidden sibling (serialized on the per-game
+ * queue so a launch cannot interleave), then deletes the isolated copy while
+ * streaming throttled `game:removal-progress` events and keeping the latest
+ * snapshot in `removalTasks`. `claimed` settles once the original path is free
+ * so callers can return before a reinstall could collide with the deletion.
  */
 function startBackgroundFileDeletion(
   appid: number,
-  root: string,
+  cwd: string,
   gameName: string
-): string {
+): { taskId: string; claimed: Promise<void> } {
   const taskId = `removal-${appid}-${++removalSequence}`;
   const base = { id: taskId, appID: appid, gameName };
   // The main process owns the terminal notification so it fires exactly once
@@ -206,8 +188,41 @@ function startBackgroundFileDeletion(
       );
     }
   };
+  const fail = (cause: unknown, deleted: number, total: number) => {
+    logger.sync.error(
+      `[library] Background file deletion failed for ${appid}:`,
+      cause
+    );
+    send({
+      ...base,
+      status: 'error',
+      progress: total === 0 ? 0 : (deleted / total) * 100,
+      deleted,
+      total,
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
+  };
+
+  const claim = enqueueGameOperation(appid, async () => {
+    if (runningGames.has(appid)) {
+      throw new Error('the game is currently running');
+    }
+    const aside = join(
+      dirname(cwd),
+      `.${basename(cwd)}.ogi-removing-${Date.now()}`
+    );
+    await moveDirectoryAside(cwd, aside);
+    return aside;
+  });
 
   const done = (async () => {
+    let root: string;
+    try {
+      root = await claim;
+    } catch (cause) {
+      fail(cause, 0, 0);
+      return;
+    }
     let deleted = 0;
     let total = 0;
     try {
@@ -246,25 +261,20 @@ function startBackgroundFileDeletion(
       }
       send({ ...base, status: 'completed', progress: 100, deleted, total });
     } catch (cause) {
-      logger.sync.error(
-        `[library] Background file deletion failed for ${appid}:`,
-        cause
-      );
-      send({
-        ...base,
-        status: 'error',
-        progress: total === 0 ? 0 : (deleted / total) * 100,
-        deleted,
-        total,
-        error: cause instanceof Error ? cause.message : String(cause),
-      });
+      fail(cause, deleted, total);
     }
   })();
   removalTasks.set(taskId, {
     snapshot: { ...base, status: 'running', progress: 0, deleted: 0, total: 0 },
     done,
   });
-  return taskId;
+  return {
+    taskId,
+    claimed: claim.then(
+      () => undefined,
+      () => undefined
+    ),
+  };
 }
 
 /**
@@ -802,10 +812,11 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
               yield* Effect.sync(removal.commit);
 
-              // Claim the game folder now, then delete it lazily in the
-              // background; a skipped or refused deletion is a warning, not a
-              // failed removal (the library entry is already gone). Deletion
-              // progress streams to the renderer via `game:removal-progress`.
+              // Delete the game folder lazily in the background; a skipped
+              // deletion is a warning, not a failed removal (the library entry
+              // is already gone), and a failed one is reported by the task.
+              // Wait only for the folder to be claimed so a reinstall started
+              // after this returns can never collide with the deletion.
               let fileWarning: string | undefined;
               let deletionTaskId: string | undefined;
               if (appInfo.cwd) {
@@ -827,24 +838,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                   fileWarning =
                     'The game was removed from the library, but its files were not deleted because the directory contains other games.';
                 } else if (fs.existsSync(appInfo.cwd)) {
-                  const claimed = yield* Effect.either(
-                    Effect.tryPromise({
-                      try: () => moveGameDirectoryAside(appid, appInfo.cwd),
-                      catch: (cause) =>
-                        cause instanceof Error ? cause.message : String(cause),
-                    })
+                  const deletion = yield* Effect.sync(() =>
+                    startBackgroundFileDeletion(
+                      appid,
+                      appInfo.cwd,
+                      appInfo.name
+                    )
                   );
-                  if (claimed._tag === 'Left') {
-                    fileWarning = `The game was removed from the library, but its files could not be deleted: ${claimed.left}`;
-                  } else {
-                    deletionTaskId = yield* Effect.sync(() =>
-                      startBackgroundFileDeletion(
-                        appid,
-                        claimed.right,
-                        appInfo.name
-                      )
-                    );
-                  }
+                  yield* Effect.promise(() => deletion.claimed);
+                  deletionTaskId = deletion.taskId;
                 }
               }
 

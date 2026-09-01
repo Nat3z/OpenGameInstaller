@@ -157,7 +157,8 @@ export const ElectronRpc = {
         | {
             status: 'success';
             warning?: string;
-            filesDeleted?: boolean;
+            /** Set when file deletion was started lazily in the background. */
+            deletionTaskId?: string;
           }
         | { status: 'cancelled'; message: string }
         | { status: 'error'; error: string }

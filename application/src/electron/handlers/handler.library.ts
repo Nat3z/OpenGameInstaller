@@ -18,6 +18,7 @@ import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { homedir } from 'os';
+import { join } from 'path';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   addDeckGameToSteam,
@@ -93,6 +94,90 @@ const deleteGuardRoots = (): DeleteGuardRoots => ({
   exact: [filesystemRoot(), homedir(), __dirname],
   subtrees: [...appMetadataSubtrees(__dirname), ...systemSubtrees()],
 });
+
+type RemovalProgressPayload = {
+  id: string;
+  appID: number;
+  gameName: string;
+  status: 'running' | 'completed' | 'error';
+  progress: number;
+  deleted: number;
+  total: number;
+  error?: string;
+};
+
+/**
+ * Deletes a removed game's files in the background, streaming throttled
+ * `game:removal-progress` events to the renderer. The removal itself has
+ * already been committed; this only cleans up the files on disk.
+ */
+function startBackgroundFileDeletion(
+  appid: number,
+  cwd: string,
+  gameName: string,
+  mainWindow: Electron.BrowserWindow
+): string {
+  const taskId = `removal-${appid}`;
+  const base = { id: taskId, appID: appid, gameName };
+  const send = (payload: RemovalProgressPayload) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('game:removal-progress', payload);
+    }
+  };
+
+  // Serialize against other per-game operations so a launch cannot
+  // interleave with the deletion.
+  void enqueueGameOperation(appid, async () => {
+    let deleted = 0;
+    let total = 0;
+    try {
+      if (runningGames.has(appid)) {
+        throw new Error('the game is currently running');
+      }
+      const entries = await fsp.readdir(cwd, {
+        recursive: true,
+        withFileTypes: true,
+      });
+      const files = entries.filter((entry) => !entry.isDirectory());
+      total = files.length;
+      send({ ...base, status: 'running', progress: 0, deleted, total });
+
+      let lastEmit = Date.now();
+      for (const file of files) {
+        await fsp.rm(join(file.parentPath, file.name), { force: true });
+        deleted++;
+        const now = Date.now();
+        if (now - lastEmit >= 200) {
+          lastEmit = now;
+          send({
+            ...base,
+            status: 'running',
+            progress: (deleted / total) * 100,
+            deleted,
+            total,
+          });
+        }
+      }
+      // Sweep the now-empty directory tree.
+      await fsp.rm(cwd, { recursive: true, force: true });
+      send({ ...base, status: 'completed', progress: 100, deleted, total });
+    } catch (cause) {
+      logger.sync.error(
+        `[library] Background file deletion failed for ${appid}:`,
+        cause
+      );
+      send({
+        ...base,
+        status: 'error',
+        progress: total === 0 ? 0 : (deleted / total) * 100,
+        deleted,
+        total,
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  });
+  return taskId;
+}
 
 /**
  * Determine if a game should use UMU mode
@@ -629,11 +714,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
               yield* Effect.sync(removal.commit);
 
-              // Delete the game files from disk; a failed, skipped, or
+              // Kick off file deletion lazily in the background; a skipped or
               // refused deletion is a warning, not a failed removal (the
-              // library entry is already gone).
+              // library entry is already gone). Deletion progress streams to
+              // the renderer via `game:removal-progress`.
               let fileWarning: string | undefined;
-              let filesDeleted = false;
+              let deletionTaskId: string | undefined;
               if (appInfo.cwd) {
                 if (runningGames.has(appid)) {
                   fileWarning =
@@ -653,29 +739,14 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                   fileWarning =
                     'The game was removed from the library, but its files were not deleted because the directory contains other games.';
                 } else if (fs.existsSync(appInfo.cwd)) {
-                  const deletion = yield* Effect.either(
-                    Effect.tryPromise({
-                      try: () =>
-                        // Serialize against other per-game operations so a
-                        // launch cannot interleave with the recursive rm
-                        enqueueGameOperation(appid, async () => {
-                          if (runningGames.has(appid)) {
-                            throw new Error('the game is currently running');
-                          }
-                          await fsp.rm(appInfo.cwd, {
-                            recursive: true,
-                            force: true,
-                          });
-                        }),
-                      catch: (cause) =>
-                        cause instanceof Error ? cause.message : String(cause),
-                    })
+                  deletionTaskId = yield* Effect.sync(() =>
+                    startBackgroundFileDeletion(
+                      appid,
+                      appInfo.cwd,
+                      appInfo.name,
+                      mainWindow
+                    )
                   );
-                  if (deletion._tag === 'Left') {
-                    fileWarning = `The game was removed from the library, but its files could not be deleted: ${deletion.left}`;
-                  } else {
-                    filesDeleted = true;
-                  }
                 }
               }
 
@@ -683,7 +754,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 status: 'success' as const,
                 warning:
                   [warning, fileWarning].filter(Boolean).join(' ') || undefined,
-                filesDeleted,
+                deletionTaskId,
               };
             }),
           (removal) =>

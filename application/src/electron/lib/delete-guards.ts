@@ -63,15 +63,16 @@ export const isProtectedDeletePath = (
   return matches(roots.exact, false) || matches(roots.subtrees, true);
 };
 
-/** Whether `target` equals, contains, or sits inside any listed install directory. */
-export const overlapsInstallDirectory = (
+/** Refuse deletion when the directory overlaps another game's install directory. */
+export const sharesDirectoryWithOtherGames = (
+  appID: number,
   target: string,
-  games: ReadonlyArray<{ cwd?: string }>
+  otherGames: ReadonlyArray<{ appID: number; cwd?: string }>
 ): boolean => {
   const resolvedTarget = normalizeDeletePath(target);
-  return games.some((game) => {
-    if (!game.cwd) return false;
-    const otherCwd = normalizeDeletePath(game.cwd);
+  return otherGames.some((other) => {
+    if (other.appID === appID || !other.cwd) return false;
+    const otherCwd = normalizeDeletePath(other.cwd);
     return (
       resolvedTarget === otherCwd ||
       resolvedTarget.startsWith(withTrailingSep(otherCwd)) ||
@@ -79,17 +80,6 @@ export const overlapsInstallDirectory = (
     );
   });
 };
-
-/** Refuse deletion when the directory overlaps another game's install directory. */
-export const sharesDirectoryWithOtherGames = (
-  appID: number,
-  target: string,
-  otherGames: ReadonlyArray<{ appID: number; cwd?: string }>
-): boolean =>
-  overlapsInstallDirectory(
-    target,
-    otherGames.filter((other) => other.appID !== appID)
-  );
 
 /** App-owned directories that must never be wiped by a game removal. */
 export const appMetadataSubtrees = (dataDir: string): string[] => [

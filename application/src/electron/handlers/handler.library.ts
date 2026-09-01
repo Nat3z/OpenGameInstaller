@@ -18,7 +18,7 @@ import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { homedir } from 'os';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   addDeckGameToSteam,
@@ -59,7 +59,6 @@ import {
   type DeleteGuardRoots,
   filesystemRoot,
   isProtectedDeletePath,
-  overlapsInstallDirectory,
   sharesDirectoryWithOtherGames,
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
@@ -142,9 +141,12 @@ export function awaitPendingFileDeletions(): Promise<void> {
  * Deletes a removed game's files in the background, streaming throttled
  * `game:removal-progress` events to the renderer and keeping the latest
  * snapshot in `removalTasks`. The removal itself has already been committed;
- * this only cleans up the files on disk. Only files present when the task
- * started are removed, and the task stops if a library entry reclaims the
- * directory, so a reinstall mid-deletion keeps its files.
+ * this only cleans up the files on disk.
+ *
+ * The directory is first renamed to a hidden sibling so a reinstall into the
+ * original path can never collide with the deletion. If the rename fails
+ * (Windows refuses it while any file inside is open), deletion proceeds in
+ * place and skips files changed since the snapshot was taken.
  */
 function startBackgroundFileDeletion(
   appid: number,
@@ -167,11 +169,6 @@ function startBackgroundFileDeletion(
       );
     }
   };
-  const assertNotReclaimed = () => {
-    if (overlapsInstallDirectory(cwd, getAllLibraryFiles())) {
-      throw new Error('the folder is now used by a game in the library');
-    }
-  };
 
   // Serialize against other per-game operations so a launch cannot
   // interleave with the deletion.
@@ -182,7 +179,17 @@ function startBackgroundFileDeletion(
       if (runningGames.has(appid)) {
         throw new Error('the game is currently running');
       }
-      const entries = await fsp.readdir(cwd, {
+      const startedAt = Date.now();
+      const aside = join(
+        dirname(cwd),
+        `.${basename(cwd)}.ogi-removing-${startedAt}`
+      );
+      const movedAside = await fsp.rename(cwd, aside).then(
+        () => true,
+        () => false
+      );
+      const root = movedAside ? aside : cwd;
+      const entries = await fsp.readdir(root, {
         recursive: true,
         withFileTypes: true,
       });
@@ -197,12 +204,21 @@ function startBackgroundFileDeletion(
 
       let lastEmit = Date.now();
       for (const file of files) {
-        await fsp.rm(join(file.parentPath, file.name), { force: true });
+        const path = join(file.parentPath, file.name);
+        // In place, a file rewritten since the snapshot belongs to whoever
+        // rewrote it (e.g. a reinstall); ctime cannot be backdated.
+        if (!movedAside) {
+          const changed = await fsp.stat(path).then(
+            (stat) => stat.ctimeMs >= startedAt,
+            () => true
+          );
+          if (changed) continue;
+        }
+        await fsp.rm(path, { force: true });
         deleted++;
         const now = Date.now();
         if (now - lastEmit >= 200) {
           lastEmit = now;
-          assertNotReclaimed();
           send({
             ...base,
             status: 'running',
@@ -213,9 +229,8 @@ function startBackgroundFileDeletion(
         }
       }
       // Sweep only directories that are now empty; anything written since the
-      // snapshot (e.g. a reinstall) is left alone.
-      assertNotReclaimed();
-      for (const directory of [...directories, cwd]) {
+      // snapshot is left alone.
+      for (const directory of [...directories, root]) {
         await fsp.rmdir(directory).catch(() => undefined);
       }
       send({ ...base, status: 'completed', progress: 100, deleted, total });

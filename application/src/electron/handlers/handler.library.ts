@@ -159,19 +159,35 @@ async function moveDirectoryAside(from: string, to: string): Promise<void> {
 }
 
 /**
- * Deletes a removed game's files in the background, streaming throttled
- * `game:removal-progress` events to the renderer and keeping the latest
- * snapshot in `removalTasks`. The removal itself has already been committed;
- * this only cleans up the files on disk.
- *
- * The directory is first renamed to a hidden sibling so a reinstall into the
- * original path can never collide with the deletion. If the rename keeps
- * failing (Windows refuses it while any file inside is open) the task fails
- * without touching the directory rather than deleting in place.
+ * Claims a removed game's directory by renaming it to a hidden sibling before
+ * the removal RPC returns, so a later reinstall into the original path can
+ * never collide with the background deletion. Serialized against other
+ * per-game operations so a launch cannot interleave with the rename. Resolves
+ * with the new path.
+ */
+function moveGameDirectoryAside(appid: number, cwd: string): Promise<string> {
+  return enqueueGameOperation(appid, async () => {
+    if (runningGames.has(appid)) {
+      throw new Error('the game is currently running');
+    }
+    const aside = join(
+      dirname(cwd),
+      `.${basename(cwd)}.ogi-removing-${Date.now()}`
+    );
+    await moveDirectoryAside(cwd, aside);
+    return aside;
+  });
+}
+
+/**
+ * Deletes an already-isolated game directory in the background, streaming
+ * throttled `game:removal-progress` events to the renderer and keeping the
+ * latest snapshot in `removalTasks`. Nothing else can reach the moved-aside
+ * directory, so no per-game queue is needed here.
  */
 function startBackgroundFileDeletion(
   appid: number,
-  cwd: string,
+  root: string,
   gameName: string
 ): string {
   const taskId = `removal-${appid}-${++removalSequence}`;
@@ -191,21 +207,10 @@ function startBackgroundFileDeletion(
     }
   };
 
-  // Serialize against other per-game operations so a launch cannot
-  // interleave with the deletion.
-  const done = enqueueGameOperation(appid, async () => {
+  const done = (async () => {
     let deleted = 0;
     let total = 0;
     try {
-      if (runningGames.has(appid)) {
-        throw new Error('the game is currently running');
-      }
-      const aside = join(
-        dirname(cwd),
-        `.${basename(cwd)}.ogi-removing-${Date.now()}`
-      );
-      await moveDirectoryAside(cwd, aside);
-      const root = aside;
       const entries = await fsp.readdir(root, {
         recursive: true,
         withFileTypes: true,
@@ -254,7 +259,7 @@ function startBackgroundFileDeletion(
         error: cause instanceof Error ? cause.message : String(cause),
       });
     }
-  });
+  })();
   removalTasks.set(taskId, {
     snapshot: { ...base, status: 'running', progress: 0, deleted: 0, total: 0 },
     done,
@@ -797,10 +802,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
               yield* Effect.sync(removal.commit);
 
-              // Kick off file deletion lazily in the background; a skipped or
-              // refused deletion is a warning, not a failed removal (the
-              // library entry is already gone). Deletion progress streams to
-              // the renderer via `game:removal-progress`.
+              // Claim the game folder now, then delete it lazily in the
+              // background; a skipped or refused deletion is a warning, not a
+              // failed removal (the library entry is already gone). Deletion
+              // progress streams to the renderer via `game:removal-progress`.
               let fileWarning: string | undefined;
               let deletionTaskId: string | undefined;
               if (appInfo.cwd) {
@@ -822,13 +827,24 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                   fileWarning =
                     'The game was removed from the library, but its files were not deleted because the directory contains other games.';
                 } else if (fs.existsSync(appInfo.cwd)) {
-                  deletionTaskId = yield* Effect.sync(() =>
-                    startBackgroundFileDeletion(
-                      appid,
-                      appInfo.cwd,
-                      appInfo.name
-                    )
+                  const claimed = yield* Effect.either(
+                    Effect.tryPromise({
+                      try: () => moveGameDirectoryAside(appid, appInfo.cwd),
+                      catch: (cause) =>
+                        cause instanceof Error ? cause.message : String(cause),
+                    })
                   );
+                  if (claimed._tag === 'Left') {
+                    fileWarning = `The game was removed from the library, but its files could not be deleted: ${claimed.left}`;
+                  } else {
+                    deletionTaskId = yield* Effect.sync(() =>
+                      startBackgroundFileDeletion(
+                        appid,
+                        claimed.right,
+                        appInfo.name
+                      )
+                    );
+                  }
                 }
               }
 

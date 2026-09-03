@@ -266,6 +266,14 @@ ipcRenderer.on(
   })
 );
 ipcRenderer.on(
+  'game:removal-progress',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('game:removal-progress', { detail: arg })
+    );
+  })
+);
+ipcRenderer.on(
   'addon:update-available',
   wrap((_, arg) => {
     document.dispatchEvent(

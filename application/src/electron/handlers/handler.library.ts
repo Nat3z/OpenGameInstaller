@@ -18,6 +18,7 @@ import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { homedir } from 'os';
+import { basename, dirname, join } from 'path';
 import { parse as shellQuoteParse } from 'shell-quote';
 import {
   addDeckGameToSteam,
@@ -47,7 +48,11 @@ import {
   saveLibraryInfo,
   stageLibraryRemoval,
 } from '@/electron/handlers/helpers.app/library.js';
-import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
+import {
+  generateNotificationId,
+  notifyError,
+  notifySuccess,
+} from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import {
   appMetadataSubtrees,
@@ -58,9 +63,9 @@ import {
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
-import { sendNotification } from '@/electron/main.js';
+import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { ElectronRpc } from '@/lib/electron-rpc.js';
+import { ElectronRpc, type GameRemovalProgress } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -93,6 +98,184 @@ const deleteGuardRoots = (): DeleteGuardRoots => ({
   exact: [filesystemRoot(), homedir(), __dirname],
   subtrees: [...appMetadataSubtrees(__dirname), ...systemSubtrees()],
 });
+
+/**
+ * Background deletions keyed by task id. Snapshots outlive the renderer so a
+ * reload can re-query them; `done` lets shutdown wait for in-flight work.
+ */
+const removalTasks = new Map<
+  string,
+  { snapshot: GameRemovalProgress; done: Promise<void> }
+>();
+// Task ids stay unique when a game is re-added and removed again while its
+// earlier task is still displayed.
+let removalSequence = 0;
+
+function removalTaskSnapshots(): GameRemovalProgress[] {
+  return [...removalTasks.values()].map((task) => task.snapshot);
+}
+
+/** Drops finished tasks the renderer has dismissed; running ones stay. */
+function dismissRemovalTasks(ids: string[]): void {
+  for (const id of ids) {
+    if (removalTasks.get(id)?.snapshot.status !== 'running') {
+      removalTasks.delete(id);
+    }
+  }
+}
+
+export function hasPendingFileDeletions(): boolean {
+  return [...removalTasks.values()].some(
+    (task) => task.snapshot.status === 'running'
+  );
+}
+
+/** Resolves once every in-flight deletion has settled. */
+export function awaitPendingFileDeletions(): Promise<void> {
+  return Promise.all([...removalTasks.values()].map((task) => task.done)).then(
+    () => undefined
+  );
+}
+
+/**
+ * Renames `from` to `to`, retrying briefly for transient holders such as a
+ * virus scanner. Throws when the directory still cannot be isolated.
+ */
+async function moveDirectoryAside(from: string, to: string): Promise<void> {
+  const attempts = 5;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await fsp.rename(from, to);
+      return;
+    } catch (cause) {
+      if (attempt === attempts) {
+        throw new Error(
+          `its folder could not be moved aside for deletion (${cause instanceof Error ? cause.message : String(cause)})`
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+}
+
+/**
+ * Removes a game's files in the background. The task is registered before any
+ * filesystem work so shutdown always waits for it. It first claims the
+ * directory by renaming it to a hidden sibling (serialized on the per-game
+ * queue so a launch cannot interleave), then deletes the isolated copy while
+ * streaming throttled `game:removal-progress` events and keeping the latest
+ * snapshot in `removalTasks`. `claimed` settles once the original path is free
+ * so callers can return before a reinstall could collide with the deletion.
+ */
+function startBackgroundFileDeletion(
+  appid: number,
+  cwd: string,
+  gameName: string
+): { taskId: string; claimed: Promise<void> } {
+  const taskId = `removal-${appid}-${++removalSequence}`;
+  const base = { id: taskId, appID: appid, gameName };
+  // The main process owns the terminal notification so it fires exactly once
+  // even if the renderer reloads mid-deletion.
+  const send = (payload: GameRemovalProgress) => {
+    const task = removalTasks.get(taskId);
+    if (task) task.snapshot = payload;
+    void sendIPCMessage('game:removal-progress', payload);
+    if (payload.status === 'completed') {
+      notifySuccess(`${gameName} removed from library and files deleted`);
+    } else if (payload.status === 'error') {
+      notifyError(
+        `${gameName} was removed from the library, but its files could not be deleted: ${payload.error}`
+      );
+    }
+  };
+  const fail = (cause: unknown, deleted: number, total: number) => {
+    logger.sync.error(
+      `[library] Background file deletion failed for ${appid}:`,
+      cause
+    );
+    send({
+      ...base,
+      status: 'error',
+      progress: total === 0 ? 0 : (deleted / total) * 100,
+      deleted,
+      total,
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
+  };
+
+  const claim = enqueueGameOperation(appid, async () => {
+    if (runningGames.has(appid)) {
+      throw new Error('the game is currently running');
+    }
+    const aside = join(
+      dirname(cwd),
+      `.${basename(cwd)}.ogi-removing-${Date.now()}`
+    );
+    await moveDirectoryAside(cwd, aside);
+    return aside;
+  });
+
+  const done = (async () => {
+    let root: string;
+    try {
+      root = await claim;
+    } catch (cause) {
+      fail(cause, 0, 0);
+      return;
+    }
+    let deleted = 0;
+    let total = 0;
+    try {
+      const entries = await fsp.readdir(root, {
+        recursive: true,
+        withFileTypes: true,
+      });
+      const files = entries.filter((entry) => !entry.isDirectory());
+      // Deepest first so each directory is empty by the time it is removed.
+      const directories = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => join(entry.parentPath, entry.name))
+        .sort((a, b) => b.length - a.length);
+      total = files.length;
+      send({ ...base, status: 'running', progress: 0, deleted, total });
+
+      let lastEmit = Date.now();
+      for (const file of files) {
+        await fsp.rm(join(file.parentPath, file.name), { force: true });
+        deleted++;
+        const now = Date.now();
+        if (now - lastEmit >= 200) {
+          lastEmit = now;
+          send({
+            ...base,
+            status: 'running',
+            progress: (deleted / total) * 100,
+            deleted,
+            total,
+          });
+        }
+      }
+      // Sweep the now-empty directory tree.
+      for (const directory of [...directories, root]) {
+        await fsp.rmdir(directory).catch(() => undefined);
+      }
+      send({ ...base, status: 'completed', progress: 100, deleted, total });
+    } catch (cause) {
+      fail(cause, deleted, total);
+    }
+  })();
+  removalTasks.set(taskId, {
+    snapshot: { ...base, status: 'running', progress: 0, deleted: 0, total: 0 },
+    done,
+  });
+  return {
+    taskId,
+    claimed: claim.then(
+      () => undefined,
+      () => undefined
+    ),
+  };
+}
 
 /**
  * Determine if a game should use UMU mode
@@ -629,11 +812,13 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
               yield* Effect.sync(removal.commit);
 
-              // Delete the game files from disk; a failed, skipped, or
-              // refused deletion is a warning, not a failed removal (the
-              // library entry is already gone).
+              // Delete the game folder lazily in the background; a skipped
+              // deletion is a warning, not a failed removal (the library entry
+              // is already gone), and a failed one is reported by the task.
+              // Wait only for the folder to be claimed so a reinstall started
+              // after this returns can never collide with the deletion.
               let fileWarning: string | undefined;
-              let filesDeleted = false;
+              let deletionTaskId: string | undefined;
               if (appInfo.cwd) {
                 if (runningGames.has(appid)) {
                   fileWarning =
@@ -653,29 +838,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                   fileWarning =
                     'The game was removed from the library, but its files were not deleted because the directory contains other games.';
                 } else if (fs.existsSync(appInfo.cwd)) {
-                  const deletion = yield* Effect.either(
-                    Effect.tryPromise({
-                      try: () =>
-                        // Serialize against other per-game operations so a
-                        // launch cannot interleave with the recursive rm
-                        enqueueGameOperation(appid, async () => {
-                          if (runningGames.has(appid)) {
-                            throw new Error('the game is currently running');
-                          }
-                          await fsp.rm(appInfo.cwd, {
-                            recursive: true,
-                            force: true,
-                          });
-                        }),
-                      catch: (cause) =>
-                        cause instanceof Error ? cause.message : String(cause),
-                    })
+                  const deletion = yield* Effect.sync(() =>
+                    startBackgroundFileDeletion(
+                      appid,
+                      appInfo.cwd,
+                      appInfo.name
+                    )
                   );
-                  if (deletion._tag === 'Left') {
-                    fileWarning = `The game was removed from the library, but its files could not be deleted: ${deletion.left}`;
-                  } else {
-                    filesDeleted = true;
-                  }
+                  yield* Effect.promise(() => deletion.claimed);
+                  deletionTaskId = deletion.taskId;
                 }
               }
 
@@ -683,7 +854,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 status: 'success' as const,
                 warning:
                   [warning, fileWarning].filter(Boolean).join(' ') || undefined,
-                filesDeleted,
+                deletionTaskId,
               };
             }),
           (removal) =>
@@ -701,6 +872,18 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             )
         );
       })
+    )
+  );
+
+  const getRemovalTasks = ipcProcedure(
+    ElectronRpc.app.getRemovalTasks,
+    ipcBoundary(() => Effect.succeed(removalTaskSnapshots()))
+  );
+
+  const clearRemovalTasks = ipcProcedure(
+    ElectronRpc.app.clearRemovalTasks,
+    ipcBoundary((_, ids: string[]) =>
+      Effect.sync(() => dismissRemovalTasks(ids))
     )
   );
 
@@ -985,6 +1168,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     launchGame,
     executeWrapperCommand,
     removeApp,
+    getRemovalTasks,
+    clearRemovalTasks,
     insertApp,
     getAllApps,
     updateAppVersion,

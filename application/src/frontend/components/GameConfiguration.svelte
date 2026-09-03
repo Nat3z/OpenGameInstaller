@@ -27,6 +27,7 @@ import {
 import {
   createNotification,
   currentDownloads,
+  gameRemovalTasks,
   gamesLaunched,
 } from '@/frontend/store.svelte';
 
@@ -140,6 +141,12 @@ function pushChanges() {
 }
 
 function closeModal() {
+  // The game is already removed from the library while its files delete in
+  // the background; the deletion stays visible as a task in the side view.
+  if (removalStarted) {
+    exitPlayPage();
+    return;
+  }
   onFinish(undefined);
 }
 
@@ -154,6 +161,26 @@ function handleDllOverridesSave(dllOverrides: string[]) {
 let canEditDllOverrides = $derived(
   (platform === 'linux' || platform === 'darwin') && !!gameInfo.umu
 );
+// Background file deletion started by this window's removal, if any. Bound
+// by task id so a stale task from an earlier removal of the same game is
+// never mistaken for this one.
+let removalTaskId: string | undefined = $state();
+let removalStarted = $derived(removalTaskId !== undefined);
+let removalTask = $derived(
+  $gameRemovalTasks.find((task) => task.id === removalTaskId)
+);
+// Treat the moment before the first progress event lands as removing too.
+let isRemoving = $derived(
+  removalStarted && (!removalTask || removalTask.status === 'running')
+);
+
+// Close the play page once the background deletion we started finishes;
+// the main process sends the completion/error notification.
+$effect(() => {
+  if (removalStarted && removalTask && removalTask.status !== 'running') {
+    exitPlayPage();
+  }
+});
 let dllOverridesCount = $derived.by(() => {
   const dllOverrides = Array.isArray(formData.dllOverrides)
     ? formData.dllOverrides
@@ -201,18 +228,29 @@ async function removeFromList() {
   }
 
   completeRequiredReadd(gameInfo.appID);
-  createNotification({
-    id: Math.random().toString(36).substring(7),
-    message:
-      result.warning ??
-      (result.filesDeleted
-        ? 'Game removed from library and files deleted'
-        : 'Game removed from library'),
-    type: result.warning ? 'info' : 'success',
-  });
   currentDownloads.update((downloads) =>
     downloads.filter((download) => download.appID !== gameInfo.appID)
   );
+
+  if (result.deletionTaskId) {
+    // Files are deleted lazily in the background; keep the window open to
+    // show progress. Closing it leaves the deletion visible as a task.
+    removalTaskId = result.deletionTaskId;
+    if (result.warning) {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: result.warning,
+        type: 'info',
+      });
+    }
+    return;
+  }
+
+  createNotification({
+    id: Math.random().toString(36).substring(7),
+    message: result.warning ?? 'Game removed from library',
+    type: result.warning ? 'info' : 'success',
+  });
   exitPlayPage();
 }
 
@@ -329,11 +367,17 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
     {/each}
 
     <div class="pt-4 flex flex-row flex-wrap gap-3">
-      <ButtonModal text="Save" variant="primary" onclick={pushChanges} />
+      <ButtonModal
+        text="Save"
+        variant="primary"
+        onclick={pushChanges}
+        disabled={removalStarted}
+      />
       {#if platform === 'linux' || platform === 'darwin'}
         <ButtonModal
           text="Add to Steam"
           variant="secondary"
+          disabled={removalStarted}
           onclick={(event) => {
             addToSteam(event.currentTarget as HTMLButtonElement);
           }}
@@ -343,15 +387,35 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
         text="Show in Folder"
         variant="secondary"
         onclick={showInFolder}
-        disabled={!gameInfo.cwd}
+        disabled={!gameInfo.cwd || removalStarted}
       />
       <ButtonModal
-        text="Remove Game"
+        text={isRemoving ? 'Removing…' : 'Remove Game'}
         variant="danger"
+        disabled={removalStarted}
         onclick={() => (showRemoveConfirm = true)}
       />
       <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
     </div>
+
+    {#if isRemoving && removalTask}
+      <div class="pt-3">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs text-text-secondary">
+            Deleting files ({removalTask.deleted}/{removalTask.total})
+          </span>
+          <span class="text-xs text-text-secondary">
+            {Math.floor(removalTask.progress)}%
+          </span>
+        </div>
+        <div class="w-full bg-border rounded-full h-1.5">
+          <div
+            class="bg-error h-1.5 rounded-full transition-all duration-300"
+            style="width: {removalTask.progress}%"
+          ></div>
+        </div>
+      </div>
+    {/if}
   </Modal>
 
   {#if showRemoveConfirm}

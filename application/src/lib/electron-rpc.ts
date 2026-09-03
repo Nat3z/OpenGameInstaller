@@ -35,6 +35,18 @@ export interface ElectronRpcTransport {
 
 export const OperatingSystem = Schema.Literal('darwin', 'linux', 'win32');
 
+/** Progress of a background game-file deletion started by a lazy removal. */
+export type GameRemovalProgress = {
+  id: string;
+  appID: number;
+  gameName: string;
+  status: 'running' | 'completed' | 'error';
+  progress: number;
+  deleted: number;
+  total: number;
+  error?: string;
+};
+
 export type OperatingSystem = typeof OperatingSystem.Type;
 
 export class ElectronRpcError extends Schema.TaggedError<ElectronRpcError>()(
@@ -157,12 +169,19 @@ export const ElectronRpc = {
         | {
             status: 'success';
             warning?: string;
-            filesDeleted?: boolean;
+            /** Set when file deletion was started lazily in the background. */
+            deletionTaskId?: string;
           }
         | { status: 'cancelled'; message: string }
         | { status: 'error'; error: string }
       >()
     ),
+    getRemovalTasks: rpc(
+      'app.getRemovalTasks',
+      [],
+      opaque<GameRemovalProgress[]>()
+    ),
+    clearRemovalTasks: rpc('app.clearRemovalTasks', [StringArray], Void),
     insertApp: rpc(
       'app.insertApp',
       [

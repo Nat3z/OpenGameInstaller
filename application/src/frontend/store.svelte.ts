@@ -14,6 +14,7 @@ import {
 } from '@/electron/lib/marketplace-schema';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+import type { GameRemovalProgress } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -101,6 +102,9 @@ export type DeferredTask = {
     | 'other';
 };
 
+/** Background game-file deletion started by a lazy library removal. */
+export type GameRemovalTask = GameRemovalProgress & { timestamp: number };
+
 export type FailedSetup = {
   id: string;
   timestamp: number;
@@ -125,6 +129,7 @@ export const currentDownloads: Writable<DownloadStatusAndInfo[]> = writable([]);
 export const failedSetups: Writable<FailedSetup[]> = writable([]);
 export const deferredTasks: Writable<DeferredTask[]> = writable([]);
 export const removedTasks: Writable<string[]> = writable([]);
+export const gameRemovalTasks: Writable<GameRemovalTask[]> = writable([]);
 export const notifications: Writable<Notification[]> = writable([]);
 export const notificationHistory: Writable<Notification[]> = writable([]);
 export const readNotificationIds: Writable<Set<string>> = writable(new Set());

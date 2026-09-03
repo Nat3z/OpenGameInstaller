@@ -4,9 +4,12 @@ import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { fade, fly } from 'svelte/transition';
-import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
+  type DeferredTask,
   deferredTasks,
+  gameRemovalTasks,
   type Notification,
   notificationHistory,
   removedTasks,
@@ -23,6 +26,31 @@ let scrollContainer: HTMLDivElement | null = $state(null);
 let logContainers: Map<string, HTMLDivElement> = $state(new Map());
 let previousLogLengths: Map<string, number> = new Map();
 let closeTimeout = $state(false);
+
+// Game-file removal tasks merged into the deferred-task card shape so the
+// Tasks tab renders both through the same markup.
+let removalAsDeferred = $derived(
+  $gameRemovalTasks.map(
+    (task): DeferredTask => ({
+      id: task.id,
+      name: `Removing ${task.gameName}`,
+      description:
+        task.status === 'running'
+          ? `Deleting files (${task.deleted}/${task.total})`
+          : task.status === 'completed'
+            ? 'Files deleted'
+            : 'File deletion failed',
+      addonOwner: 'OpenGameInstaller',
+      status: task.status,
+      progress: task.progress,
+      logs: [],
+      timestamp: task.timestamp,
+      error: task.error,
+      type: 'cleanup',
+    })
+  )
+);
+let allTasks = $derived([...removalAsDeferred, ...$deferredTasks]);
 
 function refreshDeferredTasks(tasksToRemove: string[] = []) {
   return loadDeferredTasks(tasksToRemove).pipe(
@@ -175,7 +203,24 @@ function clearAllNotifications() {
   notificationHistory.set([]);
 }
 
+// Finished removal tasks are also dropped on the main side so they don't
+// reappear from the startup snapshot after a reload.
+function clearFinishedRemovalTasks() {
+  const finished = $gameRemovalTasks
+    .filter((task) => task.status !== 'running')
+    .map((task) => task.id);
+  if (finished.length === 0) return;
+  gameRemovalTasks.update((tasks) =>
+    tasks.filter((task) => task.status === 'running')
+  );
+  runDetached(
+    electronRpc.app.clearRemovalTasks(finished),
+    'Failed to clear finished game removals'
+  );
+}
+
 function handleClearCompletedTasks() {
+  clearFinishedRemovalTasks();
   clearAllTasks(
     $deferredTasks
       .map((task) => {
@@ -194,6 +239,9 @@ function handleClearCompletedTasks() {
 }
 
 function handleClearAllTasks() {
+  // Running removal tasks stay visible; an in-flight deletion can't be
+  // dismissed from the view.
+  clearFinishedRemovalTasks();
   clearAllTasks($deferredTasks.map((task) => task.id));
 }
 
@@ -316,9 +364,9 @@ function registerLogContainer(element: HTMLDivElement, taskId: string) {
           onclick={() => (currentTab = 'tasks')}
         >
           Tasks
-          {#if $deferredTasks.length > 0}
+          {#if allTasks.length > 0}
             <span class="ml-2 bg-overlay-text/20 px-1.5 py-0.5 rounded text-xs">
-              {$deferredTasks.length}
+              {allTasks.length}
             </span>
           {/if}
         </button>
@@ -429,7 +477,7 @@ function registerLogContainer(element: HTMLDivElement, taskId: string) {
             {/if}
           {:else}
             <!-- Tasks Content -->
-            {#if $deferredTasks.length === 0}
+            {#if allTasks.length === 0}
               <div
                 class="flex flex-col items-center justify-center h-full text-center p-8"
               >
@@ -459,8 +507,7 @@ function registerLogContainer(element: HTMLDivElement, taskId: string) {
               <div class="p-4 space-y-3">
                 <div class="flex items-center justify-between mb-3">
                   <span class="text-sm text-text-secondary">
-                    {$deferredTasks.length} active task{$deferredTasks.length !==
-                    1
+                    {allTasks.length} active task{allTasks.length !== 1
                       ? 's'
                       : ''}
                   </span>
@@ -479,7 +526,7 @@ function registerLogContainer(element: HTMLDivElement, taskId: string) {
                     </button>
                   </div>
                 </div>
-                {#each $deferredTasks as task, index (task.id)}
+                {#each allTasks as task, index (task.id)}
                   <div
                     class="flex gap-3 p-4 bg-surface rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200"
                     data-task-id={task.id}

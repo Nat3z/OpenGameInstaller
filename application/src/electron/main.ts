@@ -7,8 +7,10 @@ import fs, { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { startAddons } from '@/electron/handlers/handler.addon.js';
 import {
+  awaitPendingFileDeletions,
   type ExecuteWrapperResult,
   executeWrapperCommandForApp,
+  hasPendingFileDeletions,
   launchGameFromLibrary,
 } from '@/electron/handlers/handler.library.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
@@ -778,6 +780,17 @@ app.on('window-all-closed', () => {
   ).finally(() => {
     void disposeElectronRuntime().finally(() => app.quit());
   });
+});
+
+// A lazy game removal may still be deleting files; finish it before exiting so
+// no half-deleted directory is left behind with its library entry gone. Every
+// quit attempt re-checks, so a deletion started after a deferred quit is
+// still awaited by the retry.
+app.on('will-quit', (event) => {
+  if (!hasPendingFileDeletions()) return;
+  event.preventDefault();
+  logger.sync.info('Waiting for pending game file deletions before quitting');
+  void awaitPendingFileDeletions().finally(() => app.quit());
 });
 
 app.on('activate', async function () {

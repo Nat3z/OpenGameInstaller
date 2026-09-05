@@ -3,6 +3,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import * as d3 from 'd3';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
+import GameImage from '@/frontend/components/GameImage.svelte';
 import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
 import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
@@ -390,9 +391,9 @@ onDestroy(() => {
   {#if targetDownload}
     <div class="w-full flex flex-row gap-4 pl-1 mb-8">
       <div class="h-auto w-5/12 relative">
-        <img
+        <GameImage
           src={targetDownload.coverImage}
-          alt="Game cover"
+          alt={targetDownload.name}
           class="rounded-lg object-cover bg-no-repeat w-full h-full min-w-0 shadow-lg"
         />
         {#if isQueued(targetDownload)}
@@ -588,10 +589,10 @@ onDestroy(() => {
       >
         <div class="flex flex-row gap-4 w-full">
           <div class="download-image">
-            <img
-              src={download.coverImage || './favicon.png'}
-              alt="Game cover"
-              class="game-cover"
+            <GameImage
+              src={download.coverImage}
+              alt={download.name}
+              class="w-full h-full object-cover"
             />
             <div class="status-indicator status-{download.status}"></div>
           </div>
@@ -962,10 +963,10 @@ onDestroy(() => {
         <div class="failed-setup-compact">
           <div class="failed-setup-header">
             <div class="failed-setup-image">
-              <img
-                src={failedSetup.downloadInfo.coverImage || './favicon.png'}
-                alt="Game cover"
-                class="game-cover"
+              <GameImage
+                src={failedSetup.downloadInfo.coverImage}
+                alt={failedSetup.downloadInfo.name}
+                class="w-full h-full object-cover"
               />
               <div class="status-indicator status-error"></div>
             </div>
@@ -1104,10 +1105,6 @@ onDestroy(() => {
       var(--theme-border),
       var(--theme-border-strong)
     );
-  }
-
-  .game-cover {
-    @apply w-full h-full object-cover;
   }
 
   .status-indicator {

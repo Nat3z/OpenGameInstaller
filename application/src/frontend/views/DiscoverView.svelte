@@ -11,6 +11,7 @@ import type {
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onMount } from 'svelte';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import GameImage from '@/frontend/components/GameImage.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import {
   createNotification,
@@ -433,21 +434,13 @@ onMount(() => {
                 class={`featured-carousel-slide ${isActive ? 'is-active' : ''}`}
                 aria-hidden={!isActive}
               >
-                <img
+                <GameImage
                   src={getFeaturedImage(item)}
                   alt={item.name}
                   class="w-full h-full object-cover"
                   loading={shouldPrioritizeFeaturedImage(index)
                     ? 'eager'
                     : 'lazy'}
-                  onerror={(e) => {
-                    const fallback = './favicon.png';
-                    const img = e.currentTarget as HTMLImageElement;
-                    if (img.src !== fallback) {
-                      img.src = fallback;
-                      img.style.opacity = '0.5';
-                    }
-                  }}
                 />
 
                 <div
@@ -629,19 +622,11 @@ onMount(() => {
                           tabindex={pageIndex === currentPage ? 0 : -1}
                         >
                           <div class="relative">
-                            <img
+                            <GameImage
                               src={game.capsuleImage}
                               alt={game.name}
                               class="w-32 h-48 object-cover"
                               loading={prioritizePage ? 'eager' : 'lazy'}
-                              onerror={(e) => {
-                                const fallback = './favicon.png';
-                                const img = e.currentTarget as HTMLImageElement;
-                                if (img.src !== fallback) {
-                                  img.src = fallback;
-                                  img.style.opacity = '0.5';
-                                }
-                              }}
                             />
                             <!-- Overlay with game info -->
                             <div

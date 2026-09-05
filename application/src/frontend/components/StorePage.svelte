@@ -4,6 +4,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onMount } from 'svelte';
 import { fly, slide } from 'svelte/transition';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
+import GameImage from '@/frontend/components/GameImage.svelte';
 import HeaderModal from '@/frontend/components/modal/HeaderModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
@@ -483,7 +484,7 @@ $effect(() => {
       <!-- Hero Banner Section -->
       <div class="">
         <div class="relative w-full h-64 overflow-hidden rounded-lg">
-          <img
+          <GameImage
             src={gameData.headerImage}
             alt={gameData.name}
             class="w-full h-full object-cover rounded-lg"

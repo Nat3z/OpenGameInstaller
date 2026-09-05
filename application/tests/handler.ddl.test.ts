@@ -95,6 +95,8 @@ mock.module('@/electron/manager/manager.queue.js', () => ({
   },
 }));
 mock.module('@/lib/download-handshake.js', () => ({
+  consumeDownloadReplayEvents: mock(() => []),
+  getDownloadHandshakeState: mock(() => undefined),
   clearDownloadHandshake: mock(() => {}),
   registerDownloadHandshake,
   updateDownloadHandshake: mock(() => {}),

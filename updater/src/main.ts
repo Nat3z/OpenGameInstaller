@@ -442,9 +442,11 @@ function ensureBleedingEdgeBuild(
       );
     }
     if (!fs.existsSync(path.join(repoDir, '.git'))) {
-      yield* tryUpdate('clone-repository', () =>
-        fs.mkdirSync(path.dirname(repoDir), { recursive: true })
-      );
+      // An interrupted clone leaves a directory without .git that git refuses to clone into.
+      yield* tryUpdate('clone-repository', () => {
+        fs.rmSync(repoDir, { recursive: true, force: true });
+        fs.mkdirSync(path.dirname(repoDir), { recursive: true });
+      });
       yield* runCommand('git', ['clone', OGI_REPO_URL, repoDir]).pipe(
         Effect.mapError(
           (cause) =>

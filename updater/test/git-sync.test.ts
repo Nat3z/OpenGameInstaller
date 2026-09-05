@@ -311,6 +311,36 @@ test('does not resurrect a non-conflicting commit removed by a force push', asyn
   ).not.toContain('removed.txt');
 });
 
+test('rejects a pinned commit that a force push removed from the remote', async () => {
+  const { root, remote, seed, client } = await createRepository();
+  const base = await Effect.runPromise(getHeadSha(seed));
+  await writeFile(path.join(seed, 'removed.txt'), 'removed upstream\n');
+  await git(seed, 'add', '.');
+  await git(seed, 'commit', '-m', 'removed commit');
+  await git(seed, 'push', 'origin', 'main');
+  const removed = await Effect.runPromise(getHeadSha(seed));
+  await git(root, 'clone', '--branch', 'main', remote, client);
+  await git(seed, 'checkout', '--detach', base);
+  await writeFile(path.join(seed, 'new.txt'), 'new upstream\n');
+  await git(seed, 'add', '.');
+  await git(seed, 'commit', '-m', 'replacement');
+  await git(seed, 'push', '--force', 'origin', 'HEAD:main');
+  const error = await Effect.runPromise(
+    Effect.flip(
+      syncBleedingEdgeRepo(
+        client,
+        'main',
+        'main',
+        runCommand,
+        getHeadSha,
+        removed
+      )
+    )
+  );
+  expect(error.operation).toBe('checkout');
+  expect(error.message).toContain(removed);
+});
+
 test('unshallows old picker caches and builds an older pinned commit', async () => {
   const { root, remote, seed, client } = await createRepository();
   const base = await Effect.runPromise(getHeadSha(seed));

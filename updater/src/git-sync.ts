@@ -111,6 +111,29 @@ export function syncBleedingEdgeRepo(
       )
     );
     const targetSha = resolved.stdout.trim();
+    // Refuse revisions that only survive locally after a force push or tag deletion.
+    const reachable = yield* withOperation(
+      'checkout',
+      runCommand(
+        'git',
+        [
+          'for-each-ref',
+          '--count=1',
+          `--contains=${targetSha}`,
+          'refs/remotes/origin',
+          'refs/tags',
+        ],
+        { cwd: repoDir }
+      )
+    );
+    if (!reachable.stdout.trim()) {
+      return yield* Effect.fail(
+        new GitSyncError({
+          message: `Revision ${targetSha} is no longer available from origin`,
+          operation: 'checkout',
+        })
+      );
+    }
     const status = yield* withOperation(
       'stash',
       runCommand('git', ['status', '--porcelain'], { cwd: repoDir })

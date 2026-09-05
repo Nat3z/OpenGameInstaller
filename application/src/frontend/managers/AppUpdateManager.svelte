@@ -129,6 +129,9 @@ function checkForAppUpdates(connectedAddons: AddonInfo[]) {
                 updateAvailable: true,
                 updateVersion: update.version,
               });
+              // The store holds one version per app; keep the first addon's
+              // answer instead of letting later addons silently overwrite it.
+              break;
             }
           }
         }).pipe(

@@ -1,12 +1,12 @@
 import { beforeAll, describe, expect, mock, test } from 'bun:test';
 
-mock.module('@/electron/rpc/router-core.js', () => ({
-  procedure: mock(() => ({})),
-  router: mock(() => ({})),
-}));
-mock.module('@/lib/electron-rpc.js', () => ({
-  ElectronRpc: { download: {} },
-}));
+// src/lib has no tsconfig of its own, so its `@/` imports don't resolve
+// under bun test. Point the aliases at the real modules rather than stubs so
+// suites sharing this process still see the real router and RPC schema.
+mock.module('@/electron/rpc/router-core.js', () =>
+  require('../src/electron/rpc/router-core.js')
+);
+mock.module('@/lib/electron-rpc.js', () => require('../src/lib/electron-rpc.js'));
 
 let handshake: typeof import('../src/lib/download-handshake.js');
 

@@ -96,6 +96,7 @@ function checkForAppUpdates(connectedAddons: AddonInfo[]) {
       checkableApps,
       ({ app, addons }) =>
         Effect.gen(function* () {
+          // One addon failing must not hide updates served by the others.
           for (const addon of addons) {
             const update = yield* Effect.tryPromise({
               try: () =>
@@ -108,8 +109,20 @@ function checkForAppUpdates(connectedAddons: AddonInfo[]) {
                 new UpdateError({
                   message: `Failed to check for updates: ${formatError(cause)}`,
                 }),
-            });
-            if (runId === updateCheckRunId && update.available) {
+            }).pipe(
+              Effect.catchAll((error) =>
+                logger
+                  .error(
+                    'Error checking for updates for app',
+                    app.name,
+                    'via',
+                    addon.name,
+                    error
+                  )
+                  .pipe(Effect.as(undefined))
+              )
+            );
+            if (update?.available && runId === updateCheckRunId) {
               updatesManager.addAppUpdate({
                 appID: app.appID,
                 name: addon.name,
@@ -119,9 +132,6 @@ function checkForAppUpdates(connectedAddons: AddonInfo[]) {
             }
           }
         }).pipe(
-          Effect.catchAll((error) =>
-            logger.error('Error checking for updates for app', app.name, error)
-          ),
           Effect.ensuring(
             Effect.sync(() => {
               if (runId === updateCheckRunId) {

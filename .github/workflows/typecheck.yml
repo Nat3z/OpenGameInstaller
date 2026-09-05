@@ -84,3 +84,20 @@ jobs:
       - name: Fail if typecheck failed
         if: steps.typecheck.outcome == 'failure'
         run: exit 1
+
+  updater:
+    name: Updater (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1'
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd updater build
+      - run: bun run --cwd updater test

@@ -389,3 +389,33 @@ test('resolves branch overrides to the remote and accepts moved annotated tags',
     expect(result.afterSyncSha).toBe(head);
   }
 });
+
+test('rejects a branch override whose upstream was deleted but survives locally', async () => {
+  const { root, remote, seed, client } = await createRepository();
+  await git(seed, 'switch', '-c', 'feature');
+  await writeFile(path.join(seed, 'feature.txt'), 'feature\n');
+  await git(seed, 'add', '.');
+  await git(seed, 'commit', '-m', 'feature');
+  await git(seed, 'push', 'origin', 'feature');
+  await git(root, 'clone', '--branch', 'main', remote, client);
+  await git(client, 'switch', '-c', 'feature', '--track', 'origin/feature');
+  await git(client, 'switch', 'main');
+  await git(seed, 'switch', 'main');
+  await git(seed, 'merge', '--ff-only', 'feature');
+  await git(seed, 'push', 'origin', 'main');
+  await git(seed, 'push', 'origin', '--delete', 'feature');
+  const error = await Effect.runPromise(
+    Effect.flip(
+      syncBleedingEdgeRepo(
+        client,
+        'main',
+        'main',
+        runCommand,
+        getHeadSha,
+        'feature'
+      )
+    )
+  );
+  expect(error.operation).toBe('checkout');
+  expect(error.message).toContain('feature');
+});

@@ -82,35 +82,43 @@ export function syncBleedingEdgeRepo(
       )
     );
     const beforeSyncSha = yield* getRepoHeadSha(repoDir);
-    // Resolve branch names against the fetched remote, never stale local branches.
-    let revision = remoteBranch;
-    if (commit) {
-      const remoteCommit = yield* Effect.either(
+    // Resolve names against fetched remote refs or tags only. A bare local
+    // branch name must never win, since it may outlive its deleted upstream.
+    const name = normalizeBranch(commit).replace(/^refs\/tags\//, '');
+    const candidates = commit
+      ? [
+          `refs/remotes/origin/${name}`,
+          `refs/tags/${name}`,
+          ...(/^[0-9a-f]{4,40}$/i.test(commit) ? [commit] : []),
+        ]
+      : [remoteBranch];
+    let targetSha = '';
+    for (const candidate of candidates) {
+      const resolved = yield* Effect.either(
         runCommand(
           'git',
           [
             'rev-parse',
             '--verify',
             '--end-of-options',
-            `refs/remotes/origin/${normalizeBranch(commit)}^{commit}`,
+            `${candidate}^{commit}`,
           ],
           { cwd: repoDir }
         )
       );
-      revision =
-        remoteCommit._tag === 'Right'
-          ? remoteCommit.right.stdout.trim()
-          : commit;
+      if (resolved._tag === 'Right') {
+        targetSha = resolved.right.stdout.trim();
+        break;
+      }
     }
-    const resolved = yield* withOperation(
-      'checkout',
-      runCommand(
-        'git',
-        ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`],
-        { cwd: repoDir }
-      )
-    );
-    const targetSha = resolved.stdout.trim();
+    if (!targetSha) {
+      return yield* Effect.fail(
+        new GitSyncError({
+          message: `Revision ${commit || targetBranch} was not found on origin`,
+          operation: 'checkout',
+        })
+      );
+    }
     // Refuse revisions that only survive locally after a force push or tag deletion.
     const reachable = yield* withOperation(
       'checkout',

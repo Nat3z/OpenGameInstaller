@@ -4,6 +4,7 @@ import type {
   ConfigurationOptionWire,
   LibraryInfo,
 } from '@ogi-sdk/connect';
+import { formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import {
   ConfigurationBuilder,
@@ -165,13 +166,16 @@ let canEditDllOverrides = $derived(
 // by task id so a stale task from an earlier removal of the same game is
 // never mistaken for this one.
 let removalTaskId: string | undefined = $state();
+let removeBusy = $state(false);
 let removalStarted = $derived(removalTaskId !== undefined);
 let removalTask = $derived(
   $gameRemovalTasks.find((task) => task.id === removalTaskId)
 );
-// Treat the moment before the first progress event lands as removing too.
+// Treat the confirm-click wait and the moment before the first progress
+// event lands as removing too, so Delete Game is never a silent no-op.
 let isRemoving = $derived(
-  removalStarted && (!removalTask || removalTask.status === 'running')
+  removeBusy ||
+    (removalStarted && (!removalTask || removalTask.status === 'running'))
 );
 
 // Close the play page once the background deletion we started finishes;
@@ -214,49 +218,75 @@ async function removeFromList() {
     return;
   }
 
-  showRemoveConfirm = false;
-  const result = await runFrontendEffect(
-    electronRpc.app.removeApp(gameInfo.appID)
-  );
-  if (result.status !== 'success') {
-    createNotification({
-      id: Math.random().toString(36).substring(7),
-      message: result.status === 'cancelled' ? result.message : result.error,
-      type: result.status === 'cancelled' ? 'info' : 'error',
-    });
-    return;
-  }
-
-  completeRequiredReadd(gameInfo.appID);
-  currentDownloads.update((downloads) =>
-    downloads.filter((download) => download.appID !== gameInfo.appID)
-  );
-
-  if (result.deletionTaskId) {
-    // Files are deleted lazily in the background; keep the window open to
-    // show progress. Closing it leaves the deletion visible as a task.
-    removalTaskId = result.deletionTaskId;
-    if (result.warning) {
+  removeBusy = true;
+  try {
+    const result = await runFrontendEffect(
+      electronRpc.app.removeApp(gameInfo.appID)
+    );
+    showRemoveConfirm = false;
+    if (result.status !== 'success') {
       createNotification({
         id: Math.random().toString(36).substring(7),
-        message: result.warning,
-        type: 'info',
+        message: result.status === 'cancelled' ? result.message : result.error,
+        type: result.status === 'cancelled' ? 'info' : 'error',
       });
+      return;
     }
-    return;
-  }
 
-  createNotification({
-    id: Math.random().toString(36).substring(7),
-    message: result.warning ?? 'Game removed from library',
-    type: result.warning ? 'info' : 'success',
-  });
-  exitPlayPage();
+    completeRequiredReadd(gameInfo.appID);
+    currentDownloads.update((downloads) =>
+      downloads.filter((download) => download.appID !== gameInfo.appID)
+    );
+
+    if (result.deletionTaskId) {
+      // Files are deleted lazily in the background; keep the window open to
+      // show progress. Closing it leaves the deletion visible as a task.
+      removalTaskId = result.deletionTaskId;
+      if (result.warning) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: result.warning,
+          type: 'info',
+        });
+      }
+      return;
+    }
+
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: result.warning ?? 'Game removed from library',
+      type: result.warning ? 'info' : 'success',
+    });
+    exitPlayPage();
+  } catch (error) {
+    showRemoveConfirm = false;
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: formatError(error) || 'Failed to remove game',
+      type: 'error',
+    });
+  } finally {
+    if (!removalTaskId) removeBusy = false;
+  }
 }
 
 function showInFolder() {
-  if (gameInfo.cwd) {
-    window.electronAPI.fs.showFileLoc(gameInfo.cwd);
+  if (!gameInfo.cwd) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'This game has no install folder set.',
+      type: 'error',
+    });
+    return;
+  }
+  const shown = window.electronAPI.fs.showFileLoc(gameInfo.cwd);
+  if (!shown) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message:
+        'The game folder is gone. Update the path in settings or remove the game from your library.',
+      type: 'error',
+    });
   }
 }
 
@@ -371,13 +401,13 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
         text="Save"
         variant="primary"
         onclick={pushChanges}
-        disabled={removalStarted}
+        disabled={removalStarted || removeBusy}
       />
       {#if platform === 'linux' || platform === 'darwin'}
         <ButtonModal
           text="Add to Steam"
           variant="secondary"
-          disabled={removalStarted}
+          disabled={removalStarted || removeBusy}
           onclick={(event) => {
             addToSteam(event.currentTarget as HTMLButtonElement);
           }}
@@ -387,15 +417,20 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
         text="Show in Folder"
         variant="secondary"
         onclick={showInFolder}
-        disabled={!gameInfo.cwd || removalStarted}
+        disabled={!gameInfo.cwd || removalStarted || removeBusy}
       />
       <ButtonModal
         text={isRemoving ? 'Removing…' : 'Remove Game'}
         variant="danger"
-        disabled={removalStarted}
+        disabled={removalStarted || removeBusy}
         onclick={() => (showRemoveConfirm = true)}
       />
-      <ButtonModal text="Cancel" variant="secondary" onclick={closeModal} />
+      <ButtonModal
+        text="Cancel"
+        variant="secondary"
+        onclick={closeModal}
+        disabled={removalStarted || removeBusy}
+      />
     </div>
 
     {#if isRemoving && removalTask}
@@ -423,23 +458,27 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
       open={true}
       size="small"
       closeOnOverlayClick={false}
-      onClose={() => (showRemoveConfirm = false)}
+      onClose={() => {
+        if (!removeBusy) showRemoveConfirm = false;
+      }}
     >
       <TitleModal title={`Remove ${gameInfo.name}?`} />
       <p class="mb-4 text-sm text-accent-dark">
         This removes the game from your library and permanently deletes its
-        files{gameInfo.cwd ? ` in ${gameInfo.cwd}` : ''}. This cannot be
-        undone.
+        files{gameInfo.cwd ? ` in ${gameInfo.cwd}` : ''}. If the folder is
+        already gone, only the library entry is removed. This cannot be undone.
       </p>
       <div class="flex flex-row gap-3">
         <ButtonModal
-          text="Delete Game"
+          text={removeBusy ? 'Removing…' : 'Delete Game'}
           variant="danger"
+          disabled={removeBusy}
           onclick={removeFromList}
         />
         <ButtonModal
           text="Cancel"
           variant="secondary"
+          disabled={removeBusy}
           onclick={() => (showRemoveConfirm = false)}
         />
       </div>

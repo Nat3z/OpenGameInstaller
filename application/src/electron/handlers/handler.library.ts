@@ -51,6 +51,7 @@ import {
 import {
   generateNotificationId,
   notifyError,
+  notifyInfo,
   notifySuccess,
 } from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
@@ -58,8 +59,7 @@ import {
   appMetadataSubtrees,
   type DeleteGuardRoots,
   filesystemRoot,
-  isProtectedDeletePath,
-  sharesDirectoryWithOtherGames,
+  planGameFileDeletion,
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
@@ -137,9 +137,20 @@ export function awaitPendingFileDeletions(): Promise<void> {
   );
 }
 
+function isNotFoundError(cause: unknown): boolean {
+  return (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'code' in cause &&
+    (cause as { code: unknown }).code === 'ENOENT'
+  );
+}
+
 /**
  * Renames `from` to `to`, retrying briefly for transient holders such as a
- * virus scanner. Throws when the directory still cannot be isolated.
+ * virus scanner. Missing folders fail immediately so a gone install is not
+ * retried for seconds with no UI. Throws when the directory still cannot be
+ * isolated.
  */
 async function moveDirectoryAside(from: string, to: string): Promise<void> {
   const attempts = 5;
@@ -148,7 +159,8 @@ async function moveDirectoryAside(from: string, to: string): Promise<void> {
       await fsp.rename(from, to);
       return;
     } catch (cause) {
-      if (attempt === attempts) {
+      if (isNotFoundError(cause) || attempt === attempts) {
+        if (isNotFoundError(cause)) throw cause;
         throw new Error(
           `its folder could not be moved aside for deletion (${cause instanceof Error ? cause.message : String(cause)})`
         );
@@ -176,12 +188,21 @@ function startBackgroundFileDeletion(
   const base = { id: taskId, appID: appid, gameName };
   // The main process owns the terminal notification so it fires exactly once
   // even if the renderer reloads mid-deletion.
-  const send = (payload: GameRemovalProgress) => {
+  const send = (
+    payload: GameRemovalProgress,
+    options?: { alreadyGone?: boolean }
+  ) => {
     const task = removalTasks.get(taskId);
     if (task) task.snapshot = payload;
     void sendIPCMessage('game:removal-progress', payload);
     if (payload.status === 'completed') {
-      notifySuccess(`${gameName} removed from library and files deleted`);
+      if (options?.alreadyGone) {
+        notifyInfo(
+          `${gameName} was removed from the library. Install files were already gone.`
+        );
+      } else {
+        notifySuccess(`${gameName} removed from library and files deleted`);
+      }
     } else if (payload.status === 'error') {
       notifyError(
         `${gameName} was removed from the library, but its files could not be deleted: ${payload.error}`
@@ -207,20 +228,41 @@ function startBackgroundFileDeletion(
     if (runningGames.has(appid)) {
       throw new Error('the game is currently running');
     }
+    if (!fs.existsSync(cwd)) {
+      return null;
+    }
     const aside = join(
       dirname(cwd),
       `.${basename(cwd)}.ogi-removing-${Date.now()}`
     );
-    await moveDirectoryAside(cwd, aside);
+    try {
+      await moveDirectoryAside(cwd, aside);
+    } catch (cause) {
+      if (isNotFoundError(cause)) return null;
+      throw cause;
+    }
     return aside;
   });
 
   const done = (async () => {
-    let root: string;
+    let root: string | null;
     try {
       root = await claim;
     } catch (cause) {
       fail(cause, 0, 0);
+      return;
+    }
+    if (root === null) {
+      send(
+        {
+          ...base,
+          status: 'completed',
+          progress: 100,
+          deleted: 0,
+          total: 0,
+        },
+        { alreadyGone: true }
+      );
       return;
     }
     let deleted = 0;
@@ -317,6 +359,15 @@ export function launchGameFromLibrary(
     if (!appInfo) {
       logger.sync.info('[launch] Game not found');
       return { success: false, error: 'Game not found' };
+    }
+
+    if (appInfo.cwd && !fs.existsSync(appInfo.cwd)) {
+      logger.sync.info('[launch] Game folder is gone', appInfo.cwd);
+      return {
+        success: false,
+        error:
+          'The game folder is gone. Update the path in settings or remove the game from your library.',
+      };
     }
 
     if (
@@ -819,35 +870,23 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               // after this returns can never collide with the deletion.
               let fileWarning: string | undefined;
               let deletionTaskId: string | undefined;
-              if (appInfo.cwd) {
-                if (runningGames.has(appid)) {
-                  fileWarning =
-                    'The game was removed from the library, but its files were not deleted because the game is currently running.';
-                } else if (
-                  isProtectedDeletePath(appInfo.cwd, deleteGuardRoots())
-                ) {
-                  fileWarning =
-                    'The game was removed from the library, but its files were not deleted because the path is a protected directory.';
-                } else if (
-                  sharesDirectoryWithOtherGames(
-                    appid,
-                    appInfo.cwd,
-                    getAllLibraryFiles()
-                  )
-                ) {
-                  fileWarning =
-                    'The game was removed from the library, but its files were not deleted because the directory contains other games.';
-                } else if (fs.existsSync(appInfo.cwd)) {
-                  const deletion = yield* Effect.sync(() =>
-                    startBackgroundFileDeletion(
-                      appid,
-                      appInfo.cwd,
-                      appInfo.name
-                    )
-                  );
-                  yield* Effect.promise(() => deletion.claimed);
-                  deletionTaskId = deletion.taskId;
-                }
+              const deletionPlan = planGameFileDeletion({
+                cwd: appInfo.cwd,
+                appID: appid,
+                running: runningGames.has(appid),
+                otherGames: getAllLibraryFiles(),
+                roots: deleteGuardRoots(),
+                pathExists: (path) => fs.existsSync(path),
+              });
+              if (deletionPlan.kind === 'skip') {
+                fileWarning = deletionPlan.warning;
+              } else if (appInfo.cwd) {
+                const cwd = appInfo.cwd;
+                const deletion = yield* Effect.sync(() =>
+                  startBackgroundFileDeletion(appid, cwd, appInfo.name)
+                );
+                yield* Effect.promise(() => deletion.claimed);
+                deletionTaskId = deletion.taskId;
               }
 
               return {

@@ -139,6 +139,7 @@ async function processDownloadComplete(
     downloadedItem.isUpdate !== true ||
     downloadedItem.clearOldFilesBeforeUpdate !== false;
   let stagedOldFiles = false;
+  let stagedCleanly = true;
 
   // Move existing files into old_files before setup unless this update opted out.
   const currentFiles = await runFrontendEffect(
@@ -178,6 +179,7 @@ async function processDownloadComplete(
       );
       if (result !== 'success') {
         logger.sync.error('Failed to move file: ', file);
+        stagedCleanly = false;
       }
       movedCount++;
       updateDownloadStatus(downloadID, {
@@ -194,9 +196,23 @@ async function processDownloadComplete(
   }
   // Persist a recovery file once staging is done: if the app is closed during
   // extraction or moving, the next launch offers a retry from disk instead of
-  // forcing a re-download. Written only after staging so a retry never runs
-  // against a directory with old files half-moved into old_files. Removed
-  // once setup completes.
+  // forcing a re-download. Written only after a clean staging pass so a retry
+  // never runs against a directory with old files half-moved into old_files.
+  // Removed once setup completes.
+  const persistRecovery = (
+    should: 'call-addon' | 'call-unrar' | 'call-unzip',
+    path?: string
+  ) => {
+    if (!stagedCleanly) return;
+    savePendingRecovery({
+      downloadInfo: downloadedItem,
+      setupData: {
+        ...buildSetupData(downloadedItem),
+        ...(path !== undefined ? { path } : {}),
+      },
+      should,
+    });
+  };
   const pendingShould =
     !isTorrent &&
     (downloadedItem.usedDebridService === 'realdebrid' ||
@@ -206,18 +222,12 @@ async function processDownloadComplete(
           downloadedItem.usedDebridService === 'premiumize'
         ? ('call-unzip' as const)
         : ('call-addon' as const);
-  savePendingRecovery({
-    downloadInfo: downloadedItem,
-    setupData: {
-      ...buildSetupData(downloadedItem),
-      // Extraction retries resolve the archive from downloadPath; a direct
-      // addon retry needs the directory the setup would have received.
-      ...(pendingShould === 'call-addon' && !isTorrent
-        ? { path: outputDir }
-        : {}),
-    },
-    should: pendingShould,
-  });
+  // Extraction retries resolve the archive from downloadPath; a direct addon
+  // retry needs the directory the setup would have received.
+  persistRecovery(
+    pendingShould,
+    pendingShould === 'call-addon' && !isTorrent ? outputDir : undefined
+  );
 
   let additionalData: any = {};
   logger.sync.info('Downloaded Item: ', downloadedItem);
@@ -466,11 +476,7 @@ async function processDownloadComplete(
 
   // Extraction (if any) is done and archives are deleted, so a recovery
   // from this point on should go straight to the addon with the final path.
-  savePendingRecovery({
-    downloadInfo: downloadedItem,
-    setupData: { ...buildSetupData(downloadedItem), path: outputDir },
-    should: 'call-addon',
-  });
+  persistRecovery('call-addon', outputDir);
 
   try {
     // Check if this is an update download and route to appropriate setup function

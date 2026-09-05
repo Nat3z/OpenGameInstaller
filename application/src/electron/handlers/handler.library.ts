@@ -51,6 +51,7 @@ import {
 import {
   generateNotificationId,
   notifyError,
+  notifyInfo,
   notifySuccess,
 } from '@/electron/handlers/helpers.app/notifications.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
@@ -187,12 +188,21 @@ function startBackgroundFileDeletion(
   const base = { id: taskId, appID: appid, gameName };
   // The main process owns the terminal notification so it fires exactly once
   // even if the renderer reloads mid-deletion.
-  const send = (payload: GameRemovalProgress) => {
+  const send = (
+    payload: GameRemovalProgress,
+    options?: { alreadyGone?: boolean }
+  ) => {
     const task = removalTasks.get(taskId);
     if (task) task.snapshot = payload;
     void sendIPCMessage('game:removal-progress', payload);
     if (payload.status === 'completed') {
-      notifySuccess(`${gameName} removed from library and files deleted`);
+      if (options?.alreadyGone) {
+        notifyInfo(
+          `${gameName} was removed from the library. Install files were already gone.`
+        );
+      } else {
+        notifySuccess(`${gameName} removed from library and files deleted`);
+      }
     } else if (payload.status === 'error') {
       notifyError(
         `${gameName} was removed from the library, but its files could not be deleted: ${payload.error}`
@@ -243,13 +253,16 @@ function startBackgroundFileDeletion(
       return;
     }
     if (root === null) {
-      send({
-        ...base,
-        status: 'completed',
-        progress: 100,
-        deleted: 0,
-        total: 0,
-      });
+      send(
+        {
+          ...base,
+          status: 'completed',
+          progress: 100,
+          deleted: 0,
+          total: 0,
+        },
+        { alreadyGone: true }
+      );
       return;
     }
     let deleted = 0;

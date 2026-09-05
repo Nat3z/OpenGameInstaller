@@ -225,9 +225,16 @@ async function handleDownloadClick(
     updateVersion: updateVersion,
   } as SearchResultWithAddon & { isUpdate: boolean; updateVersion: string };
 
-  const started = await runFrontendEffect(
-    startDownloadEffect(updateResult, appID, event).pipe(
+  startDownloadEffect(updateResult, appID, event)
+    .pipe(
       Effect.as(true),
+      Effect.tap(() => {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: `Starting update download for ${gameName}`,
+          type: 'info',
+        });
+      }),
       Effect.catchAll((error) =>
         Effect.sync(() => {
           logger.sync.error('Failed to start update download:', error);
@@ -240,15 +247,8 @@ async function handleDownloadClick(
         })
       )
     )
-  );
-  if (!started) return;
+    .pipe(Effect.runFork);
   onClose();
-
-  createNotification({
-    id: Math.random().toString(36).substring(7),
-    message: `Starting update download for ${gameName}`,
-    type: 'info',
-  });
 }
 
 function toggleAddonCollapse(addonId: string) {

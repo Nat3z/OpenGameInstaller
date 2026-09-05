@@ -96,32 +96,27 @@ function checkForAppUpdates(connectedAddons: AddonInfo[]) {
       checkableApps,
       ({ app, addons }) =>
         Effect.gen(function* () {
-          if (addons.length > 1) {
-            return yield* Effect.fail(
-              new UpdateError({
-                message: 'Multiple clients found to serve this storefront',
-              })
-            );
-          }
-          const update = yield* Effect.tryPromise({
-            try: () =>
-              addonServer.addon(addons[0].id).checkForUpdates({
-                appID: app.appID,
-                storefront: app.storefront,
-                currentVersion: app.version,
-              }) as Promise<{ available: boolean; version: string }>,
-            catch: (cause) =>
-              new UpdateError({
-                message: `Failed to check for updates: ${formatError(cause)}`,
-              }),
-          });
-          if (runId === updateCheckRunId && update.available) {
-            updatesManager.addAppUpdate({
-              appID: app.appID,
-              name: app.name,
-              updateAvailable: true,
-              updateVersion: update.version,
+          for (const addon of addons) {
+            const update = yield* Effect.tryPromise({
+              try: () =>
+                addonServer.addon(addon.id).checkForUpdates({
+                  appID: app.appID,
+                  storefront: app.storefront,
+                  currentVersion: app.version,
+                }) as Promise<{ available: boolean; version: string }>,
+              catch: (cause) =>
+                new UpdateError({
+                  message: `Failed to check for updates: ${formatError(cause)}`,
+                }),
             });
+            if (runId === updateCheckRunId && update.available) {
+              updatesManager.addAppUpdate({
+                appID: app.appID,
+                name: addon.name,
+                updateAvailable: true,
+                updateVersion: update.version,
+              });
+            }
           }
         }).pipe(
           Effect.catchAll((error) =>

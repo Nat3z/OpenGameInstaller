@@ -124,7 +124,7 @@ export function saveFailedSetup(setupInfo: {
 
 /**
  * Writes a recovery file to disk without surfacing it in the failed-setups
- * store. Saved before post-download processing (moving files, extraction) so
+ * store. Saved once old_files staging is done and again after extraction, so
  * closing the app mid-processing leaves a recoverable entry on next launch
  * instead of forcing a re-download. Deleted once setup completes.
  */

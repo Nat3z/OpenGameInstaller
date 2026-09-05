@@ -30,6 +30,7 @@
   },
   "scripts": {
     "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "bun run --cwd ../packages/logger build && tsc -p tsconfig.json",
     "dev": "bun run build && electron .",
     "preelectron-pack": "bun run build",

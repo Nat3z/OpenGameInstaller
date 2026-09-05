@@ -247,34 +247,10 @@ onDestroy(() => {
                       src={app.capsuleImage}
                       alt={app.name}
                       classifier={app.appID.toString() + '-capsule'}
-                      onerror={(e) => {
-                        const fallback = './favicon.png';
-                        const img = e.currentTarget as HTMLImageElement;
-                        if (img.src !== fallback) {
-                          img.src = fallback;
-                          img.style.opacity = '0.5';
-                          (
-                            (img.parentElement as HTMLElement)
-                              .children[1]! as HTMLElement
-                          ).dataset.backup = 'enabled';
-                        }
-                      }}
+                      fallbackTitle
                       class="w-full aspect-2/3 object-cover"
                     />
-                    <div
-                      data-backup="disabled"
-                      class="absolute inset-0 flex items-end justify-center data-[backup=disabled]:hidden"
-                    >
-                      <div
-                        class="absolute inset-x-0 bottom-0 w-full h-1/2 pointer-events-none"
-                        style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
-                      ></div>
-                      <p
-                        class="text-white text-base py-4 text-center font-archivo z-1"
-                      >
-                        {app.name}
-                      </p>
-                    </div>
+
                   </button>
                 </div>
               {/each}
@@ -379,34 +355,10 @@ onDestroy(() => {
                       src={app.capsuleImage}
                       alt={app.name}
                       classifier={app.appID.toString() + '-capsule'}
-                      onerror={(e) => {
-                        const fallback = './favicon.png';
-                        const img = e.currentTarget as HTMLImageElement;
-                        if (img.src !== fallback) {
-                          img.src = fallback;
-                          img.style.opacity = '0.5';
-                          (
-                            (img.parentElement as HTMLElement)
-                              .children[1]! as HTMLElement
-                          ).dataset.backup = 'enabled';
-                        }
-                      }}
+                      fallbackTitle
                       class="w-full aspect-2/3 object-cover"
                     />
-                    <div
-                      data-backup="disabled"
-                      class="absolute inset-0 flex items-end justify-center data-[backup=disabled]:hidden"
-                    >
-                      <div
-                        class="absolute inset-x-0 bottom-0 w-full h-1/2 pointer-events-none"
-                        style="background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);"
-                      ></div>
-                      <p
-                        class="text-white text-base py-4 text-center font-archivo z-1"
-                      >
-                        {app.name}
-                      </p>
-                    </div>
+
                   </button>
                 </div>
               {/each}

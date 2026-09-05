@@ -10,6 +10,7 @@ import { onMount } from 'svelte';
 import { quintOut } from 'svelte/easing';
 import { derived } from 'svelte/store';
 import { fade, fly, slide } from 'svelte/transition';
+import GameImage from '@/frontend/components/GameImage.svelte';
 import GameLaunchOverlay from '@/frontend/components/GameLaunchOverlay.svelte';
 import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.svelte';
 import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
@@ -982,22 +983,10 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
                                 delay: 50 * index,
                               }}
                             >
-                              <img
+                              <GameImage
                                 src={result.capsuleImage}
                                 alt={result.name}
                                 class="result-image"
-                                onerror={(ev) => {
-                                  result.capsuleImage = './favicon.png';
-                                  (ev.target as HTMLImageElement).src =
-                                    './favicon.png';
-                                  (
-                                    ev.target as HTMLImageElement
-                                  ).style.opacity = '0.5';
-                                  logger.sync.info(
-                                    'error loading image',
-                                    result.name
-                                  );
-                                }}
                               />
                               <div class="result-content">
                                 <h4 class="result-title">{result.name}</h4>
@@ -1304,7 +1293,7 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
     @apply -translate-y-0.5 shadow-lg;
   }
 
-  .result-image {
+  :global(.result-image) {
     @apply w-24 h-24 rounded object-cover shrink-0;
   }
 

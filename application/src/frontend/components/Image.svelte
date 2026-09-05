@@ -1,12 +1,13 @@
 <script lang="ts">
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+import GameImage from './GameImage.svelte';
 
 interface Props {
   src: string;
   alt: string;
   classifier: string;
-  onerror?: (e: Event) => void;
+  fallbackTitle?: boolean;
   class?: string;
 }
 
@@ -14,7 +15,7 @@ let {
   src,
   alt,
   classifier,
-  onerror = () => {},
+  fallbackTitle = false,
   class: className = '',
 }: Props = $props();
 
@@ -46,6 +47,11 @@ async function loadImage(currentSrc: string, currentClassifier: string) {
   loading = true;
   error = null;
   imageData = undefined;
+  if (!currentSrc) {
+    error = 'Missing image';
+    loading = false;
+    return;
+  }
 
   try {
     const cachePath = './images/' + currentClassifier + '.cached';
@@ -77,10 +83,14 @@ async function loadImage(currentSrc: string, currentClassifier: string) {
     if (version !== requestVersion) return;
     imageData = resolvedImageData;
     // Ensure cache dir exists
-    if (!window.electronAPI.fs.exists('./images')) {
-      window.electronAPI.fs.mkdir('./images');
+    try {
+      if (!window.electronAPI.fs.exists('./images')) {
+        window.electronAPI.fs.mkdir('./images');
+      }
+      window.electronAPI.fs.write(cachePath, resolvedImageData);
+    } catch {
+      // A read-only cache must not hide an image that loaded successfully.
     }
-    window.electronAPI.fs.write(cachePath, resolvedImageData);
     loading = false;
   } catch (e) {
     if (version !== requestVersion) return;
@@ -95,13 +105,11 @@ $effect(() => {
 </script>
 
 {#if loading}
-  <div class="w-full h-full flex items-center justify-center">
-    <div class="loading-spinner"></div>
-  </div>
-{:else if error}
-  <div class="w-full h-full flex items-center justify-center text-red-500">
-    {error}
+  <div class={className}>
+    <div class="w-full h-full flex items-center justify-center">
+      <div class="loading-spinner"></div>
+    </div>
   </div>
 {:else}
-  <img src={imageData} {alt} class={className} {onerror} />
+  <GameImage src={error ? undefined : imageData} {alt} class={className} {fallbackTitle} />
 {/if}

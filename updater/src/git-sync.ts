@@ -1,15 +1,11 @@
 import { Data, Effect } from 'effect';
+import { normalizeBranch } from './bleeding-edge-flow.js';
 
 export type CommandResult = { stdout: string; stderr: string };
 
 export class GitSyncError extends Data.TaggedError('GitSyncError')<{
   readonly message: string;
-  readonly operation:
-    | 'fetch'
-    | 'resolve-head'
-    | 'checkout'
-    | 'rebase'
-    | 'stash';
+  readonly operation: 'fetch' | 'resolve-head' | 'checkout' | 'stash';
   readonly cause?: unknown;
 }> {}
 
@@ -51,64 +47,84 @@ export function syncBleedingEdgeRepo(
   branch: string,
   defaultBranch: string,
   runCommand: GitCommandRunner,
-  getRepoHeadSha: (repoDir: string) => Effect.Effect<string, GitSyncError>
+  getRepoHeadSha: (repoDir: string) => Effect.Effect<string, GitSyncError>,
+  commit = ''
 ): Effect.Effect<BleedingEdgeSyncResult, GitSyncError> {
-  const targetBranch = branch || defaultBranch;
+  const targetBranch = normalizeBranch(branch) || defaultBranch;
   const remoteBranch = `refs/remotes/origin/${targetBranch}`;
 
   return Effect.gen(function* () {
     yield* withOperation(
-      'fetch',
-      runCommand(
-        'git',
-        ['fetch', '--prune', '--tags', 'origin', ALL_ORIGIN_HEADS_REFSPEC],
-        { cwd: repoDir }
-      )
-    );
-    const beforeSyncSha = yield* withOperation(
-      'resolve-head',
-      getRepoHeadSha(repoDir)
-    );
-    const remoteBranchResult = yield* Effect.either(
-      runCommand('git', ['rev-parse', '--verify', remoteBranch], {
+      'checkout',
+      runCommand('git', ['check-ref-format', `refs/heads/${targetBranch}`], {
         cwd: repoDir,
       })
     );
-    if (remoteBranchResult._tag === 'Left') {
-      return yield* withOperation(
-        'checkout',
-        Effect.fail(remoteBranchResult.left)
-      );
-    }
-    const checkoutExisting = yield* Effect.either(
-      runCommand('git', ['checkout', targetBranch], { cwd: repoDir })
-    );
-    const checkoutResult =
-      checkoutExisting._tag === 'Right'
-        ? checkoutExisting
-        : yield* Effect.either(
-            runCommand(
-              'git',
-              ['checkout', '--track', '-b', targetBranch, remoteBranch],
-              { cwd: repoDir }
-            )
-          );
-    const rebaseResult =
-      checkoutResult._tag === 'Right'
-        ? yield* Effect.either(
-            runCommand('git', ['rebase', remoteBranch], { cwd: repoDir })
-          )
-        : checkoutResult;
-
-    if (rebaseResult._tag === 'Left') {
-      yield* runCommand('git', ['rebase', '--abort'], {
+    const shallow = yield* withOperation(
+      'fetch',
+      runCommand('git', ['rev-parse', '--is-shallow-repository'], {
         cwd: repoDir,
-      }).pipe(Effect.ignore);
+      })
+    );
+    yield* withOperation(
+      'fetch',
+      runCommand(
+        'git',
+        [
+          'fetch',
+          '--prune',
+          ...(shallow.stdout.trim() === 'true' ? ['--unshallow'] : []),
+          'origin',
+          ALL_ORIGIN_HEADS_REFSPEC,
+          '+refs/tags/*:refs/tags/*',
+        ],
+        { cwd: repoDir }
+      )
+    );
+    const beforeSyncSha = yield* getRepoHeadSha(repoDir);
+    // Resolve branch names against the fetched remote, never stale local branches.
+    let revision = remoteBranch;
+    if (commit) {
+      const remoteCommit = yield* Effect.either(
+        runCommand(
+          'git',
+          [
+            'rev-parse',
+            '--verify',
+            '--end-of-options',
+            `refs/remotes/origin/${normalizeBranch(commit)}^{commit}`,
+          ],
+          { cwd: repoDir }
+        )
+      );
+      revision =
+        remoteCommit._tag === 'Right'
+          ? remoteCommit.right.stdout.trim()
+          : commit;
+    }
+    const resolved = yield* withOperation(
+      'checkout',
+      runCommand(
+        'git',
+        ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`],
+        { cwd: repoDir }
+      )
+    );
+    const targetSha = resolved.stdout.trim();
+    const status = yield* withOperation(
+      'stash',
+      runCommand('git', ['status', '--porcelain'], { cwd: repoDir })
+    );
+    if (status.stdout.trim()) {
       yield* withOperation(
         'stash',
         runCommand(
           'git',
           [
+            '-c',
+            'user.name=OpenGameInstaller updater',
+            '-c',
+            'user.email=updater@opengameinstaller.local',
             'stash',
             'push',
             '--include-untracked',
@@ -118,22 +134,14 @@ export function syncBleedingEdgeRepo(
           { cwd: repoDir }
         )
       );
-      // Rebase could not safely preserve the cache. Keep dirty files in the
-      // stash, then force-align the updater branch to the fetched remote.
-      yield* withOperation(
-        'checkout',
-        runCommand(
-          'git',
-          ['checkout', '--force', '-B', targetBranch, remoteBranch],
-          { cwd: repoDir }
-        )
-      );
     }
-    const afterSyncSha = yield* withOperation(
-      'resolve-head',
-      getRepoHeadSha(repoDir)
+    // This is a build cache. Rebasing can resurrect commits removed by a force push.
+    // Detached checkout preserves local branches while building the exact selected revision.
+    yield* withOperation(
+      'checkout',
+      runCommand('git', ['checkout', '--detach', targetSha], { cwd: repoDir })
     );
-
+    const afterSyncSha = yield* getRepoHeadSha(repoDir);
     return {
       beforeSyncSha,
       afterSyncSha,

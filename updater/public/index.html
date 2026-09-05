@@ -96,7 +96,11 @@
       : 'Stable uses normal releases. Unstable uses pre-releases. Bleeding Edge builds from source.';
   }
 
+  // Bumped whenever the picker resets so stale commit responses are ignored.
+  let commitRequestVersion = 0;
+
   function resetBleedingEdgePicker() {
+    commitRequestVersion++;
     document.querySelector('#commit-input').value = '';
     document.querySelector('#commit-list').style.display = 'none';
     document.querySelector('#commit-list').innerHTML = '';
@@ -145,12 +149,14 @@
   }
 
   async function loadCommitList() {
+    const requestVersion = ++commitRequestVersion;
     const list = document.querySelector('#commit-list');
     const branch = getSelectedBranch();
     list.style.display = 'block';
     list.textContent = `Loading commits for ${branch}...`;
     try {
       const result = await window.ogiUpdater.getRecentCommits(branch);
+      if (requestVersion !== commitRequestVersion) return;
       if (!result.ok || !result.commits.length) {
         list.textContent = result.error || 'No commits found.';
         return;
@@ -160,11 +166,13 @@
         const item = document.createElement('button');
         item.className = 'commit-item';
         item.type = 'button';
-        item.innerHTML = `
-          <strong>${commit.shortSha}</strong>
-          <span>${commit.message}</span>
-          <small>${commit.author} • ${new Date(commit.date).toLocaleDateString()}</small>
-        `;
+        const sha = document.createElement('strong');
+        sha.textContent = commit.shortSha;
+        const message = document.createElement('span');
+        message.textContent = commit.message;
+        const metadata = document.createElement('small');
+        metadata.textContent = `${commit.author} • ${new Date(commit.date).toLocaleDateString()}`;
+        item.append(sha, message, metadata);
         item.addEventListener('click', () => {
           document.querySelector('#commit-input').value = commit.sha;
           document.querySelectorAll('.commit-item').forEach((other) => {
@@ -175,11 +183,14 @@
         list.appendChild(item);
       });
     } catch (error) {
+      if (requestVersion !== commitRequestVersion) return;
       list.textContent = 'Failed to load commits.';
     }
   }
 
   document.querySelector('#branch-select').addEventListener('change', () => {
+    document.querySelector('#commit-input').value = '';
+    commitRequestVersion++;
     if (document.querySelector('#commit-list').style.display !== 'none') {
       loadCommitList();
     }

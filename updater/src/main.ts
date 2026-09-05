@@ -13,10 +13,11 @@ import zlib from 'zlib';
 import pjson from '../package.json' with { type: 'json' };
 import {
   normalizeBleedingEdgeSelection,
+  normalizeBranch,
   selectAndBuildBleedingEdge,
 } from './bleeding-edge-flow.js';
+import { installBleedingEdgeArtifact } from './build-artifact.js';
 import {
-  type BleedingEdgeSyncResult,
   GitSyncError,
   syncBleedingEdgeRepo as syncBleedingEdgeGitRepo,
 } from './git-sync.js';
@@ -140,7 +141,6 @@ const PRESERVED_UPDATE_ENTRIES = new Set([
   'favicon.png',
 ]);
 const OGI_REPO_URL = 'https://github.com/Nat3z/OpenGameInstaller';
-const ALL_ORIGIN_HEADS_REFSPEC = '+refs/heads/*:refs/remotes/origin/*';
 const HTTP_RANGE_AGENTS = {
   http: new http.Agent({
     keepAlive: true,
@@ -212,9 +212,8 @@ function writeCommitEdgeFile(branch: string, commit: string, built = '') {
   const lines = [`branch=${branch || DEFAULT_BLEEDING_EDGE_BRANCH}`];
   if (commit) {
     lines.push(`commit=${commit}`);
-  } else if (built) {
-    lines.push(`built=${built}`);
   }
+  if (built) lines.push(`built=${built}`);
   fs.writeFileSync('./COMMIT_EDGE.txt', `${lines.join('\n')}\n`);
 }
 
@@ -248,13 +247,14 @@ function getRepoHeadSha(repoDir: string): Effect.Effect<string, GitSyncError> {
   );
 }
 
-function shouldSkipBranchOnlyBleedingEdgeBuild(
+function shouldSkipBleedingEdgeBuild(
   targetBranch: string,
+  commit: string,
   headSha: string
 ) {
   const stored = readStoredCommitEdgeTarget();
   const artifactPath = getBleedingEdgeArtifactPath();
-  if (!stored || stored.commit || stored.branch !== targetBranch) {
+  if (!stored || stored.commit !== commit || stored.branch !== targetBranch) {
     return false;
   }
   if (!stored.built || stored.built !== headSha) {
@@ -292,7 +292,10 @@ function getBleedingEdgeRepoDir() {
 
 function getApplicationBuildCommand(): [string, string[]] {
   return process.platform === 'win32'
-    ? ['bun', ['run', '--cwd', 'application', 'electron-pack']]
+    ? [
+        'bun',
+        ['run', '--cwd', 'application', 'electron-pack', '--win', '--dir'],
+      ]
     : ['bun', ['run', '--cwd', 'application', 'electron-pack:linux']];
 }
 
@@ -363,7 +366,7 @@ function runCommand(
           ? Effect.succeed({ stdout, stderr })
           : Effect.fail(
               new UpdateError({
-                message: `${command} exited with code ${code}`,
+                message: `${command} exited with code ${code}: ${(stderr || stdout).trim().slice(-2000)}`,
                 phase: 'run-command',
               })
             )
@@ -378,10 +381,7 @@ function runCommand(
   });
 }
 
-function syncBleedingEdgeRepo(
-  repoDir: string,
-  branch: string
-): Effect.Effect<BleedingEdgeSyncResult, GitSyncError> {
+function syncBleedingEdgeRepo(repoDir: string, branch: string, commit: string) {
   return syncBleedingEdgeGitRepo(
     repoDir,
     branch,
@@ -393,7 +393,8 @@ function syncBleedingEdgeRepo(
           cause: cause.cause ?? cause,
         }))
       ),
-    getRepoHeadSha
+    getRepoHeadSha,
+    commit
   );
 }
 
@@ -429,20 +430,22 @@ function ensureBleedingEdgeBuild(
 ) {
   return Effect.gen(function* () {
     const repoDir = getBleedingEdgeRepoDir();
-    const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
+    const targetBranch =
+      normalizeBranch(branch) || DEFAULT_BLEEDING_EDGE_BRANCH;
     sendUpdaterStatus('Preparing Bleeding Edge');
-    let syncResult: BleedingEdgeSyncResult | null = null;
+    if (process.platform !== 'win32' && process.platform !== 'linux') {
+      return yield* Effect.fail(
+        new UpdateError({
+          message: 'Bleeding-edge builds require Windows or Linux',
+          phase: 'build-platform',
+        })
+      );
+    }
     if (!fs.existsSync(path.join(repoDir, '.git'))) {
       yield* tryUpdate('clone-repository', () =>
-        fs.rmSync(repoDir, { recursive: true, force: true })
+        fs.mkdirSync(path.dirname(repoDir), { recursive: true })
       );
-      yield* runCommand('git', [
-        'clone',
-        '--branch',
-        targetBranch,
-        OGI_REPO_URL,
-        repoDir,
-      ]).pipe(
+      yield* runCommand('git', ['clone', OGI_REPO_URL, repoDir]).pipe(
         Effect.mapError(
           (cause) =>
             new UpdateError({
@@ -452,28 +455,13 @@ function ensureBleedingEdgeBuild(
             })
         )
       );
-    } else {
-      syncResult = yield* syncBleedingEdgeRepo(repoDir, targetBranch);
     }
-    if (commit) {
-      yield* runCommand('git', ['checkout', commit], { cwd: repoDir }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new UpdateError({
-              message: cause.message,
-              phase: 'checkout-commit',
-              cause,
-            })
-        )
-      );
-    }
-
-    const headSha = yield* getRepoHeadSha(repoDir);
-    if (
-      !commit &&
-      syncResult?.syncWasNoop &&
-      shouldSkipBranchOnlyBleedingEdgeBuild(targetBranch, headSha)
-    ) {
+    const { afterSyncSha: headSha } = yield* syncBleedingEdgeRepo(
+      repoDir,
+      targetBranch,
+      commit
+    );
+    if (shouldSkipBleedingEdgeBuild(targetBranch, commit, headSha)) {
       sendUpdaterStatus(
         'Bleeding Edge up to date',
         undefined,
@@ -481,14 +469,24 @@ function ensureBleedingEdgeBuild(
         'Skipping build'
       );
       yield* tryUpdate('write-commit-state', () =>
-        writeCommitEdgeFile(targetBranch, '', headSha)
+        writeCommitEdgeFile(targetBranch, commit, headSha)
       );
       return;
     }
 
-    yield* runCommand('bun', ['install', '--linker=hoisted'], {
-      cwd: repoDir,
-    }).pipe(
+    yield* runCommand(
+      'bun',
+      [
+        'install',
+        '--frozen-lockfile',
+        '--linker=hoisted',
+        '--concurrent-scripts',
+        '1',
+      ],
+      {
+        cwd: repoDir,
+      }
+    ).pipe(
       Effect.mapError(
         (cause) =>
           new UpdateError({
@@ -508,16 +506,15 @@ function ensureBleedingEdgeBuild(
           })
       )
     );
-    yield* runCommand('bun', ['run', 'build'], { cwd: repoDir }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new UpdateError({
-            message: cause.message,
-            phase: 'build-packages',
-            cause,
-          })
-      )
-    );
+    // Remove old output so packaging cannot accidentally reuse a previous revision.
+    yield* tryUpdate('clean-build-output', () => {
+      for (const output of ['out', 'dist']) {
+        fs.rmSync(path.join(repoDir, 'application', output), {
+          recursive: true,
+          force: true,
+        });
+      }
+    });
     const [buildCommand, buildArgs] = getApplicationBuildCommand();
     yield* runCommand(buildCommand, buildArgs, { cwd: repoDir }).pipe(
       Effect.mapError(
@@ -530,54 +527,16 @@ function ensureBleedingEdgeBuild(
       )
     );
 
-    const destRoot = path.join(__dirname, 'update');
-    yield* tryUpdate('prepare-update', () =>
-      prepareUpdateDestination(destRoot)
+    yield* tryUpdate('install-build', () =>
+      installBleedingEdgeArtifact(
+        repoDir,
+        path.join(__dirname, 'update'),
+        process.platform,
+        PRESERVED_UPDATE_ENTRIES
+      )
     );
-    if (process.platform === 'win32') {
-      const exe = yield* tryUpdate('find-build', () =>
-        findFirstFile(
-          path.join(repoDir, 'application', 'dist'),
-          (name) =>
-            name.toLowerCase().endsWith('.exe') &&
-            !name.toLowerCase().includes('setup')
-        )
-      );
-      if (!exe) {
-        return yield* Effect.fail(
-          new UpdateError({
-            message: 'Built Windows executable not found',
-            phase: 'find-build',
-          })
-        );
-      }
-      yield* tryUpdate('copy-build', () =>
-        fs.copyFileSync(exe, path.join(destRoot, 'OpenGameInstaller.exe'))
-      );
-    } else {
-      const appImage = yield* tryUpdate('find-build', () =>
-        findFirstFile(path.join(repoDir, 'application', 'dist'), (name) =>
-          name.toLowerCase().endsWith('.appimage')
-        )
-      );
-      if (!appImage) {
-        return yield* Effect.fail(
-          new UpdateError({
-            message: 'Built Linux AppImage not found',
-            phase: 'find-build',
-          })
-        );
-      }
-      yield* tryUpdate('copy-build', () => {
-        fs.copyFileSync(
-          appImage,
-          path.join(destRoot, 'OpenGameInstaller.AppImage')
-        );
-        fs.chmodSync(path.join(destRoot, 'OpenGameInstaller.AppImage'), '755');
-      });
-    }
     yield* tryUpdate('write-commit-state', () =>
-      writeCommitEdgeFile(targetBranch, commit, commit ? '' : headSha)
+      writeCommitEdgeFile(targetBranch, commit, headSha)
     );
   });
 }
@@ -595,7 +554,6 @@ function parseRemoteBranchName(ref: string): string | null {
 }
 
 function getBranches(): Effect.Effect<string[], UpdateError> {
-  const repoDir = getBleedingEdgeRepoDir();
   const remoteBranches = Effect.gen(function* () {
     const { stdout } = yield* runCommand(
       'git',
@@ -618,50 +576,7 @@ function getBranches(): Effect.Effect<string[], UpdateError> {
     return unique.includes('main') ? ['main', ...others] : others;
   });
 
-  if (!fs.existsSync(path.join(repoDir, '.git'))) {
-    return remoteBranches;
-  }
-
-  return Effect.gen(function* () {
-    yield* runCommand(
-      'git',
-      ['fetch', '--prune', 'origin', ALL_ORIGIN_HEADS_REFSPEC],
-      { cwd: repoDir, quiet: true }
-    );
-    const { stdout } = yield* runCommand(
-      'git',
-      [
-        'for-each-ref',
-        'refs/remotes/origin',
-        '--format=%(refname:short)\t%(committerdate:iso8601)',
-        '--sort=-committerdate',
-      ],
-      { cwd: repoDir, quiet: true }
-    );
-    const datedBranches: { name: string; date: string }[] = [];
-    for (const line of stdout.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      const tab = trimmed.indexOf('\t');
-      const ref = tab === -1 ? trimmed : trimmed.slice(0, tab);
-      const date = tab === -1 ? '' : trimmed.slice(tab + 1);
-      const name = parseRemoteBranchName(ref);
-      if (name && name !== 'HEAD') datedBranches.push({ name, date });
-    }
-    if (!datedBranches.length) return yield* remoteBranches;
-    const others = datedBranches
-      .filter((branch) => branch.name !== 'main')
-      .map((branch) => branch.name);
-    return datedBranches.some((branch) => branch.name === 'main')
-      ? ['main', ...others]
-      : others;
-  }).pipe(
-    Effect.catchAll((error) =>
-      logger
-        .info('Local git branch listing failed, using ls-remote:', error)
-        .pipe(Effect.zipRight(remoteBranches))
-    )
-  );
+  return remoteBranches;
 }
 
 type RecentCommit = {
@@ -697,19 +612,13 @@ function parseGitLogCommits(stdout: string): RecentCommit[] {
 function getRecentCommits(
   branch = DEFAULT_BLEEDING_EDGE_BRANCH
 ): Effect.Effect<RecentCommit[], UpdaterError> {
-  const targetBranch = branch || DEFAULT_BLEEDING_EDGE_BRANCH;
+  const targetBranch = normalizeBranch(branch) || DEFAULT_BLEEDING_EDGE_BRANCH;
   const logFormat = '%H%x1f%an%x1f%cI%x1f%s';
-  const repoDir = getBleedingEdgeRepoDir();
 
   const cloneAndRead = Effect.acquireUseRelease(
-    tryFileSystem('remove-temporary-repository', undefined, () => {
-      const tmpDir = path.join(
-        app.getPath('temp'),
-        `ogi-updater-commits-${process.pid}-${Date.now()}`
-      );
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      return tmpDir;
-    }),
+    tryFileSystem('create-temporary-repository', undefined, () =>
+      fs.mkdtempSync(path.join(app.getPath('temp'), 'ogi-updater-commits-'))
+    ),
     (tmpDir) =>
       Effect.gen(function* () {
         yield* runCommand(
@@ -718,6 +627,8 @@ function getRecentCommits(
             'clone',
             '--depth',
             '12',
+            '--no-checkout',
+            '--filter=blob:none',
             '--branch',
             targetBranch,
             '--single-branch',
@@ -739,30 +650,7 @@ function getRecentCommits(
       ).pipe(Effect.orElseSucceed(() => undefined))
   );
 
-  if (!fs.existsSync(path.join(repoDir, '.git'))) {
-    return cloneAndRead;
-  }
-
-  return Effect.gen(function* () {
-    yield* runCommand(
-      'git',
-      [
-        'fetch',
-        'origin',
-        `+refs/heads/${targetBranch}:refs/remotes/origin/${targetBranch}`,
-        '--depth',
-        '12',
-      ],
-      { cwd: repoDir, quiet: true }
-    );
-    const { stdout } = yield* runCommand(
-      'git',
-      ['log', `origin/${targetBranch}`, '-12', `--format=${logFormat}`],
-      { cwd: repoDir, quiet: true }
-    );
-    const commits = parseGitLogCommits(stdout);
-    return commits.length ? commits : yield* cloneAndRead;
-  });
+  return cloneAndRead;
 }
 
 ipcMain.handle('get-branches', async () => {
@@ -798,20 +686,6 @@ ipcMain.handle('get-recent-commits', async (_event, branch) => {
     };
   }
 });
-
-function findFirstFile(root, predicate) {
-  if (!fs.existsSync(root)) return null;
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    const fullPath = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      const found = findFirstFile(fullPath, predicate);
-      if (found) return found;
-    } else if (predicate(entry.name, fullPath)) {
-      return fullPath;
-    }
-  }
-  return null;
-}
 
 function getEffectiveOnlineState(requestedOnline = getRequestedOnlineState()) {
   const networkOnline = net.isOnline();
@@ -1152,9 +1026,17 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
             selectAndBuildBleedingEdge(
               selection,
               (target) =>
-                tryFileSystem('write-commit-state', './COMMIT_EDGE.txt', () =>
-                  writeCommitEdgeFile(target.branch, target.commit)
-                ),
+                tryFileSystem('write-commit-state', './COMMIT_EDGE.txt', () => {
+                  const stored = readStoredCommitEdgeTarget();
+                  writeCommitEdgeFile(
+                    target.branch,
+                    target.commit,
+                    stored?.branch === target.branch &&
+                      stored?.commit === target.commit
+                      ? stored.built
+                      : ''
+                  );
+                }),
               (target) => ensureBleedingEdgeBuild(target.commit, target.branch)
             )
           );

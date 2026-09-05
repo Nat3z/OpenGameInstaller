@@ -5,6 +5,10 @@ export type BleedingEdgeSelection = {
   readonly commit: string;
 };
 
+export function normalizeBranch(branch: string): string {
+  return branch.trim().replace(/^refs\/(?:heads\/|remotes\/origin\/)/, '');
+}
+
 export function normalizeBleedingEdgeSelection(
   branch: unknown,
   commit: unknown,
@@ -12,7 +16,7 @@ export function normalizeBleedingEdgeSelection(
 ): BleedingEdgeSelection {
   const normalizedBranch = typeof branch === 'string' ? branch.trim() : '';
   return {
-    branch: normalizedBranch || defaultBranch,
+    branch: normalizeBranch(normalizedBranch) || defaultBranch,
     commit: typeof commit === 'string' ? commit.trim() : '',
   };
 }

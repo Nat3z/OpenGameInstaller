@@ -194,16 +194,18 @@ async function processDownloadComplete(
     ]);
     logger.sync.info('Skipping old_files staging for update');
   }
-  // Persist a recovery file once staging is done: if the app is closed during
-  // extraction or moving, the next launch offers a retry from disk instead of
-  // forcing a re-download. Written only after a clean staging pass so a retry
-  // never runs against a directory with old files half-moved into old_files.
-  // Removed once setup completes.
+  // Recovery files let the next launch retry from disk if the app is closed
+  // during extraction or moving, instead of forcing a re-download. Skipped
+  // after a dirty staging pass so a retry never runs against a directory with
+  // old files half-moved into old_files. Removed once setup completes.
   const persistRecovery = (
     should: 'call-addon' | 'call-unrar' | 'call-unzip',
     path?: string
   ) => {
-    if (!stagedCleanly) return;
+    if (!stagedCleanly) {
+      removeFailedSetup(downloadID);
+      return;
+    }
     savePendingRecovery({
       downloadInfo: downloadedItem,
       setupData: {
@@ -213,21 +215,6 @@ async function processDownloadComplete(
       should,
     });
   };
-  const pendingShould =
-    !isTorrent &&
-    (downloadedItem.usedDebridService === 'realdebrid' ||
-      downloadedItem.usedDebridService === 'alldebrid')
-      ? ('call-unrar' as const)
-      : downloadedItem.usedDebridService === 'torbox' ||
-          downloadedItem.usedDebridService === 'premiumize'
-        ? ('call-unzip' as const)
-        : ('call-addon' as const);
-  // Extraction retries resolve the archive from downloadPath; a direct addon
-  // retry needs the directory the setup would have received.
-  persistRecovery(
-    pendingShould,
-    pendingShould === 'call-addon' && !isTorrent ? outputDir : undefined
-  );
 
   let additionalData: any = {};
   logger.sync.info('Downloaded Item: ', downloadedItem);
@@ -308,6 +295,21 @@ async function processDownloadComplete(
       return;
     }
   }
+
+  // First recovery write, once the torrent path is normalized and the archive
+  // kind is known so the retry runs the right step against the right path.
+  const pendingShould = rarArchivePath
+    ? ('call-unrar' as const)
+    : downloadedItem.usedDebridService === 'torbox' ||
+        downloadedItem.usedDebridService === 'premiumize'
+      ? ('call-unzip' as const)
+      : ('call-addon' as const);
+  // Extraction retries resolve the archive from downloadPath; a direct addon
+  // retry needs the directory the setup would have received.
+  persistRecovery(
+    pendingShould,
+    pendingShould === 'call-addon' && !isTorrent ? outputDir : undefined
+  );
 
   if (rarArchivePath) {
     // Initialize setup logs for this download

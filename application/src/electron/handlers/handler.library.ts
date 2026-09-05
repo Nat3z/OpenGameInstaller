@@ -865,9 +865,9 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 roots: deleteGuardRoots(),
                 pathExists: (path) => fs.existsSync(path),
               });
-              if (deletionPlan.kind === 'skip' || !appInfo.cwd) {
+              if (deletionPlan.kind === 'skip') {
                 fileWarning = deletionPlan.warning;
-              } else {
+              } else if (appInfo.cwd) {
                 const cwd = appInfo.cwd;
                 const deletion = yield* Effect.sync(() =>
                   startBackgroundFileDeletion(appid, cwd, appInfo.name)

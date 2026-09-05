@@ -513,6 +513,7 @@ export const SteamRepositoryLive = (
           const configExisted = config.existed;
           let shortcutsCommitted = false;
           let configCommitted = false;
+          let shortcutsBackupWritten = false;
           const restore = (
             filePath: string,
             fileExisted: boolean,
@@ -552,6 +553,13 @@ export const SteamRepositoryLive = (
                 if (options?.configSource !== undefined) {
                   yield* writeFileAtomic(configPath, options.configSource);
                   configCommitted = true;
+                }
+                if (existed && !shortcutsBackupWritten) {
+                  yield* writeFileAtomic(
+                    `${shortcutsPath}.ogi-backup`,
+                    original
+                  );
+                  shortcutsBackupWritten = true;
                 }
                 const written = yield* Effect.either(
                   write(shortcutsPath, updatedRoot)

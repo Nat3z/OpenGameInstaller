@@ -51,7 +51,9 @@
     "**/.hg/**",
     "**/.svn/**"
   ],
-  "css.validate": false,
+  "css.customData": [".vscode/tailwind.css-data.json"],
+  "css.lint.unknownAtRules": "ignore",
+  "css.validate": true,
   "tailwindCSS.validate": true,
   "tailwindCSS.emmetCompletions": true,
   "typescript.preferences.autoImportSpecifierExcludeRegexes": [

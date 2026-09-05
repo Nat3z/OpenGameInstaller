@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { LibraryInfo } from '@ogi-sdk/connect';
+import type { LibraryInfo, SetupCommandData } from '@ogi-sdk/connect';
 import { FileSystemError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
@@ -8,7 +8,11 @@ import type { AddonDownloadCardPayload } from '@/electron/server/addon-downloads
 import { getApp } from '@/frontend/lib/core/library';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
-import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
+import {
+  removeFailedSetup,
+  saveFailedSetup,
+  savePendingRecovery,
+} from '@/frontend/lib/recovery/failedSetups';
 // no direct use of EventListenerTypes in this module anymore
 import {
   resolveRarArchivePath,
@@ -51,6 +55,26 @@ function dispatchSetupEvent(
       },
     })
   );
+}
+
+function buildSetupData(item: DownloadStatusAndInfo): SetupCommandData {
+  return {
+    path: item.downloadPath,
+    type: item.downloadType as 'direct' | 'torrent' | 'magnet',
+    name: item.name,
+    usedRealDebrid: item.usedDebridService !== undefined,
+    clearOldFilesBeforeUpdate: item.clearOldFilesBeforeUpdate,
+    appID: item.appID,
+    multiPartFiles: item.files || [],
+    storefront: item.storefront,
+    manifest: item.manifest || {},
+    ...(item.isUpdate
+      ? {
+          for: 'update' as const,
+          currentLibraryInfo: getApp(item.appID) as LibraryInfo,
+        }
+      : { for: 'game' as const }),
+  };
 }
 
 const processingDownloadCompletions = new Set<string>();
@@ -115,6 +139,7 @@ async function processDownloadComplete(
     downloadedItem.isUpdate !== true ||
     downloadedItem.clearOldFilesBeforeUpdate !== false;
   let stagedOldFiles = false;
+  let stagedCleanly = true;
 
   // Move existing files into old_files before setup unless this update opted out.
   const currentFiles = await runFrontendEffect(
@@ -123,8 +148,12 @@ async function processDownloadComplete(
   const filesNotToMove = [
     ...(downloadedItem.files ?? []).map((file) => file.name),
     basename(downloadedItem.downloadPath),
+    ...(isTorrent ? [basename(downloadedItem.downloadPath) + '.torrent'] : []),
     'old_files',
   ];
+  const filesToMove = currentFiles.filter(
+    (file) => !filesNotToMove.includes(file)
+  );
   logger.sync.info('Current files: ', currentFiles);
   logger.sync.info('downloadedItem.files: ', downloadedItem.files);
   logger.sync.info('outputDir: ', outputDir);
@@ -134,24 +163,28 @@ async function processDownloadComplete(
     downloadedItem.downloadPath
   );
 
-  if (shouldStageOldFiles && currentFiles.length > 0) {
+  if (shouldStageOldFiles && filesToMove.length > 0) {
     dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
     await window.electronAPI.fs.mkdir(outputDir + '/old_files');
     stagedOldFiles = true;
 
     logger.sync.info('Files not to move: ', filesNotToMove);
-    for (const file of currentFiles) {
-      if (!filesNotToMove.includes(file)) {
-        const result = await runFrontendEffect(
-          electronRpc.fs.move({
-            source: outputDir + '/' + file,
-            destination: outputDir + '/old_files/' + file,
-          })
-        );
-        if (result !== 'success') {
-          logger.sync.error('Failed to move file: ', file);
-        }
+    let movedCount = 0;
+    for (const file of filesToMove) {
+      const result = await runFrontendEffect(
+        electronRpc.fs.move({
+          source: outputDir + '/' + file,
+          destination: outputDir + '/old_files/' + file,
+        })
+      );
+      if (result !== 'success') {
+        logger.sync.error('Failed to move file: ', file);
+        stagedCleanly = false;
       }
+      movedCount++;
+      updateDownloadStatus(downloadID, {
+        progress: movedCount / filesToMove.length,
+      });
     }
     dispatchSetupEvent('log', downloadID, ['Moved all files']);
     logger.sync.info('Moved all files to old_files');
@@ -161,6 +194,28 @@ async function processDownloadComplete(
     ]);
     logger.sync.info('Skipping old_files staging for update');
   }
+  // Recovery files let the next launch retry from disk if the app is closed
+  // during extraction or moving, instead of forcing a re-download. Skipped
+  // after a dirty staging pass so a retry never runs against a directory with
+  // old files half-moved into old_files. Removed once setup completes.
+  const persistRecovery = (
+    should: 'call-addon' | 'call-unrar' | 'call-unzip',
+    path?: string
+  ) => {
+    if (!stagedCleanly) {
+      removeFailedSetup(downloadID);
+      return;
+    }
+    savePendingRecovery({
+      downloadInfo: downloadedItem,
+      setupData: {
+        ...buildSetupData(downloadedItem),
+        ...(path !== undefined ? { path } : {}),
+      },
+      should,
+    });
+  };
+
   let additionalData: any = {};
   logger.sync.info('Downloaded Item: ', downloadedItem);
 
@@ -241,6 +296,21 @@ async function processDownloadComplete(
     }
   }
 
+  // First recovery write, once the torrent path is normalized and the archive
+  // kind is known so the retry runs the right step against the right path.
+  const pendingShould = rarArchivePath
+    ? ('call-unrar' as const)
+    : downloadedItem.usedDebridService === 'torbox' ||
+        downloadedItem.usedDebridService === 'premiumize'
+      ? ('call-unzip' as const)
+      : ('call-addon' as const);
+  // Extraction retries resolve the archive from downloadPath; a direct addon
+  // retry needs the directory the setup would have received.
+  persistRecovery(
+    pendingShould,
+    pendingShould === 'call-addon' && !isTorrent ? outputDir : undefined
+  );
+
   if (rarArchivePath) {
     // Initialize setup logs for this download
     setupLogs.update((logs) => ({
@@ -295,27 +365,15 @@ async function processDownloadComplete(
       });
 
       await revertOldFiles();
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: 'Failed to extract RAR file',
+      });
 
       // add a failed setup
       saveFailedSetup({
         downloadInfo: downloadedItem,
-        setupData: {
-          path: downloadedItem.downloadPath,
-          type: downloadedItem.downloadType as 'direct' | 'torrent' | 'magnet',
-          name: downloadedItem.name,
-          usedRealDebrid: downloadedItem.usedDebridService !== undefined,
-          clearOldFilesBeforeUpdate: downloadedItem.clearOldFilesBeforeUpdate,
-          appID: downloadedItem.appID,
-          multiPartFiles: downloadedItem.files || [],
-          storefront: downloadedItem.storefront,
-          manifest: downloadedItem.manifest || {},
-          ...(downloadedItem.isUpdate
-            ? {
-                for: 'update' as const,
-                currentLibraryInfo: getApp(downloadedItem.appID) as LibraryInfo,
-              }
-            : { for: 'game' as const }),
-        },
+        setupData: buildSetupData(downloadedItem),
         error: 'Failed to extract RAR file',
         should: 'call-unrar',
       });
@@ -393,23 +451,7 @@ async function processDownloadComplete(
       });
       saveFailedSetup({
         downloadInfo: downloadedItem,
-        setupData: {
-          path: downloadedItem.downloadPath,
-          type: downloadedItem.downloadType as 'direct' | 'torrent' | 'magnet',
-          name: downloadedItem.name,
-          usedRealDebrid: downloadedItem.usedDebridService !== undefined,
-          clearOldFilesBeforeUpdate: downloadedItem.clearOldFilesBeforeUpdate,
-          appID: downloadedItem.appID,
-          multiPartFiles: downloadedItem.files || [],
-          storefront: downloadedItem.storefront,
-          manifest: downloadedItem.manifest || {},
-          ...(downloadedItem.isUpdate
-            ? {
-                for: 'update' as const,
-                currentLibraryInfo: getApp(downloadedItem.appID) as LibraryInfo,
-              }
-            : { for: 'game' as const }),
-        },
+        setupData: buildSetupData(downloadedItem),
         error: 'Failed to process ZIP file',
         should: 'call-unzip',
       });
@@ -434,6 +476,10 @@ async function processDownloadComplete(
     );
   }
 
+  // Extraction (if any) is done and archives are deleted, so a recovery
+  // from this point on should go straight to the addon with the final path.
+  persistRecovery('call-addon', outputDir);
+
   try {
     // Check if this is an update download and route to appropriate setup function
     updateDownloadStatus(downloadedItem.id, {
@@ -450,6 +496,7 @@ async function processDownloadComplete(
         runSetupApp(downloadedItem, outputDir, isTorrent, additionalData)
       );
     }
+    removeFailedSetup(downloadID);
 
     // delete the old_files directory
     try {
@@ -469,6 +516,14 @@ async function processDownloadComplete(
     }
   } catch (error) {
     logger.sync.error('Error setting up app: ', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    dispatchSetupEvent('log', downloadedItem.id, [
+      `Setup failed: ${errorMessage}`,
+    ]);
+    updateDownloadStatus(downloadedItem.id, {
+      status: 'error',
+      error: errorMessage,
+    });
     await revertOldFiles();
   } finally {
     processingDownloadCompletions.delete(downloadID);

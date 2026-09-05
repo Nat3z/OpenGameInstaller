@@ -96,37 +96,45 @@ function checkForAppUpdates(connectedAddons: AddonInfo[]) {
       checkableApps,
       ({ app, addons }) =>
         Effect.gen(function* () {
-          if (addons.length > 1) {
-            return yield* Effect.fail(
-              new UpdateError({
-                message: 'Multiple clients found to serve this storefront',
-              })
+          // One addon failing must not hide updates served by the others.
+          for (const addon of addons) {
+            const update = yield* Effect.tryPromise({
+              try: () =>
+                addonServer.addon(addon.id).checkForUpdates({
+                  appID: app.appID,
+                  storefront: app.storefront,
+                  currentVersion: app.version,
+                }) as Promise<{ available: boolean; version: string }>,
+              catch: (cause) =>
+                new UpdateError({
+                  message: `Failed to check for updates: ${formatError(cause)}`,
+                }),
+            }).pipe(
+              Effect.catchAll((error) =>
+                logger
+                  .error(
+                    'Error checking for updates for app',
+                    app.name,
+                    'via',
+                    addon.name,
+                    error
+                  )
+                  .pipe(Effect.as(undefined))
+              )
             );
-          }
-          const update = yield* Effect.tryPromise({
-            try: () =>
-              addonServer.addon(addons[0].id).checkForUpdates({
+            if (update?.available && runId === updateCheckRunId) {
+              updatesManager.addAppUpdate({
                 appID: app.appID,
-                storefront: app.storefront,
-                currentVersion: app.version,
-              }) as Promise<{ available: boolean; version: string }>,
-            catch: (cause) =>
-              new UpdateError({
-                message: `Failed to check for updates: ${formatError(cause)}`,
-              }),
-          });
-          if (runId === updateCheckRunId && update.available) {
-            updatesManager.addAppUpdate({
-              appID: app.appID,
-              name: app.name,
-              updateAvailable: true,
-              updateVersion: update.version,
-            });
+                name: addon.name,
+                updateAvailable: true,
+                updateVersion: update.version,
+              });
+              // The store holds one version per app; keep the first addon's
+              // answer instead of letting later addons silently overwrite it.
+              break;
+            }
           }
         }).pipe(
-          Effect.catchAll((error) =>
-            logger.error('Error checking for updates for app', app.name, error)
-          ),
           Effect.ensuring(
             Effect.sync(() => {
               if (runId === updateCheckRunId) {

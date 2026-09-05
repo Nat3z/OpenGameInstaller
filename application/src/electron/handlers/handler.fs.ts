@@ -71,15 +71,27 @@ const extractArchive = (arg: {
         ],
       });
     }
+    // Throttle progress IPC: per-file move callbacks can fire thousands of
+    // times for large games. Always let stage changes and completion through.
+    let lastProgressSent = 0;
+    let lastStage: string | undefined;
     yield* fsTryPromise(arg.outputDir, () =>
-      extraction(archivePath, arg.outputDir, (progress) => {
-        if (arg.downloadId) {
-          sendIPCMessage('processing:progress', {
-            id: arg.downloadId,
-            phase: 'Extracting archive',
-            progress,
-          });
-        }
+      extraction(archivePath, arg.outputDir, (progress, stage) => {
+        if (!arg.downloadId) return;
+        const now = Date.now();
+        if (
+          stage === lastStage &&
+          progress !== 1 &&
+          now - lastProgressSent < 100
+        )
+          return;
+        lastProgressSent = now;
+        lastStage = stage;
+        sendIPCMessage('processing:progress', {
+          id: arg.downloadId,
+          phase: stage === 'moving' ? 'Moving files' : 'Extracting archive',
+          progress,
+        });
       })
     ).pipe(
       Effect.tapError((error) =>

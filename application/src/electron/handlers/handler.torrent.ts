@@ -88,6 +88,7 @@ interface WebTorrentControls {
   pause: () => void;
   resume: () => void;
   destroy: () => void;
+  waitUntilFilesReady: () => Effect.Effect<void, TorrentError>;
 }
 
 const downloads = new Map<string, TorrentDownload>();
@@ -306,7 +307,7 @@ class TorrentDownload {
           );
 
           yield* Deferred.await(completed);
-          yield* Effect.sleep('1 second');
+          yield* this.wtBlock.waitUntilFilesReady();
 
           if (this.status === 'cancelled' || this.status === 'failed') {
             return false;

@@ -81,6 +81,54 @@ export const sharesDirectoryWithOtherGames = (
   });
 };
 
+export type GameFileDeletionPlan =
+  | { kind: 'delete' }
+  | { kind: 'skip'; warning?: string };
+
+const alreadyGoneWarning =
+  'The game was removed from the library. Install files were already gone.';
+
+/**
+ * Decide whether a lazy library removal should start deleting install files.
+ * A missing folder is a skip, not a delete — there is nothing to claim or wipe.
+ */
+export const planGameFileDeletion = (input: {
+  cwd: string | undefined;
+  appID: number;
+  running: boolean;
+  otherGames: ReadonlyArray<{ appID: number; cwd?: string }>;
+  roots: DeleteGuardRoots;
+  pathExists: (path: string) => boolean;
+}): GameFileDeletionPlan => {
+  const { cwd } = input;
+  if (!cwd) return { kind: 'skip' };
+  if (input.running) {
+    return {
+      kind: 'skip',
+      warning:
+        'The game was removed from the library, but its files were not deleted because the game is currently running.',
+    };
+  }
+  if (isProtectedDeletePath(cwd, input.roots)) {
+    return {
+      kind: 'skip',
+      warning:
+        'The game was removed from the library, but its files were not deleted because the path is a protected directory.',
+    };
+  }
+  if (sharesDirectoryWithOtherGames(input.appID, cwd, input.otherGames)) {
+    return {
+      kind: 'skip',
+      warning:
+        'The game was removed from the library, but its files were not deleted because the directory contains other games.',
+    };
+  }
+  if (!input.pathExists(cwd)) {
+    return { kind: 'skip', warning: alreadyGoneWarning };
+  }
+  return { kind: 'delete' };
+};
+
 /** App-owned directories that must never be wiped by a game removal. */
 export const appMetadataSubtrees = (dataDir: string): string[] => [
   join(dataDir, 'config'),

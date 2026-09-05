@@ -121,6 +121,15 @@ const addonFailurePrompt = createLaunchPrompt();
 
 async function launchGame() {
   if ($gamesLaunched[libraryInfo.appID]) return;
+  if (libraryInfo.cwd && !window.electronAPI.fs.exists(libraryInfo.cwd)) {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message:
+        'The game folder is gone. Update the path in settings or remove the game from your library.',
+      type: 'error',
+    });
+    return;
+  }
   logger.sync.info('Launching game with appID: ' + libraryInfo.appID);
   // playButton may be unbound (e.g. update-available button rendered instead);
   // launching still proceeds since gamesLaunched drives the button states
@@ -166,7 +175,25 @@ async function launchGame() {
 
   logger.sync.info('pre-launch complete');
 
-  await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
+  try {
+    await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
+  } catch (error) {
+    logger.sync.error(error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: formatError(error) || 'Failed to launch game',
+      type: 'error',
+    });
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
+    await tick();
+    if (playButton) {
+      playButton.setAttribute('data-error', 'true');
+    }
+    return;
+  }
 
   logger.sync.info('launchGame complete');
   if (!window.electronAPI.fs.exists('./internals')) {

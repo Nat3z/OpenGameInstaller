@@ -6,6 +6,7 @@ import {
   type DeleteGuardRoots,
   filesystemRoot,
   isProtectedDeletePath,
+  planGameFileDeletion,
   sharesDirectoryWithOtherGames,
   systemSubtrees,
 } from './delete-guards';
@@ -54,12 +55,13 @@ describe('isProtectedDeletePath', () => {
   });
 });
 
+const others = [
+  { appID: 1, cwd: '/games/alpha' },
+  { appID: 2, cwd: '/games/beta/nested' },
+  { appID: 3 },
+];
+
 describe('sharesDirectoryWithOtherGames', () => {
-  const others = [
-    { appID: 1, cwd: '/games/alpha' },
-    { appID: 2, cwd: '/games/beta/nested' },
-    { appID: 3 },
-  ];
 
   test('detects exact, parent, and child overlaps with other games', () => {
     expect(sharesDirectoryWithOtherGames(9, '/games/alpha', others)).toBe(true);
@@ -85,5 +87,60 @@ describe('sharesDirectoryWithOtherGames', () => {
     expect(sharesDirectoryWithOtherGames(9, '/somewhere', [{ appID: 3 }])).toBe(
       false
     );
+  });
+});
+
+describe('planGameFileDeletion', () => {
+  const exists = (present: Set<string>) => (path: string) => present.has(path);
+  const base = {
+    appID: 9,
+    running: false,
+    otherGames: others,
+    roots: roots(),
+  };
+
+  test('skips when there is no install path', () => {
+    expect(
+      planGameFileDeletion({
+        ...base,
+        cwd: undefined,
+        pathExists: exists(new Set()),
+      })
+    ).toEqual({ kind: 'skip' });
+  });
+
+  test('skips and explains when the folder is already gone', () => {
+    expect(
+      planGameFileDeletion({
+        ...base,
+        cwd: '/games/missing',
+        pathExists: exists(new Set()),
+      })
+    ).toEqual({
+      kind: 'skip',
+      warning:
+        'The game was removed from the library. Install files were already gone.',
+    });
+  });
+
+  test('skips a running game even if the folder still exists', () => {
+    expect(
+      planGameFileDeletion({
+        ...base,
+        cwd: '/games/gamma',
+        running: true,
+        pathExists: exists(new Set(['/games/gamma'])),
+      }).kind
+    ).toBe('skip');
+  });
+
+  test('deletes when the folder exists and is not guarded', () => {
+    expect(
+      planGameFileDeletion({
+        ...base,
+        cwd: '/games/gamma',
+        pathExists: exists(new Set(['/games/gamma'])),
+      })
+    ).toEqual({ kind: 'delete' });
   });
 });

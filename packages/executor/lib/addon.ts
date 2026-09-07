@@ -37,6 +37,8 @@ export type AddonConfig = {
 export type ScriptSpawnCommand = {
   readonly command: string;
   readonly args: string[];
+  /** cmd.exe gets one pre-quoted command line, so Node must not re-escape it. */
+  readonly windowsVerbatimArguments?: boolean;
 };
 
 type AddonLifecycleError = AddonError | FileSystemError | ValidationError;
@@ -123,9 +125,12 @@ export class Addon {
           scriptCommand,
           ...extraArgs.map(Addon.quoteWindowsShellArgument),
         ].join(' ');
+        // Same shape Node uses for `shell: true`: `/s` strips the outer quotes and
+        // leaves the inner quoting (e.g. the bun path) exactly as written.
         return {
           command: process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe',
-          args: ['/d', '/s', '/c', command],
+          args: ['/d', '/s', '/c', `"${command}"`],
+          windowsVerbatimArguments: true,
         };
       }
 
@@ -147,10 +152,11 @@ export class Addon {
     });
   }
 
-  private spawnProcess(
-    command: string,
-    args: string[]
-  ): Effect.Effect<ChildProcess, AddonError> {
+  private spawnProcess({
+    command,
+    args,
+    windowsVerbatimArguments,
+  }: ScriptSpawnCommand): Effect.Effect<ChildProcess, AddonError> {
     // Strip any inherited flag so only the session config decides the value
     const { OGI_GAME_LAUNCH: _inheritedFlag, ...inheritedEnv } = process.env;
     return Effect.try({
@@ -163,6 +169,7 @@ export class Addon {
             ...(this.config.gameSpecificLaunch ? { OGI_GAME_LAUNCH: '1' } : {}),
           },
           stdio: ['ignore', 'pipe', 'pipe'],
+          windowsVerbatimArguments,
         }),
       catch: (cause) =>
         new AddonError({
@@ -255,7 +262,7 @@ export class Addon {
         this.config.scripts = addonConfig.scripts;
       }
 
-      const { command, args } = yield* Addon.getScriptSpawnCommand(
+      const spawnCommand = yield* Addon.getScriptSpawnCommand(
         this.config.scripts.run,
         [
           `--addonPort=${this.config.port}`,
@@ -268,7 +275,7 @@ export class Addon {
           const child = yield* Effect.gen(this, function* () {
             const started = yield* Deferred.make<ChildProcess, AddonError>();
             const lifecycle = Effect.acquireUseRelease(
-              this.spawnProcess(command, args),
+              this.spawnProcess(spawnCommand),
               (child) =>
                 Effect.sync(() => {
                   this.childProcess = child;

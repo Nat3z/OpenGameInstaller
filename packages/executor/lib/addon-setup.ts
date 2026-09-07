@@ -76,7 +76,7 @@ export class AddonSetup {
         );
       }
 
-      const { command, args } =
+      const { command, args, windowsVerbatimArguments } =
         process.platform === 'win32'
           ? yield* Addon.getScriptSpawnCommand(script)
           : { command: '/bin/sh', args: ['-c', startCommand] };
@@ -87,6 +87,7 @@ export class AddonSetup {
             cwd: this.config.path,
             env,
             stdio: ['ignore', 'pipe', 'pipe'],
+            windowsVerbatimArguments,
           }),
         catch: (cause) =>
           new AddonError({

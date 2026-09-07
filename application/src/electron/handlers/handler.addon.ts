@@ -502,7 +502,11 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   if (clonedThisInstall) {
                     yield* Effect.try({
                       try: () =>
-                        fs.rmSync(addonPath, { recursive: true, force: true }),
+                        fs.rmSync(addonPath, {
+                          recursive: true,
+                          force: true,
+                          maxRetries: 5,
+                        }),
                       catch: (cause) =>
                         new AddonError({
                           message: `Failed to clean up addon ${addonName}: ${String(cause)}`,
@@ -548,7 +552,11 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               if (clonedThisInstall) {
                 yield* Effect.try({
                   try: () =>
-                    fs.rmSync(addonPath, { recursive: true, force: true }),
+                    fs.rmSync(addonPath, {
+                      recursive: true,
+                      force: true,
+                      maxRetries: 5,
+                    }),
                   catch: (cause) =>
                     new AddonError({
                       message: `Failed to clean up addon ${addonName}: ${String(cause)}`,
@@ -584,7 +592,11 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   // Clean up a partial clone so retries do not install from an unpinned default branch.
                   yield* Effect.try({
                     try: () =>
-                      fs.rmSync(addonPath, { recursive: true, force: true }),
+                      fs.rmSync(addonPath, {
+                        recursive: true,
+                        force: true,
+                        maxRetries: 5,
+                      }),
                     catch: (cause) =>
                       new AddonError({
                         message: `Failed to clean up addon ${addonName}: ${String(cause)}`,
@@ -666,7 +678,11 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                     ? parsedAddon.path
                     : join(__dirname, 'addons', parsedAddon.addonName);
                 if (fs.existsSync(addonPath)) {
-                  fs.rmSync(addonPath, { recursive: true, force: true });
+                  fs.rmSync(addonPath, {
+                    recursive: true,
+                    force: true,
+                    maxRetries: 5,
+                  });
                 }
               },
               catch: (cause) =>

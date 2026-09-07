@@ -34,7 +34,8 @@ describe('Addon setup scripts', () => {
       expect(invocation.command).toBe(
         process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe'
       );
-      expect(invocation.args.at(-1)).toContain('&&');
+      expect(invocation.args.at(-1)).toMatch(/^".*&&.*"$/s);
+      expect(invocation.windowsVerbatimArguments).toBe(true);
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
     }

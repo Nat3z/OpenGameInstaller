@@ -10,16 +10,15 @@ Action buttons let users trigger addon-specific jobs from configuration screens,
 
 ## Add an action button in `configure`
 
-Use `addActionOption(...)` with a task name and optional manifest payload:
+Use `addActionOption(...)` with a task name and optional manifest payload. Only `setName` and `setButtonText` are required (the button is the label); leaving either out is a type error. `setDisplayName` and `setDescription` are optional and add a label and hover hint beside the button:
 
 ```typescript
 addon.on('configure', (config) =>
   config.addActionOption((option) =>
     option
       .setName('clearCache')
-      .setDisplayName('Clear Cache')
-      .setDescription('Clear temporary addon cache files')
       .setButtonText('Run Cleanup')
+      .setDescription('Clear temporary addon cache files')
       .setTaskName('maintenance:clear-cache')
       .setManifest({
         scope: 'all',

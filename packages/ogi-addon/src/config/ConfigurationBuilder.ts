@@ -20,11 +20,42 @@ export type {
   StringConfigurationOption,
 } from '@ogi-sdk/connect';
 
-const ConfigValidationSchema = Schema.Struct({
-  name: Schema.NonEmptyString,
-  displayName: Schema.NonEmptyString,
-  description: Schema.NonEmptyString,
-});
+// Runtime mirror of RequiredInputSetters / RequiredActionSetters below.
+const ConfigValidationSchema = Schema.Union(
+  Schema.Struct({
+    type: Schema.Literal('string', 'number', 'boolean'),
+    name: Schema.NonEmptyString,
+    displayName: Schema.NonEmptyString,
+    description: Schema.NonEmptyString,
+  }),
+  Schema.Struct({
+    type: Schema.Literal('action'),
+    name: Schema.NonEmptyString,
+    buttonText: Schema.NonEmptyString,
+  })
+);
+
+/**
+ * Phantom record of which required setters have been called on an option. It
+ * only exists in the type system: required setters intersect it into their
+ * return type and `add*Option` demands the full set, so forgetting one fails
+ * to compile with an error naming the missing setter.
+ */
+export type Called<Setter extends string> = {
+  readonly __called: { readonly [S in Setter]: true };
+};
+
+/** Swaps an option's name type while keeping the setters already recorded on `this`. */
+type Renamed<Option, Self> = Option &
+  (Self extends Called<infer S> ? Called<S> : unknown);
+
+/** Setters every string, number, and boolean option must call. */
+export type RequiredInputSetters =
+  | 'setName'
+  | 'setDisplayName'
+  | 'setDescription';
+/** Setters every action option must call; the button text is its label. */
+export type RequiredActionSetters = 'setName' | 'setButtonText';
 
 export function isStringOption(
   option: ConfigurationOptionWire
@@ -63,12 +94,15 @@ export class ConfigurationBuilder<
   private options: ConfigurationOption<string>[] = [];
 
   /**
-   * Add a number option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
+   * Add a number option to the configuration builder and return the builder for chaining.
+   * The callback must call `setName`, `setDisplayName`, and `setDescription`; omitting one is a type error.
    * @param option { (option: NumberOption) => NumberOption<K> }
    * @returns A new ConfigurationBuilder with the number option's type added
    */
   public addNumberOption<K extends string>(
-    option: (option: NumberOption) => NumberOption<K>
+    option: (
+      option: NumberOption
+    ) => NumberOption<K> & Called<RequiredInputSetters>
   ): ConfigurationBuilder<T & { [P in K]: number }> {
     let newOption = new NumberOption();
     const configuredOption = option(newOption);
@@ -77,12 +111,15 @@ export class ConfigurationBuilder<
   }
 
   /**
-   * Add a string option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
+   * Add a string option to the configuration builder and return the builder for chaining.
+   * The callback must call `setName`, `setDisplayName`, and `setDescription`; omitting one is a type error.
    * @param option { (option: StringOption) => StringOption<K> }
    * @returns A new ConfigurationBuilder with the string option's type added
    */
   public addStringOption<K extends string>(
-    option: (option: StringOption) => StringOption<K>
+    option: (
+      option: StringOption
+    ) => StringOption<K> & Called<RequiredInputSetters>
   ): ConfigurationBuilder<T & { [P in K]: string }> {
     let newOption = new StringOption();
     const configuredOption = option(newOption);
@@ -91,12 +128,15 @@ export class ConfigurationBuilder<
   }
 
   /**
-   * Add a boolean option to the configuration builder and return the builder for chaining. You must provide a name, display name, and description for the option.
+   * Add a boolean option to the configuration builder and return the builder for chaining.
+   * The callback must call `setName`, `setDisplayName`, and `setDescription`; omitting one is a type error.
    * @param option { (option: BooleanOption) => BooleanOption<K> }
    * @returns A new ConfigurationBuilder with the boolean option's type added
    */
   public addBooleanOption<K extends string>(
-    option: (option: BooleanOption) => BooleanOption<K>
+    option: (
+      option: BooleanOption
+    ) => BooleanOption<K> & Called<RequiredInputSetters>
   ): ConfigurationBuilder<T & { [P in K]: boolean }> {
     let newOption = new BooleanOption();
     const configuredOption = option(newOption);
@@ -107,12 +147,15 @@ export class ConfigurationBuilder<
   /**
    * Add an action option to the configuration builder and return the builder for chaining.
    * Action options contribute a boolean to the return type (true if clicked, false if not).
-   * You must provide a name, display name, and description for the option.
+   * The callback must call `setName` and `setButtonText`; omitting one is a type error.
+   * Display name and description are optional for actions since the button is the label.
    * @param option { (option: ActionOption) => ActionOption<K> }
    * @returns A new ConfigurationBuilder with the action option's type added as boolean
    */
   public addActionOption<K extends string>(
-    option: (option: ActionOption) => ActionOption<K>
+    option: (
+      option: ActionOption
+    ) => ActionOption<K> & Called<RequiredActionSetters>
   ): ConfigurationBuilder<T & { [P in K]: boolean }> {
     let newOption = new ActionOption();
     const configuredOption = option(newOption);
@@ -155,29 +198,32 @@ export class ConfigurationOption<N extends string = string> {
    * Set the name of the option. **REQUIRED**
    * @param name {string} The name of the option. This is used to reference the option in the configuration file.
    */
-  setName<K extends string>(name: K): ConfigurationOption<K> {
+  setName<K extends string>(
+    name: K
+  ): Renamed<ConfigurationOption<K>, this> & Called<'setName'> {
     this.name = name as unknown as N;
-    return this as unknown as ConfigurationOption<K>;
+    return this as unknown as Renamed<ConfigurationOption<K>, this> &
+      Called<'setName'>;
   }
 
   /**
-   * Set the display name of the option. This is used to show the user a human readable version of what the option is. **REQUIRED**
+   * Set the display name of the option. This is used to show the user a human readable version of what the option is.
+   * **REQUIRED** for string, number, and boolean options; optional for actions.
    * @param displayName {string} The display name of the option.
-   * @returns
    */
-  setDisplayName(displayName: string): this {
+  setDisplayName(displayName: string): this & Called<'setDisplayName'> {
     this.displayName = displayName;
-    return this;
+    return this as this & Called<'setDisplayName'>;
   }
 
   /**
-   * Set the description of the option. This is to show the user a brief description of what this option does. **REQUIRED**
+   * Set the description of the option. This is to show the user a brief description of what this option does.
+   * **REQUIRED** for string, number, and boolean options; optional for actions.
    * @param description {string} The description of the option.
-   * @returns
    */
-  setDescription(description: string): this {
+  setDescription(description: string): this & Called<'setDescription'> {
     this.description = description;
-    return this;
+    return this as this & Called<'setDescription'>;
   }
 
   /**
@@ -203,9 +249,12 @@ export class StringOption<
    * Set the name of the option. **REQUIRED**
    * @param name {string} The name of the option. This is used to reference the option in the configuration file.
    */
-  override setName<K extends string>(name: K): StringOption<K> {
+  override setName<K extends string>(
+    name: K
+  ): Renamed<StringOption<K>, this> & Called<'setName'> {
     this.name = name as unknown as N;
-    return this as unknown as StringOption<K>;
+    return this as unknown as Renamed<StringOption<K>, this> &
+      Called<'setName'>;
   }
 
   /**
@@ -295,9 +344,12 @@ export class NumberOption<
    * Set the name of the option. **REQUIRED**
    * @param name {string} The name of the option. This is used to reference the option in the configuration file.
    */
-  override setName<K extends string>(name: K): NumberOption<K> {
+  override setName<K extends string>(
+    name: K
+  ): Renamed<NumberOption<K>, this> & Called<'setName'> {
     this.name = name as unknown as N;
-    return this as unknown as NumberOption<K>;
+    return this as unknown as Renamed<NumberOption<K>, this> &
+      Called<'setName'>;
   }
 
   /**
@@ -360,9 +412,12 @@ export class BooleanOption<
    * Set the name of the option. **REQUIRED**
    * @param name {string} The name of the option. This is used to reference the option in the configuration file.
    */
-  override setName<K extends string>(name: K): BooleanOption<K> {
+  override setName<K extends string>(
+    name: K
+  ): Renamed<BooleanOption<K>, this> & Called<'setName'> {
     this.name = name as unknown as N;
-    return this as unknown as BooleanOption<K>;
+    return this as unknown as Renamed<BooleanOption<K>, this> &
+      Called<'setName'>;
   }
 
   /**
@@ -387,16 +442,19 @@ export class ActionOption<
 > extends ConfigurationOption<N> {
   public type: ConfigurationOptionType = 'action';
   public manifest: Record<string, unknown> = {};
-  public buttonText: string = 'Run';
+  public buttonText: string = '';
   public taskName: string = '';
 
   /**
    * Set the name of the option. **REQUIRED**
    * @param name {string} The name of the option. This is used to reference the option in the configuration file.
    */
-  override setName<K extends string>(name: K): ActionOption<K> {
+  override setName<K extends string>(
+    name: K
+  ): Renamed<ActionOption<K>, this> & Called<'setName'> {
     this.name = name as unknown as N;
-    return this as unknown as ActionOption<K>;
+    return this as unknown as Renamed<ActionOption<K>, this> &
+      Called<'setName'>;
   }
 
   /**
@@ -418,12 +476,12 @@ export class ActionOption<
   }
 
   /**
-   * Set the text displayed on the action button.
+   * Set the text displayed on the action button. **REQUIRED**
    * @param text {string} The button text.
    */
-  setButtonText(text: string): this {
+  setButtonText(text: string): this & Called<'setButtonText'> {
     this.buttonText = text;
-    return this;
+    return this as this & Called<'setButtonText'>;
   }
 
   override validate(_input: unknown): [boolean, string] {

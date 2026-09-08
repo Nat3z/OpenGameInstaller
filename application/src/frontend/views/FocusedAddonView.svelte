@@ -394,6 +394,8 @@ async function handleActionClick(key: string) {
     __taskName: taskName,
     ...actionOption.manifest,
   };
+  // Actions only need a name and button text, so fall back for the task label
+  const actionName = actionOption.displayName || actionOption.buttonText || key;
 
   runningActions = { ...runningActions, [key]: true };
   await runFrontendEffect(
@@ -402,7 +404,7 @@ async function handleActionClick(key: string) {
         addonSource: selectedAddon.id,
         addonName: selectedAddon.name,
         manifest,
-        name: actionOption.displayName,
+        name: actionName,
         downloadType: 'task' as const,
         taskName,
         capsuleImage: '',
@@ -542,18 +544,23 @@ async function handleActionClick(key: string) {
         <div class="options">
           <div class="hidden outline-red-500 outline-4"></div>
           {#each Object.keys(selectedAddon.configTemplate) as key}
+            {@const optionDescription =
+              selectedAddon.configTemplate[key].description}
             <div
               class="flex flex-row gap-2 items-center relative"
               data-input-parent
             >
-              <label
-                for={key}
-                onmouseover={showDescription}
-                onfocus={showDescription}
-                onmouseleave={hideDescription}
-                class="config-label"
-                >{selectedAddon.configTemplate[key].displayName}</label
-              >
+              <!-- Actions without a display name are labelled by their button alone -->
+              {#if selectedAddon.configTemplate[key].displayName}
+                <label
+                  for={key}
+                  onmouseover={optionDescription ? showDescription : undefined}
+                  onfocus={optionDescription ? showDescription : undefined}
+                  onmouseleave={optionDescription ? hideDescription : undefined}
+                  class="config-label"
+                  >{selectedAddon.configTemplate[key].displayName}</label
+                >
+              {/if}
               {#if isStringOption(selectedAddon.configTemplate[key])}
                 {@const option = selectedAddon.configTemplate[key]}
                 {#if (option.allowedValues?.length ?? 0) > 0}
@@ -647,12 +654,18 @@ async function handleActionClick(key: string) {
               {/if}
               {#if isActionOption(selectedAddon.configTemplate[key])}
                 {@const option = selectedAddon.configTemplate[key]}
+                <!-- With no label, the button itself is the description trigger -->
+                {@const buttonShowsDescription =
+                  !option.displayName && Boolean(optionDescription)}
                 <button
                   type="button"
                   onclick={(event) => {
                     event.stopPropagation();
                     handleActionClick(key);
                   }}
+                  onmouseover={buttonShowsDescription ? showDescription : undefined}
+                  onfocus={buttonShowsDescription ? showDescription : undefined}
+                  onmouseleave={buttonShowsDescription ? hideDescription : undefined}
                   class="action-button ml-auto"
                   disabled={runningActions[key]}
                   aria-busy={runningActions[key]}
@@ -699,7 +712,7 @@ async function handleActionClick(key: string) {
                   /></svg
                 >
                 <p class="text-blue-400 leading-relaxed relative top-[0.1rem]">
-                  {selectedAddon.configTemplate[key].description}
+                  {optionDescription}
                 </p>
               </div>
             </div>

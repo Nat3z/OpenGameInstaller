@@ -47,11 +47,10 @@ addon.on('configure', (config) =>
         .setButtonText('Run Custom Task')
         .setTaskName('custom-task-name')
     )
+    // Actions only need a name and button text
     .addActionOption((option) =>
       option
-        .setDisplayName('Download API Test')
         .setName('downloadTest')
-        .setDescription('Enqueue and track a download from the addon SDK')
         .setButtonText('Run Download Test')
         .setTaskName('download-test')
     )

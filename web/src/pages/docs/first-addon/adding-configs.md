@@ -42,6 +42,8 @@ option.setDescription(string);
 
 `option.setDescription(string)` sets the description for your option when the user hovers over it for information. This should be human-readable and short.
 
+These requirements are enforced by the type system: the builder's return type records which required setters you called, so leaving one out fails to compile with an error naming the missing setter. Action options are the exception and only need `setName` and `setButtonText`; see [Action Buttons & Tasks](/docs/first-addon/action-buttons-and-tasks).
+
 You can see how the config looks by restarting OpenGameInstaller.
 
 ## How do I get configuration values?

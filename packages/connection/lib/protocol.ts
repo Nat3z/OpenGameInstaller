@@ -620,7 +620,7 @@ export type AddonProtocolEventListenerTypes<
 
 /** Local SDK lifecycle hooks (not declared in `addonProtocol.serverToAddon`). */
 export type AddonSDKLifecycleEventListenerTypes<EventResponse> = {
-  connect: (event: EventResponse, context?: OGIAddonConnectContext) => void;
+  connect: (context: OGIAddonConnectContext, event: EventResponse) => void;
   disconnect: (reason: string) => void;
   exit: () => void;
   response: (response: unknown) => void;

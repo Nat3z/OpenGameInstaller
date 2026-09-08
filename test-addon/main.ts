@@ -70,10 +70,10 @@ addon.on('configure', (config) =>
         .setDescription('A test boolean option')
     )
 );
-addon.on('connect', (_event, context) => {
+addon.on('connect', ({ launchMode }) => {
   addon.notify({
     type: 'info',
-    message: `Connected (${context?.launchMode ?? addon.launchMode} launch)`,
+    message: `Connected (${launchMode} launch)`,
     id: 'connect',
   });
   new Promise(async (resolve) => {

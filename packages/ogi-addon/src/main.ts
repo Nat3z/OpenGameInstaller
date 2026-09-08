@@ -1034,10 +1034,11 @@ class OGIAddonWSListener {
             // Tell the addon how OGI was started so it can selectively start
             // only the components a managed game launch needs.
             const { launchMode } = this.addon;
-            this.eventEmitter.emit('connect', connectEvent, {
-              launchMode,
-              gameSpecificLaunch: launchMode === 'game-launch',
-            });
+            this.eventEmitter.emit(
+              'connect',
+              { launchMode, gameSpecificLaunch: launchMode === 'game-launch' },
+              connectEvent
+            );
             this.schedule(this.runDeferred(connectEvent));
             yield* this.sendEventsAvailable();
           }

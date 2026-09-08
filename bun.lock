@@ -132,7 +132,7 @@
     },
     "packages/connection": {
       "name": "@ogi-sdk/connect",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "dependencies": {
         "@ogi-sdk/errors": "^1.0.0",
         "@ogi-sdk/logger": "^1.0.0",
@@ -195,7 +195,7 @@
     },
     "packages/ogi-addon": {
       "name": "ogi-addon",
-      "version": "4.2.1",
+      "version": "5.2.0",
       "dependencies": {
         "@ogi-sdk/connect": "^1.0.2",
         "@ogi-sdk/errors": "^1.0.0",

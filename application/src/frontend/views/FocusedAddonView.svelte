@@ -654,12 +654,18 @@ async function handleActionClick(key: string) {
               {/if}
               {#if isActionOption(selectedAddon.configTemplate[key])}
                 {@const option = selectedAddon.configTemplate[key]}
+                <!-- With no label, the button itself is the description trigger -->
+                {@const buttonShowsDescription =
+                  !option.displayName && Boolean(optionDescription)}
                 <button
                   type="button"
                   onclick={(event) => {
                     event.stopPropagation();
                     handleActionClick(key);
                   }}
+                  onmouseover={buttonShowsDescription ? showDescription : undefined}
+                  onfocus={buttonShowsDescription ? showDescription : undefined}
+                  onmouseleave={buttonShowsDescription ? hideDescription : undefined}
                   class="action-button ml-auto"
                   disabled={runningActions[key]}
                   aria-busy={runningActions[key]}

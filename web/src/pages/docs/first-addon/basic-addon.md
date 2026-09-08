@@ -33,3 +33,19 @@ local:[THE PATH TO YOUR ADDON'S WORKING DIRECTORY]
 ```
 
 Then, press `Install All` and `Restart Addon Server` to initialize your addon!
+
+## Knowing how OGI was launched
+
+OpenGameInstaller can be started two ways: the user opens the app itself (`full`), or a managed Steam shortcut starts OGI just to run one game and then exits (`game-launch`). The `connect` event tells you which, so a game-launch session can skip work that only matters in the full app (indexing catalogs, background update checks, and so on).
+
+```typescript
+addon.on('connect', (_event, context) => {
+  if (context?.launchMode === 'game-launch') {
+    // only start what a single game launch needs
+    return;
+  }
+  startCatalogIndexer();
+});
+```
+
+The same value is available anywhere as `addon.launchMode`. `context.gameSpecificLaunch` is a boolean shorthand for `launchMode === 'game-launch'`.

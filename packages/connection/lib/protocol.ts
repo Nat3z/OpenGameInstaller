@@ -627,11 +627,19 @@ export type AddonSDKLifecycleEventListenerTypes<EventResponse> = {
 };
 
 /**
- * Context passed to the addon SDK `connect` listener. `gameSpecificLaunch` is
- * true when this session was started for a specific game (Steam shortcut
- * launch), so addons can selectively start only the components they need.
+ * How the OGI session hosting the addon was started.
+ * - `full`: the user opened OpenGameInstaller itself.
+ * - `game-launch`: OGI was started by a managed Steam shortcut to run one game
+ *   (including hook-only pre/post launches) and will exit when it is done.
+ */
+export type OGIAddonLaunchMode = 'full' | 'game-launch';
+
+/**
+ * Context passed to the addon SDK `connect` listener so addons can decide which
+ * components to start. `gameSpecificLaunch` mirrors `launchMode === 'game-launch'`.
  */
 export type OGIAddonConnectContext = {
+  launchMode: OGIAddonLaunchMode;
   gameSpecificLaunch: boolean;
 };
 

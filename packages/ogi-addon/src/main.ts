@@ -16,6 +16,7 @@ import type {
   CatalogResponse,
   LibraryInfo,
   OGIAddonConfiguration,
+  OGIAddonLaunchMode,
   OGIAddonSDKEventListener,
   SearchResult,
   SetupResponse,
@@ -71,6 +72,8 @@ export type {
   ConfigurationOptionWire,
   LibraryInfo,
   OGIAddonConfiguration,
+  OGIAddonConnectContext,
+  OGIAddonLaunchMode,
   OGIAddonSDKEventListener,
   SearchResult,
   SetupCommandData,
@@ -222,6 +225,13 @@ export default class OGIAddon {
   public eventEmitter = new events.EventEmitter();
   private readonly addonWSListener: OGIAddonWSListener;
   public addonInfo: OGIAddonConfiguration;
+  /**
+   * How the hosting OGI session was started. The executor sets OGI_GAME_LAUNCH
+   * for managed Steam-shortcut sessions; anything else is a full app launch.
+   * Also handed to the `connect` listener, but readable here from any handler.
+   */
+  public readonly launchMode: OGIAddonLaunchMode =
+    process.env.OGI_GAME_LAUNCH === '1' ? 'game-launch' : 'full';
   public config: Configuration = new Configuration({});
   private eventsAvailable: OGIAddonSDKEventListener[] = [];
   private readonly runtime = makeWarmRuntime();
@@ -1021,10 +1031,12 @@ class OGIAddonWSListener {
           if (!this.configConnected) {
             this.configConnected = true;
             const connectEvent = this.makeEventResponse<void>();
-            // Game-specific launches (Steam shortcut) set OGI_GAME_LAUNCH so
-            // addons can selectively start only the components they need.
+            // Tell the addon how OGI was started so it can selectively start
+            // only the components a managed game launch needs.
+            const { launchMode } = this.addon;
             this.eventEmitter.emit('connect', connectEvent, {
-              gameSpecificLaunch: process.env.OGI_GAME_LAUNCH === '1',
+              launchMode,
+              gameSpecificLaunch: launchMode === 'game-launch',
             });
             this.schedule(this.runDeferred(connectEvent));
             yield* this.sendEventsAvailable();

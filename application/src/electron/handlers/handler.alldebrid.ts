@@ -1,12 +1,18 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileSystemError, formatError, HttpError } from '@ogi-sdk/errors';
+import {
+  ConfigError,
+  FileSystemError,
+  formatError,
+  HttpError,
+} from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import AllDebrid from 'all-debrid-js';
 import axios from 'axios';
-import { Effect, Schema } from 'effect';
+import { Effect } from 'effect';
 import type { ReadStream } from 'original-fs';
+import { getDatabase } from '@/electron/database/index.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
@@ -15,43 +21,14 @@ import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.allDebrid);
 
-const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
-const ConfigSchema = Schema.Struct({
-  alldebridApiKey: Schema.optional(Schema.String),
-});
 let allDebridClient = new AllDebrid({ apiKey: 'UNSET' });
 
+/** The stored key, or null when it has never been set. */
 const readKey = () =>
-  Effect.gen(function* () {
-    const raw = yield* Effect.tryPromise({
-      try: () => fsAsync.readFile(CONFIG_PATH, 'utf-8'),
-      catch: (cause) =>
-        new FileSystemError({
-          message: formatError(cause),
-          path: CONFIG_PATH,
-          cause,
-        }),
-    });
-    const json = yield* Effect.try({
-      try: () => JSON.parse(raw) as unknown,
-      catch: (cause) =>
-        new FileSystemError({
-          message: formatError(cause),
-          path: CONFIG_PATH,
-          cause,
-        }),
-    });
-    const config = yield* Schema.decodeUnknown(ConfigSchema)(json).pipe(
-      Effect.mapError(
-        (cause) =>
-          new FileSystemError({
-            message: String(cause),
-            path: CONFIG_PATH,
-            cause,
-          })
-      )
-    );
-    return config.alldebridApiKey ?? null;
+  Effect.try({
+    try: () => getDatabase().getSettings().alldebridApiKey || null,
+    catch: (cause) =>
+      new ConfigError({ message: formatError(cause), key: 'alldebridApiKey' }),
   });
 
 const notifyFailure = <A, E>(

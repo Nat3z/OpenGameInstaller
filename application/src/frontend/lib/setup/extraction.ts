@@ -53,7 +53,7 @@ export function drillDownSingleDirectories(startDir: string) {
   );
 }
 
-/** Extracts the archive (which is deleted afterwards) and returns the content root. */
+/** Extracts the archive (which is deleted afterwards) and returns `outputDir`. */
 function extractArchive(params: {
   archivePath: string;
   outputDir: string;
@@ -100,10 +100,14 @@ export function unzipAndReturnOutputDir(params: {
   outputDirBase: string;
   downloadId: string;
 }) {
+  // ZIPs commonly wrap everything in one folder; hand the addon the real root.
   return extractArchive({
     archivePath: params.zipFilePath,
     outputDir: params.outputDirBase,
     downloadId: params.downloadId,
     kind: 'ZIP',
-  }).pipe(Effect.map((outputDir) => `${outputDir}/`));
+  }).pipe(
+    Effect.flatMap(drillDownSingleDirectories),
+    Effect.map((outputDir) => `${outputDir}/`)
+  );
 }

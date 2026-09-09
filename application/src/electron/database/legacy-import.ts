@@ -1,6 +1,6 @@
-import type { LibraryInfo } from '@ogi-sdk/connect';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { LibraryInfo } from '@ogi-sdk/connect';
 import type { FailedSetup, PersistedDownload } from '@/lib/download-state.js';
 import type { Settings, UpdateState } from '@/lib/state.js';
 import type { AppDatabase } from './database.js';
@@ -97,7 +97,11 @@ const isLibraryInfo = (value: unknown): value is LibraryInfo =>
 
 /** Pre-2.0 entries keyed by `steamAppID`; folded in from the old `convertLibrary` step. */
 const upgradeSteamEntry = (value: unknown): unknown => {
-  if (!isRecord(value) || !isNumber(value.steamAppID) || isNumber(value.appID)) {
+  if (
+    !isRecord(value) ||
+    !isNumber(value.steamAppID) ||
+    isNumber(value.appID)
+  ) {
     return value;
   }
   const { steamAppID, ...rest } = value;

@@ -47,22 +47,9 @@ setInterval(() => {
   dbg_lastReportTime = now;
 }, 3000);
 
+// Filesystem access is deliberately absent: the renderer reaches state and
+// setup operations through the RPC layer, never the app data directory.
 const electronApi = {
-  fs: {
-    read: wrap((path: string) => ipcRenderer.sendSync('fs:read', path)),
-    write: wrap((path: string, data: string) =>
-      ipcRenderer.sendSync('fs:write', { path, data })
-    ),
-    mkdir: wrap((path: string) => ipcRenderer.sendSync('fs:mkdir', path)),
-    exists: wrap((path: string) => ipcRenderer.sendSync('fs:exists', path)),
-    delete: wrap((path: string) =>
-      ipcRenderer.sendSync('fs:delete:sync', path)
-    ),
-    showFileLoc: wrap((path: string) =>
-      ipcRenderer.sendSync('fs:show-file-loc', path)
-    ),
-    stat: wrap((path: string) => ipcRenderer.sendSync('fs:stat', { path })),
-  },
   app: {
     clientReadyForEvents: wrap(() =>
       ipcRenderer.send('client-ready-for-events')

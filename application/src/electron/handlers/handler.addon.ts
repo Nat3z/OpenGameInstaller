@@ -5,8 +5,8 @@ import { exec } from 'child_process';
 import { Effect, Schedule } from 'effect';
 import { BrowserWindow } from 'electron';
 import fs from 'fs';
-import fsAsync from 'fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'path';
+import { getDatabase } from '@/electron/database/index.js';
 import {
   normalizeAddonLink,
   parseAddonLink,
@@ -66,13 +66,8 @@ const loadedMarketplaces: AddonMarketplace[] = [];
 
 export function startAddons(): Effect.Effect<void, AddonError> {
   return Effect.gen(function* () {
-    const configPath = join(__dirname, 'config/option/general.json');
     const addons = yield* Effect.try({
-      try: () => {
-        if (!fs.existsSync(configPath)) return [] as string[];
-        const generalConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        return generalConfig.addons as string[];
-      },
+      try: () => getDatabase().getSettings().addons,
       catch: (cause) =>
         new AddonError({
           message: `Failed to read addon configuration: ${String(cause)}`,
@@ -248,17 +243,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               .filter(Boolean)
           : [];
 
-        const generalConfigPath = join(
-          __dirname,
-          'config',
-          'option',
-          'general.json'
-        );
-        const stagedUpdate = yield* Effect.tryPromise({
-          try: async () =>
-            JSON.parse(
-              await fsAsync.readFile(generalConfigPath, { encoding: 'utf-8' })
-            ) as { addons: string[] },
+        const stagedUpdate = yield* Effect.try({
+          try: () => ({ addons: getDatabase().getSettings().addons }),
           catch: (cause) =>
             new AddonError({
               message: `Failed to read addon configuration: ${String(cause)}`,
@@ -608,13 +594,9 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             )
           );
         }
-        yield* Effect.tryPromise({
+        yield* Effect.try({
           try: () =>
-            fsAsync.writeFile(
-              generalConfigPath,
-              JSON.stringify(stagedUpdate),
-              'utf-8'
-            ),
+            getDatabase().updateSettings({ addons: stagedUpdate.addons }),
           catch: (cause) =>
             new AddonError({
               message: `Failed to write addon configuration: ${String(cause)}`,
@@ -735,15 +717,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         const config = yield* Effect.try({
           try: () => {
             if (!fs.existsSync(join(__dirname, 'addons/'))) return null;
-            const generalConfig = JSON.parse(
-              fs.readFileSync(
-                join(__dirname, 'config/option/general.json'),
-                'utf-8'
-              )
-            ) as { addons: string[] };
+            const { addons } = getDatabase().getSettings();
             return {
-              addons: generalConfig.addons,
-              normalizedAddons: generalConfig.addons.map((addon) =>
+              addons,
+              normalizedAddons: addons.map((addon) =>
                 normalizeAddonLink(addon)
               ),
             };

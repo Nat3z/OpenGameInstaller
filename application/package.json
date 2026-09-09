@@ -15,6 +15,7 @@
     "files": [
       "public/**/*",
       "out/**/*",
+      "drizzle/**/*",
       "node_modules/**/*"
     ],
     "win": {},
@@ -33,6 +34,7 @@
   },
   "scripts": {
     "build": "electron-vite build",
+    "db:generate": "drizzle-kit generate",
     "build:all": "bun run --cwd .. --filter './packages/*' build",
     "dev": "bun run build:all && ELECTRON_EXEC_PATH=\"$(bun -e \"console.log(require('electron'))\" )\" electron-vite dev",
     "preview": "electron-vite preview",
@@ -40,6 +42,7 @@
     "preelectron-pack": "bun run build:all && bun run build && electron-rebuild",
     "preelectron-pack:linux": "bun run build:all && bun run build && electron-rebuild",
     "electron-pack": "electron-builder",
+    "rebuild": "electron-rebuild -w better-sqlite3",
     "format": "biome check --write src package.json --files-ignore-unknown=true",
     "lint": "biome check src package.json --files-ignore-unknown=true",
     "typecheck": "tsc -p src/electron/tsconfig.json --noEmit && svelte-check --tsconfig src/frontend/tsconfig.json --threshold error",

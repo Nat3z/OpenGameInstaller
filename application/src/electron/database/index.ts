@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { app } from 'electron';
@@ -13,8 +13,7 @@ export { AppDatabase } from './database.js';
 export const DATABASE_FILENAME = 'ogi.sqlite';
 
 /** Bundled with the app so a packaged build can migrate on first launch. */
-export const migrationsFolder = (): string =>
-  join(app.getAppPath(), 'drizzle');
+export const migrationsFolder = (): string => join(app.getAppPath(), 'drizzle');
 
 let database: AppDatabase | undefined;
 
@@ -36,6 +35,14 @@ export function openDatabase(
   client.pragma('busy_timeout = 5000');
   const opened = new AppDatabase(drizzle(client), migrations);
   importLegacyState(directory, opened);
+  // The renderer used to resolve `./downloads` against the data dir; pin it so
+  // every process agrees and path guards can require absolute paths.
+  const { fileDownloadLocation } = opened.getSettings();
+  if (!isAbsolute(fileDownloadLocation)) {
+    opened.updateSettings({
+      fileDownloadLocation: resolve(directory, fileDownloadLocation),
+    });
+  }
   return opened;
 }
 

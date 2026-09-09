@@ -2,7 +2,7 @@ import type { AddonConnection } from '@ogi-sdk/addon-server';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { Addon } from '@/electron/manager/manager.addon.js';
-import { addonServer } from '@/electron/server/addon-server.js';
+import { getAddonServer } from '@/electron/server/addon-server.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -13,7 +13,7 @@ function addonFolderName(addonPath: string): string {
 function manifestReadyConnections(): AddonConnection[] {
   const ready: AddonConnection[] = [];
   for (const addonPath of Addon.running.keys()) {
-    const client = addonServer.getClient(addonFolderName(addonPath));
+    const client = getAddonServer().getClient(addonFolderName(addonPath));
     if (client?.addonInfo && client.configTemplate !== undefined) {
       ready.push(client);
     }

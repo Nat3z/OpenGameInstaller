@@ -351,7 +351,11 @@ export const ElectronRpc = {
     /** Read-only probe for user-entered paths (download folder, local addons). */
     pathExists: rpc('fs.pathExists', [Schema.String], Schema.Boolean),
     /** Reveals the path in the OS file manager; false when it no longer exists. */
-    showItemInFolder: rpc('fs.showItemInFolder', [Schema.String], Schema.Boolean),
+    showItemInFolder: rpc(
+      'fs.showItemInFolder',
+      [Schema.String],
+      Schema.Boolean
+    ),
   },
   /** Post-download processing. Every path is a game download directory. */
   setup: {
@@ -366,7 +370,11 @@ export const ElectronRpc = {
       })
     ),
     /** Moves `old_files` back into `directory`; true when everything was restored. */
-    revertOldFiles: rpc('setup.revertOldFiles', [Schema.String], Schema.Boolean),
+    revertOldFiles: rpc(
+      'setup.revertOldFiles',
+      [Schema.String],
+      Schema.Boolean
+    ),
     discardOldFiles: rpc('setup.discardOldFiles', [Schema.String], Void),
     /** Descends through single-child directories to the real content root. */
     resolveContentRoot: rpc(
@@ -380,7 +388,7 @@ export const ElectronRpc = {
       [Schema.String, Schema.Literal('rar', 'zip')],
       Schema.NullOr(Schema.String)
     ),
-    /** Extracts an archive, deletes it, and returns the resolved content root. */
+    /** Extracts an archive into `outputDir` and deletes it afterwards. */
     extractArchive: rpc(
       'setup.extractArchive',
       [
@@ -431,14 +439,22 @@ export const ElectronRpc = {
       [],
       opaque<PersistedDownload[]>()
     ),
-    saveDownload: rpc('state.saveDownload', [opaque<PersistedDownload>()], Void),
+    saveDownload: rpc(
+      'state.saveDownload',
+      [opaque<PersistedDownload>()],
+      Void
+    ),
     deleteDownload: rpc('state.deleteDownload', [Schema.String], Void),
     listFailedSetups: rpc(
       'state.listFailedSetups',
       [],
       opaque<FailedSetup[]>()
     ),
-    saveFailedSetup: rpc('state.saveFailedSetup', [opaque<FailedSetup>()], Void),
+    saveFailedSetup: rpc(
+      'state.saveFailedSetup',
+      [opaque<FailedSetup>()],
+      Void
+    ),
     deleteFailedSetup: rpc('state.deleteFailedSetup', [Schema.String], Void),
     /** Returns a cached data URL for `key`, fetching and caching `url` on a miss. */
     loadImage: rpc(

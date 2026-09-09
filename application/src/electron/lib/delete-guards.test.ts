@@ -62,7 +62,6 @@ const others = [
 ];
 
 describe('sharesDirectoryWithOtherGames', () => {
-
   test('detects exact, parent, and child overlaps with other games', () => {
     expect(sharesDirectoryWithOtherGames(9, '/games/alpha', others)).toBe(true);
     expect(sharesDirectoryWithOtherGames(9, '/games', others)).toBe(true);

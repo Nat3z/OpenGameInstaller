@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { AppDatabase } from '../src/electron/database/database.js';
 import { importLegacyState } from '../src/electron/database/legacy-import.js';
 
@@ -38,12 +38,18 @@ describe('AppDatabase', () => {
       'https://ogi-marketplace.nat3z.com',
     ]);
     db.updateSettings({ theme: 'dark', addons: ['git@x/y'] });
-    expect(db.getSettings()).toMatchObject({ theme: 'dark', addons: ['git@x/y'] });
+    expect(db.getSettings()).toMatchObject({
+      theme: 'dark',
+      addons: ['git@x/y'],
+    });
   });
 
   test('library round-trips optional fields and launch recency', () => {
     const db = open();
-    db.saveGame({ ...game(1), umu: { umuId: 'umu:1', dllOverrides: ['d3d9'] } });
+    db.saveGame({
+      ...game(1),
+      umu: { umuId: 'umu:1', dllOverrides: ['d3d9'] },
+    });
     db.saveGame(game(2));
     db.saveGame(game(3));
     expect(db.getGame(1)?.umu?.dllOverrides).toEqual(['d3d9']);
@@ -56,7 +62,10 @@ describe('AppDatabase', () => {
   });
 
   test('staged removals restore on rollback and after a crash', () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ogi-db-')), 'db');
+    const file = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'ogi-db-')),
+      'db'
+    );
     temporary.push(path.dirname(file));
     let db = open(file);
     db.saveGame(game(7));
@@ -115,12 +124,20 @@ describe('legacy import', () => {
       torrentClient: 'qbittorrent',
       marketplaceSources: [],
     });
-    write('config/option/realdebrid.json', { debridApiKey: 'rd', torboxApiKey: '' });
+    write('config/option/realdebrid.json', {
+      debridApiKey: 'rd',
+      torboxApiKey: '',
+    });
     write('config/option/developer.json', { disableSecretCheck: true });
     write('config/option/steamgriddb.json', { apiKey: ' sg ' });
     write('config/option/installed.json', { installed: true });
     write('config/option/lastVersion.txt', '4.3.0\n');
-    write('config/my-addon.json', { limit: 3, on: true, name: 'x', nested: {} });
+    write('config/my-addon.json', {
+      limit: 3,
+      on: true,
+      name: 'x',
+      nested: {},
+    });
     write('library/10.json', game(10));
     write('library/11.json', game(11));
     write('library/12.json.ogi-removing-1-2', game(12));
@@ -163,7 +180,11 @@ describe('legacy import', () => {
       oobeRestartRequired: false,
       lastVersion: '4.3.0',
     });
-    expect(db.getAddonConfig('my-addon')).toEqual({ limit: 3, on: true, name: 'x' });
+    expect(db.getAddonConfig('my-addon')).toEqual({
+      limit: 3,
+      on: true,
+      name: 'x',
+    });
     expect(db.listGames().map((entry) => entry.appID)).toEqual([11, 10, 12]);
     expect(db.getUpdateState()).toEqual({
       requiredReadds: [{ appID: 10, steamAppId: 5 }],

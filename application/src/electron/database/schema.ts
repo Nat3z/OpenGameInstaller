@@ -50,9 +50,7 @@ export const settings = sqliteTable('settings', {
   qbitUsername: text('qbit_username').notNull().default('admin'),
   qbitPassword: text('qbit_password').notNull().default('admin'),
   disableSecretCheck: bool('disable_secret_check').notNull().default(false),
-  clientSdkUrl: text('client_sdk_url')
-    .notNull()
-    .default('ws://127.0.0.1:7654'),
+  clientSdkUrl: text('client_sdk_url').notNull().default('ws://127.0.0.1:7654'),
   steamGridDbApiKey: text('steam_grid_db_api_key').notNull().default(''),
 });
 

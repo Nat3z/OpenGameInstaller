@@ -35,9 +35,7 @@ const toLibraryInfo = (row: LibraryRow): LibraryInfo => ({
   }),
 });
 
-const toLibraryRow = (
-  info: LibraryInfo
-): Omit<LibraryRow, 'recentRank'> => ({
+const toLibraryRow = (info: LibraryInfo): Omit<LibraryRow, 'recentRank'> => ({
   appId: info.appID,
   name: info.name,
   version: info.version,
@@ -77,9 +75,13 @@ export class AppDatabase {
       };
       session: unknown;
     };
-    migrator.dialect.migrate(readMigrationFiles({ migrationsFolder }), migrator.session, {
-      migrationsFolder,
-    });
+    migrator.dialect.migrate(
+      readMigrationFiles({ migrationsFolder }),
+      migrator.session,
+      {
+        migrationsFolder,
+      }
+    );
     this.transaction(() => {
       db.insert(schema.settings).values({ id: 1 }).onConflictDoNothing().run();
       db.insert(schema.appState).values({ id: 1 }).onConflictDoNothing().run();
@@ -180,7 +182,8 @@ export class AppDatabase {
         key,
         value,
       }));
-      if (rows.length > 0) this.db.insert(schema.addonConfig).values(rows).run();
+      if (rows.length > 0)
+        this.db.insert(schema.addonConfig).values(rows).run();
     });
   }
 
@@ -267,8 +270,14 @@ export class AppDatabase {
         .where(eq(schema.library.appId, appID))
         .get();
       if (!row) throw new Error(`Game ${appID} is not in the library`);
-      this.db.insert(schema.libraryRemovals).values({ appId: appID, row }).run();
-      this.db.delete(schema.library).where(eq(schema.library.appId, appID)).run();
+      this.db
+        .insert(schema.libraryRemovals)
+        .values({ appId: appID, row })
+        .run();
+      this.db
+        .delete(schema.library)
+        .where(eq(schema.library.appId, appID))
+        .run();
     });
     let settled = false;
     return {
@@ -296,7 +305,11 @@ export class AppDatabase {
         .where(eq(schema.libraryRemovals.appId, appID))
         .get();
       if (!removal) return;
-      this.db.insert(schema.library).values(removal.row).onConflictDoNothing().run();
+      this.db
+        .insert(schema.library)
+        .values(removal.row)
+        .onConflictDoNothing()
+        .run();
       this.db
         .delete(schema.libraryRemovals)
         .where(eq(schema.libraryRemovals.appId, appID))
@@ -442,7 +455,10 @@ export class AppDatabase {
 
   getCachedImage(key: string): { mimeType: string; bytes: Uint8Array } | null {
     const row = this.db
-      .select({ mimeType: schema.imageCache.mimeType, bytes: schema.imageCache.bytes })
+      .select({
+        mimeType: schema.imageCache.mimeType,
+        bytes: schema.imageCache.bytes,
+      })
       .from(schema.imageCache)
       .where(eq(schema.imageCache.key, key))
       .get();
@@ -450,7 +466,12 @@ export class AppDatabase {
   }
 
   putCachedImage(key: string, mimeType: string, bytes: Uint8Array): void {
-    const row = { key, mimeType, bytes: Buffer.from(bytes), cachedAt: Date.now() };
+    const row = {
+      key,
+      mimeType,
+      bytes: Buffer.from(bytes),
+      cachedAt: Date.now(),
+    };
     this.db
       .insert(schema.imageCache)
       .values(row)

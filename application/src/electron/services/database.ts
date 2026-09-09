@@ -77,8 +77,10 @@ export type DatabaseShape = {
     readonly get: (
       id: string
     ) => Effect.Effect<ReturnType<AppDatabase['getDownload']>, DatabaseError>;
+    /** `root` is the location the record was validated under (insert only). */
     readonly save: (
-      record: Parameters<AppDatabase['saveDownload']>[0]
+      record: Parameters<AppDatabase['saveDownload']>[0],
+      root?: string | null
     ) => Effect.Effect<void, DatabaseError>;
     readonly delete: (id: string) => Effect.Effect<void, DatabaseError>;
   };
@@ -87,10 +89,23 @@ export type DatabaseShape = {
       ReturnType<AppDatabase['listFailedSetups']>,
       DatabaseError
     >;
+    readonly get: (
+      id: string
+    ) => Effect.Effect<
+      ReturnType<AppDatabase['getFailedSetup']>,
+      DatabaseError
+    >;
+    /** `root` is the location the record was validated under (insert only). */
     readonly save: (
-      setup: Parameters<AppDatabase['saveFailedSetup']>[0]
+      setup: Parameters<AppDatabase['saveFailedSetup']>[0],
+      root?: string | null
     ) => Effect.Effect<void, DatabaseError>;
     readonly delete: (id: string) => Effect.Effect<void, DatabaseError>;
+  };
+  /** Download locations persisted downloads and failed setups started under. */
+  readonly downloadRoots: {
+    readonly list: Effect.Effect<string[], DatabaseError>;
+    readonly get: (id: string) => Effect.Effect<string | null, DatabaseError>;
   };
   readonly updateState: {
     readonly get: Effect.Effect<
@@ -118,7 +133,6 @@ export type DatabaseShape = {
   readonly transaction: <A>(
     operation: (database: AppDatabase) => A
   ) => Effect.Effect<A, DatabaseError>;
-  readonly checkpoint: Effect.Effect<void, DatabaseError>;
 };
 
 export class Database extends Context.Tag('Database')<
@@ -175,15 +189,21 @@ export const makeDatabase = (resolve: () => AppDatabase): DatabaseShape => {
     downloads: {
       list: call('downloads.list', (db) => db.listDownloads()),
       get: (id) => call('downloads.get', (db) => db.getDownload(id)),
-      save: (record) => call('downloads.save', (db) => db.saveDownload(record)),
+      save: (record, root) =>
+        call('downloads.save', (db) => db.saveDownload(record, root)),
       delete: (id) => call('downloads.delete', (db) => db.deleteDownload(id)),
     },
     failedSetups: {
       list: call('failedSetups.list', (db) => db.listFailedSetups()),
-      save: (setup) =>
-        call('failedSetups.save', (db) => db.saveFailedSetup(setup)),
+      get: (id) => call('failedSetups.get', (db) => db.getFailedSetup(id)),
+      save: (setup, root) =>
+        call('failedSetups.save', (db) => db.saveFailedSetup(setup, root)),
       delete: (id) =>
         call('failedSetups.delete', (db) => db.deleteFailedSetup(id)),
+    },
+    downloadRoots: {
+      list: call('downloadRoots.list', (db) => db.listDownloadRoots()),
+      get: (id) => call('downloadRoots.get', (db) => db.getDownloadRoot(id)),
     },
     updateState: {
       get: call('updateState.get', (db) => db.getUpdateState()),
@@ -196,7 +216,6 @@ export const makeDatabase = (resolve: () => AppDatabase): DatabaseShape => {
     },
     transaction: (operation) =>
       call('transaction', (db) => db.transaction(() => operation(db))),
-    checkpoint: call('checkpoint', (db) => db.checkpoint()),
   };
 };
 

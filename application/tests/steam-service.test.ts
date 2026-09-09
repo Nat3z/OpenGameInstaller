@@ -43,12 +43,16 @@ mock.module('electron', () => ({
 const migrations = path.join(import.meta.dir, '../drizzle');
 
 let database: AppDatabase;
-let setDatabase: typeof import('../src/electron/database/index.js').setDatabase;
+/** The application services over the in-memory database for the current test. */
+let servicesLayer: ReturnType<
+  typeof import('../src/electron/services/index.js').AppServicesTest
+>;
+let AppServicesTest: typeof import('../src/electron/services/index.js').AppServicesTest;
 let SteamService: typeof import('../src/electron/handlers/helpers.app/steam.js').SteamService;
 let SteamServiceLive: typeof import('../src/electron/handlers/helpers.app/steam.js').SteamServiceLive;
 
 beforeAll(async () => {
-  ({ setDatabase } = await import('../src/electron/database/index.js'));
+  ({ AppServicesTest } = await import('../src/electron/services/index.js'));
   ({ SteamService, SteamServiceLive } = await import(
     '../src/electron/handlers/helpers.app/steam.js'
   ));
@@ -56,14 +60,13 @@ beforeAll(async () => {
 
 beforeEach(() => {
   database = new AppDatabase(drizzle(new Database(':memory:')), migrations);
-  setDatabase(database);
+  servicesLayer = AppServicesTest(database);
 });
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  setDatabase(undefined);
 });
 
 afterAll(() => {
@@ -165,7 +168,9 @@ describe('Steam service', () => {
         }),
     });
     const layer = SteamServiceLive.pipe(
-      Layer.provide(Layer.merge(repositoryLayer, processLayer))
+      Layer.provide(
+        Layer.mergeAll(repositoryLayer, processLayer, servicesLayer)
+      )
     );
 
     const result = await Effect.runPromise(
@@ -215,7 +220,9 @@ describe('Steam service', () => {
       modifyShortcuts: () => Effect.die('unexpected mutation'),
     });
     const layer = SteamServiceLive.pipe(
-      Layer.provide(Layer.merge(repositoryLayer, processLayer))
+      Layer.provide(
+        Layer.mergeAll(repositoryLayer, processLayer, servicesLayer)
+      )
     );
 
     const result = await Effect.runPromise(
@@ -307,7 +314,9 @@ describe('Steam service', () => {
         }),
     });
     const layer = SteamServiceLive.pipe(
-      Layer.provide(Layer.merge(repositoryLayer, runningProcessLayer))
+      Layer.provide(
+        Layer.mergeAll(repositoryLayer, runningProcessLayer, servicesLayer)
+      )
     );
 
     const result = await Effect.runPromise(
@@ -388,7 +397,9 @@ describe('Steam service', () => {
         }),
     });
     const layer = SteamServiceLive.pipe(
-      Layer.provide(Layer.merge(repositoryLayer, processLayer))
+      Layer.provide(
+        Layer.mergeAll(repositoryLayer, processLayer, servicesLayer)
+      )
     );
 
     const added = await Effect.runPromise(
@@ -457,7 +468,9 @@ describe('Steam service', () => {
         }),
     });
     const layer = SteamServiceLive.pipe(
-      Layer.provide(Layer.merge(repositoryLayer, processLayer))
+      Layer.provide(
+        Layer.mergeAll(repositoryLayer, processLayer, servicesLayer)
+      )
     );
 
     await Effect.runPromise(
@@ -497,7 +510,9 @@ describe('Steam service', () => {
         }),
     });
     const layer = SteamServiceLive.pipe(
-      Layer.provide(Layer.merge(repositoryLayer, processLayer))
+      Layer.provide(
+        Layer.mergeAll(repositoryLayer, processLayer, servicesLayer)
+      )
     );
 
     await Effect.runPromise(

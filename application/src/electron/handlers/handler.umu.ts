@@ -7,16 +7,16 @@ import { ipcProcedure, procedure, router } from '@/electron/rpc/router-core.js';
  */
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { formatError, PlatformError } from '@ogi-sdk/errors';
+import {
+  type DatabaseError,
+  formatError,
+  PlatformError,
+} from '@ogi-sdk/errors';
 import { type ChildProcess, type SpawnOptions, spawn } from 'child_process';
 import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getSilentInstallFlags } from '@/electron/handlers/helpers.app/install-flags.js';
-import {
-  loadLibraryInfo,
-  saveLibraryInfo,
-} from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import {
   getCompatDataDir,
@@ -41,8 +41,10 @@ import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import {
   runElectronEffect,
+  runElectronSync,
   runEffectBoundary as runUmuBoundary,
 } from '@/electron/runtime.js';
+import { Library } from '@/electron/services/index.js';
 import { downloadLatestUmu } from '@/electron/startup.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
@@ -474,205 +476,199 @@ export function buildDllOverrides(dllOverrides: string[]): string {
  * @param libraryInfo - Game library entry
  * @param options.onExit - Optional callback when the game process exits (for UI lifecycle events)
  */
-export async function launchWithUmu(
+export function launchWithUmu(
   libraryInfo: LibraryInfo,
   options?: {
     onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
   }
-): Promise<{ success: boolean; error?: string; pid?: number }> {
-  if (!isLinux()) {
-    return { success: false, error: 'UMU is only available on Linux' };
-  }
-
-  if (!libraryInfo.umu) {
-    return { success: false, error: 'No UMU configuration found' };
-  }
-
-  // Ensure UMU is installed
-  const umuInstalled = await isUmuInstalled();
-  if (!umuInstalled) {
-    logger.sync.info('[umu] UMU not found, attempting auto-install...');
-    const installResult = await installUmu();
-    if (!installResult.success) {
-      return {
-        success: false,
-        error: `UMU not installed and auto-install failed: ${installResult.error}`,
-      };
+): Effect.Effect<{ success: boolean; error?: string; pid?: number }> {
+  return Effect.gen(function* () {
+    if (!isLinux()) {
+      return { success: false, error: 'UMU is only available on Linux' };
     }
-  }
 
-  ensureUmuPrefixBase();
+    if (!libraryInfo.umu) {
+      return { success: false, error: 'No UMU configuration found' };
+    }
 
-  const { umuId, protonVersion, store } = libraryInfo.umu;
-  const protonPath = normalizeProtonPathValue(protonVersion);
-  const gameId = convertUmuId(umuId);
-  const winePrefix = getLibraryUmuWinePrefix(libraryInfo);
-  const launchEnv = getEffectiveLaunchEnv(libraryInfo);
-  const dllOverrides = getEffectiveDllOverrides(libraryInfo);
-  const dllOverrideStr = buildDllOverrides(dllOverrides);
-
-  // Build environment variables
-  const env = getUmuLaunchEnvironment({
-    launchEnvironment: launchEnv,
-    gameId,
-    winePrefix,
-    cwd: libraryInfo.cwd,
-    protonPath,
-  });
-
-  if (store) {
-    env.STORE = store;
-  }
-
-  // Build DLL overrides
-  if (dllOverrideStr) {
-    env.WINEDLLOVERRIDES = dllOverrideStr;
-  }
-
-  const exePath = libraryInfo.launchExecutable;
-  const { command, args, tokens } = resolveLaunchCommand(
-    umuRunExecutable,
-    libraryInfo.launchArguments,
-    [exePath]
-  );
-  const spawnInvocation = resolveSpawnInvocation(command, args, tokens);
-
-  // Log launch info without leaking full env (may contain secrets)
-  const envSummary = {
-    keyCount: Object.keys(env).length,
-    hasWINEPREFIX: 'WINEPREFIX' in env,
-    hasPROTONPATH: 'PROTONPATH' in env,
-  };
-  logger.sync.info('[umu] Launching game:', {
-    name: libraryInfo.name,
-    gameId,
-    winePrefix,
-    protonVersion: protonPath,
-    store: store || 'none',
-    hasDllOverrides: dllOverrides.length > 0,
-    environment: envSummary,
-  });
-
-  return new Promise((resolve) => {
-    logger.sync.info("[umu] command i'm running: ", command, args);
-    const spawnOptions: SpawnOptions = {
-      cwd: libraryInfo.cwd,
-      shell: spawnInvocation.shell,
-      env: {
-        ...env,
-        PWD: libraryInfo.cwd,
-        UMU_LOG: 'debug',
-      },
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    };
-    const child: ChildProcess = spawnInvocation.args
-      ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
-      : spawn(spawnInvocation.command, spawnOptions);
-    child.unref();
-
-    child.stdout?.on('data', (data) => {
-      logger.sync.info(`[umu stdout] ${data}`);
-    });
-
-    child.stderr?.on('data', (data) => {
-      logger.sync.error(`[umu stderr] ${data}`);
-    });
-
-    const onExitCallback = options?.onExit;
-
-    child.on('error', (error) => {
-      logger.sync.error('[umu] Failed to launch game:', error);
-      resolve({ success: false, error: error.message });
-    });
-
-    child.on('exit', (code, signal) => {
-      onExitCallback?.(code, signal ?? null);
-      if (code === 0) {
-        logger.sync.info(
-          `[umu] Game process exited normally with code ${code}`
-        );
-      } else {
-        logger.sync.error(
-          `[umu] Game process exited abnormally, code: ${code}, signal: ${signal}`
-        );
+    // Ensure UMU is installed
+    const umuInstalled = yield* Effect.promise(isUmuInstalled);
+    if (!umuInstalled) {
+      logger.sync.info('[umu] UMU not found, attempting auto-install...');
+      const installResult = yield* Effect.promise(installUmu);
+      if (!installResult.success) {
+        return {
+          success: false,
+          error: `UMU not installed and auto-install failed: ${installResult.error}`,
+        };
       }
+    }
+
+    ensureUmuPrefixBase();
+
+    const { umuId, protonVersion, store } = libraryInfo.umu;
+    const protonPath = normalizeProtonPathValue(protonVersion);
+    const gameId = convertUmuId(umuId);
+    const winePrefix = getLibraryUmuWinePrefix(libraryInfo);
+    const launchEnv = getEffectiveLaunchEnv(libraryInfo);
+    const dllOverrides = getEffectiveDllOverrides(libraryInfo);
+    const dllOverrideStr = buildDllOverrides(dllOverrides);
+
+    // Build environment variables
+    const env = getUmuLaunchEnvironment({
+      launchEnvironment: launchEnv,
+      gameId,
+      winePrefix,
+      cwd: libraryInfo.cwd,
+      protonPath,
     });
 
-    // Resolve immediately after successful spawn so caller can return; onExit runs when process exits
-    resolve({ success: true, pid: child.pid });
+    if (store) {
+      env.STORE = store;
+    }
+
+    // Build DLL overrides
+    if (dllOverrideStr) {
+      env.WINEDLLOVERRIDES = dllOverrideStr;
+    }
+
+    const exePath = libraryInfo.launchExecutable;
+    const { command, args, tokens } = resolveLaunchCommand(
+      umuRunExecutable,
+      libraryInfo.launchArguments,
+      [exePath]
+    );
+    const spawnInvocation = resolveSpawnInvocation(command, args, tokens);
+
+    // Log launch info without leaking full env (may contain secrets)
+    const envSummary = {
+      keyCount: Object.keys(env).length,
+      hasWINEPREFIX: 'WINEPREFIX' in env,
+      hasPROTONPATH: 'PROTONPATH' in env,
+    };
+    logger.sync.info('[umu] Launching game:', {
+      name: libraryInfo.name,
+      gameId,
+      winePrefix,
+      protonVersion: protonPath,
+      store: store || 'none',
+      hasDllOverrides: dllOverrides.length > 0,
+      environment: envSummary,
+    });
+
+    return yield* Effect.async<{
+      success: boolean;
+      error?: string;
+      pid?: number;
+    }>((resume) => {
+      // `spawn` emits 'error' after the synchronous resolve below, so the
+      // first outcome wins just as it did with the original promise.
+      let resolved = false;
+      const resolve = (result: {
+        success: boolean;
+        error?: string;
+        pid?: number;
+      }) => {
+        if (resolved) return;
+        resolved = true;
+        resume(Effect.succeed(result));
+      };
+      logger.sync.info("[umu] command i'm running: ", command, args);
+      const spawnOptions: SpawnOptions = {
+        cwd: libraryInfo.cwd,
+        shell: spawnInvocation.shell,
+        env: {
+          ...env,
+          PWD: libraryInfo.cwd,
+          UMU_LOG: 'debug',
+        },
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      };
+      const child: ChildProcess = spawnInvocation.args
+        ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
+        : spawn(spawnInvocation.command, spawnOptions);
+      child.unref();
+
+      child.stdout?.on('data', (data) => {
+        logger.sync.info(`[umu stdout] ${data}`);
+      });
+
+      child.stderr?.on('data', (data) => {
+        logger.sync.error(`[umu stderr] ${data}`);
+      });
+
+      const onExitCallback = options?.onExit;
+
+      child.on('error', (error) => {
+        logger.sync.error('[umu] Failed to launch game:', error);
+        resolve({ success: false, error: error.message });
+      });
+
+      child.on('exit', (code, signal) => {
+        onExitCallback?.(code, signal ?? null);
+        if (code === 0) {
+          logger.sync.info(
+            `[umu] Game process exited normally with code ${code}`
+          );
+        } else {
+          logger.sync.error(
+            `[umu] Game process exited abnormally, code: ${code}, signal: ${signal}`
+          );
+        }
+      });
+
+      // Resolve immediately after successful spawn so caller can return; onExit runs when process exits
+      resolve({ success: true, pid: child.pid });
+    });
   });
 }
 
 /**
  * Install redistributables using UMU winetricks
  */
-export async function installRedistributablesWithUmu(
+export function installRedistributablesWithUmu(
   appID: number,
   reportProgress?: RedistributableProgressReporter
-): Promise<'success' | 'partial' | 'failed' | 'not-found'> {
-  if (!isLinux()) {
-    reportProgress?.({
-      kind: 'done',
-      total: 0,
-      completedCount: 0,
-      failedCount: 0,
-      overallProgress: 100,
-      result: 'failed',
-      error: 'UMU redistributables are only available on Linux',
-    });
-    return 'failed';
-  }
+): Effect.Effect<
+  'success' | 'partial' | 'failed' | 'not-found',
+  DatabaseError,
+  Library
+> {
+  return Effect.gen(function* () {
+    const library = yield* Library;
+    if (!isLinux()) {
+      reportProgress?.({
+        kind: 'done',
+        total: 0,
+        completedCount: 0,
+        failedCount: 0,
+        overallProgress: 100,
+        result: 'failed',
+        error: 'UMU redistributables are only available on Linux',
+      });
+      return 'failed';
+    }
 
-  const libraryInfo = loadLibraryInfo(appID);
-  if (!libraryInfo) {
-    reportProgress?.({
-      kind: 'done',
-      total: 0,
-      completedCount: 0,
-      failedCount: 0,
-      overallProgress: 100,
-      result: 'not-found',
-      error: `Game not found for appID ${appID}`,
-    });
-    return 'not-found';
-  }
+    const libraryInfo = yield* library.get(appID);
+    if (!libraryInfo) {
+      reportProgress?.({
+        kind: 'done',
+        total: 0,
+        completedCount: 0,
+        failedCount: 0,
+        overallProgress: 100,
+        result: 'not-found',
+        error: `Game not found for appID ${appID}`,
+      });
+      return 'not-found';
+    }
 
-  // Check if this is a legacy game
-  if (!libraryInfo.umu) {
-    logger.sync.info(
-      '[umu] No UMU configuration found, skipping UMU redistributables'
-    );
-    reportProgress?.({
-      kind: 'done',
-      total: libraryInfo.redistributables?.length ?? 0,
-      completedCount: 0,
-      failedCount: libraryInfo.redistributables?.length ?? 0,
-      overallProgress: 100,
-      result: 'failed',
-      error: 'No UMU configuration found, cannot use UMU redistributable flow',
-    });
-    return 'failed';
-  }
-
-  if (!libraryInfo.redistributables) {
-    logger.sync.info('[umu] No redistributables to install');
-    reportProgress?.({
-      kind: 'done',
-      total: 0,
-      completedCount: 0,
-      failedCount: 0,
-      overallProgress: 100,
-      result: 'success',
-    });
-    return 'success';
-  }
-
-  // Ensure UMU is installed
-  const umuInstalled = await isUmuInstalled();
-  if (!umuInstalled) {
-    const installResult = await installUmu();
-    if (!installResult.success) {
+    // Check if this is a legacy game
+    if (!libraryInfo.umu) {
+      logger.sync.info(
+        '[umu] No UMU configuration found, skipping UMU redistributables'
+      );
       reportProgress?.({
         kind: 'done',
         total: libraryInfo.redistributables?.length ?? 0,
@@ -680,160 +676,224 @@ export async function installRedistributablesWithUmu(
         failedCount: libraryInfo.redistributables?.length ?? 0,
         overallProgress: 100,
         result: 'failed',
-        error: installResult.error ?? 'Failed to install UMU',
+        error:
+          'No UMU configuration found, cannot use UMU redistributable flow',
       });
       return 'failed';
     }
-  }
 
-  ensureUmuPrefixBase();
+    if (!libraryInfo.redistributables) {
+      logger.sync.info('[umu] No redistributables to install');
+      reportProgress?.({
+        kind: 'done',
+        total: 0,
+        completedCount: 0,
+        failedCount: 0,
+        overallProgress: 100,
+        result: 'success',
+      });
+      return 'success';
+    }
 
-  const { umuId, protonVersion } = libraryInfo.umu || {};
-  const protonPath = normalizeProtonPathValue(protonVersion);
-  const gameId = umuId ? convertUmuId(umuId) : 'umu-default';
-  const winePrefix = getLibraryUmuWinePrefix(libraryInfo);
+    // Ensure UMU is installed
+    const umuInstalled = yield* Effect.promise(isUmuInstalled);
+    if (!umuInstalled) {
+      const installResult = yield* Effect.promise(installUmu);
+      if (!installResult.success) {
+        reportProgress?.({
+          kind: 'done',
+          total: libraryInfo.redistributables?.length ?? 0,
+          completedCount: 0,
+          failedCount: libraryInfo.redistributables?.length ?? 0,
+          overallProgress: 100,
+          result: 'failed',
+          error: installResult.error ?? 'Failed to install UMU',
+        });
+        return 'failed';
+      }
+    }
 
-  const redistributables = libraryInfo.redistributables || [];
-  const totalRedistributables = redistributables.length;
+    ensureUmuPrefixBase();
 
-  logger.sync.info(
-    `[umu] Installing ${redistributables.length} redistributables for ${libraryInfo.name}`
-  );
+    const { umuId, protonVersion } = libraryInfo.umu || {};
+    const protonPath = normalizeProtonPathValue(protonVersion);
+    const gameId = umuId ? convertUmuId(umuId) : 'umu-default';
+    const winePrefix = getLibraryUmuWinePrefix(libraryInfo);
 
-  let anyFailed = false;
-  let completedCount = 0;
-  let failedCount = 0;
-  for (const [index, redistributable] of redistributables.entries()) {
-    reportProgress?.({
-      kind: 'item',
-      total: totalRedistributables,
-      completedCount,
-      failedCount,
-      overallProgress:
-        totalRedistributables === 0
-          ? 100
-          : ((completedCount + failedCount) / totalRedistributables) * 100,
-      redistributableName: redistributable.name,
-      redistributablePath: redistributable.path,
-      index,
-      status: 'installing',
-    });
+    const redistributables = libraryInfo.redistributables || [];
+    const totalRedistributables = redistributables.length;
 
-    try {
-      sendNotification({
-        message: `Installing ${redistributable.name} for ${libraryInfo.name}`,
-        id: generateNotificationId(),
-        type: 'info',
+    logger.sync.info(
+      `[umu] Installing ${redistributables.length} redistributables for ${libraryInfo.name}`
+    );
+
+    let anyFailed = false;
+    let completedCount = 0;
+    let failedCount = 0;
+    for (const [index, redistributable] of redistributables.entries()) {
+      reportProgress?.({
+        kind: 'item',
+        total: totalRedistributables,
+        completedCount,
+        failedCount,
+        overallProgress:
+          totalRedistributables === 0
+            ? 100
+            : ((completedCount + failedCount) / totalRedistributables) * 100,
+        redistributableName: redistributable.name,
+        redistributablePath: redistributable.path,
+        index,
+        status: 'installing',
       });
 
-      const success = await new Promise<boolean>((resolve) => {
-        let resolved = false;
-        const finalize = (result: boolean) => {
-          if (resolved) return;
-          resolved = true;
-          resolve(result);
-        };
-
-        const env = getUmuRedistributableEnvironment({
-          gameId,
-          winePrefix,
-          cwd: libraryInfo.cwd,
-          protonPath,
+      try {
+        sendNotification({
+          message: `Installing ${redistributable.name} for ${libraryInfo.name}`,
+          id: generateNotificationId(),
+          type: 'info',
         });
 
-        let child: ReturnType<typeof spawn>;
+        const success = yield* Effect.async<boolean>((resume) => {
+          const resolve = (result: boolean) => resume(Effect.succeed(result));
+          let resolved = false;
+          const finalize = (result: boolean) => {
+            if (resolved) return;
+            resolved = true;
+            resolve(result);
+          };
 
-        if (redistributable.path === 'winetricks') {
-          // Use winetricks verb
-          child = spawn(
-            umuRunExecutable,
-            ['winetricks', '-q', '-f', redistributable.name],
-            {
-              env,
-              stdio: ['ignore', 'pipe', 'pipe'],
-            }
-          );
-        } else if (
-          redistributable.path === 'microsoft' &&
-          redistributable.name === 'dotnet-repair'
-        ) {
-          // Special case for .NET repair tool
-          // This would need to be downloaded and run
-          logger.sync.info(
-            '[umu] .NET repair tool not yet implemented for UMU'
-          );
-          finalize(false);
-          return;
-        } else {
-          // Regular redistributable file (resolve relative to game cwd)
-          const redistPath = path.resolve(
-            libraryInfo.cwd,
-            redistributable.path
-          );
-          if (!fs.existsSync(redistPath)) {
-            logger.sync.error('[umu] Redistributable not found:', redistPath);
+          const env = getUmuRedistributableEnvironment({
+            gameId,
+            winePrefix,
+            cwd: libraryInfo.cwd,
+            protonPath,
+          });
+
+          let child: ReturnType<typeof spawn>;
+
+          if (redistributable.path === 'winetricks') {
+            // Use winetricks verb
+            child = spawn(
+              umuRunExecutable,
+              ['winetricks', '-q', '-f', redistributable.name],
+              {
+                env,
+                stdio: ['ignore', 'pipe', 'pipe'],
+              }
+            );
+          } else if (
+            redistributable.path === 'microsoft' &&
+            redistributable.name === 'dotnet-repair'
+          ) {
+            // Special case for .NET repair tool
+            // This would need to be downloaded and run
+            logger.sync.info(
+              '[umu] .NET repair tool not yet implemented for UMU'
+            );
             finalize(false);
             return;
+          } else {
+            // Regular redistributable file (resolve relative to game cwd)
+            const redistPath = path.resolve(
+              libraryInfo.cwd,
+              redistributable.path
+            );
+            if (!fs.existsSync(redistPath)) {
+              logger.sync.error('[umu] Redistributable not found:', redistPath);
+              finalize(false);
+              return;
+            }
+
+            const redistDir = path.dirname(redistPath);
+            const redistFile = path.basename(redistPath);
+
+            // Determine silent install flags
+            const silentFlags = getSilentInstallFlags(redistFile);
+
+            child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
+              env,
+              cwd: redistDir,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            });
           }
 
-          const redistDir = path.dirname(redistPath);
-          const redistFile = path.basename(redistPath);
+          streamChildProcessOutput(
+            child,
+            `[umu redist:${redistributable.name}]`
+          );
 
-          // Determine silent install flags
-          const silentFlags = getSilentInstallFlags(redistFile);
+          child.on(
+            'close',
+            (code: number | null, signal: NodeJS.Signals | null) => {
+              const success = code === 0 && signal == null && !!child.pid;
+              if (!success && signal != null) {
+                logger.sync.error(
+                  `[umu] Redistributable process killed by signal: ${signal}`
+                );
+              }
+              finalize(success);
+            }
+          );
 
-          child = spawn(umuRunExecutable, [redistFile, ...silentFlags], {
-            env,
-            cwd: redistDir,
-            stdio: ['ignore', 'pipe', 'pipe'],
+          child.on('error', (error) => {
+            logger.sync.error('[umu] Redistributable error:', error);
+            finalize(false);
+          });
+        });
+
+        if (success) {
+          completedCount++;
+          sendNotification({
+            message: `Installed ${redistributable.name} for ${libraryInfo.name}`,
+            id: generateNotificationId(),
+            type: 'success',
+          });
+          reportProgress?.({
+            kind: 'item',
+            total: totalRedistributables,
+            completedCount,
+            failedCount,
+            overallProgress:
+              totalRedistributables === 0
+                ? 100
+                : ((completedCount + failedCount) / totalRedistributables) *
+                  100,
+            redistributableName: redistributable.name,
+            redistributablePath: redistributable.path,
+            index,
+            status: 'completed',
+          });
+        } else {
+          anyFailed = true;
+          failedCount++;
+          sendNotification({
+            message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
+            id: generateNotificationId(),
+            type: 'error',
+          });
+          reportProgress?.({
+            kind: 'item',
+            total: totalRedistributables,
+            completedCount,
+            failedCount,
+            overallProgress:
+              totalRedistributables === 0
+                ? 100
+                : ((completedCount + failedCount) / totalRedistributables) *
+                  100,
+            redistributableName: redistributable.name,
+            redistributablePath: redistributable.path,
+            index,
+            status: 'failed',
           });
         }
-
-        streamChildProcessOutput(child, `[umu redist:${redistributable.name}]`);
-
-        child.on(
-          'close',
-          (code: number | null, signal: NodeJS.Signals | null) => {
-            const success = code === 0 && signal == null && !!child.pid;
-            if (!success && signal != null) {
-              logger.sync.error(
-                `[umu] Redistributable process killed by signal: ${signal}`
-              );
-            }
-            finalize(success);
-          }
-        );
-
-        child.on('error', (error) => {
-          logger.sync.error('[umu] Redistributable error:', error);
-          finalize(false);
-        });
-      });
-
-      if (success) {
-        completedCount++;
-        sendNotification({
-          message: `Installed ${redistributable.name} for ${libraryInfo.name}`,
-          id: generateNotificationId(),
-          type: 'success',
-        });
-        reportProgress?.({
-          kind: 'item',
-          total: totalRedistributables,
-          completedCount,
-          failedCount,
-          overallProgress:
-            totalRedistributables === 0
-              ? 100
-              : ((completedCount + failedCount) / totalRedistributables) * 100,
-          redistributableName: redistributable.name,
-          redistributablePath: redistributable.path,
-          index,
-          status: 'completed',
-        });
-      } else {
+      } catch (error) {
         anyFailed = true;
         failedCount++;
+        logger.sync.error(
+          `[umu] Error installing ${redistributable.name}:`,
+          error
+        );
         sendNotification({
           message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
           id: generateNotificationId(),
@@ -852,175 +912,159 @@ export async function installRedistributablesWithUmu(
           redistributablePath: redistributable.path,
           index,
           status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
         });
       }
-    } catch (error) {
-      anyFailed = true;
-      failedCount++;
-      logger.sync.error(
-        `[umu] Error installing ${redistributable.name}:`,
-        error
-      );
-      sendNotification({
-        message: `Failed to install ${redistributable.name} for ${libraryInfo.name}`,
-        id: generateNotificationId(),
-        type: 'error',
-      });
-      reportProgress?.({
-        kind: 'item',
-        total: totalRedistributables,
-        completedCount,
-        failedCount,
-        overallProgress:
-          totalRedistributables === 0
-            ? 100
-            : ((completedCount + failedCount) / totalRedistributables) * 100,
-        redistributableName: redistributable.name,
-        redistributablePath: redistributable.path,
-        index,
-        status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
-      });
     }
-  }
 
-  // Clear redistributables from the library file only when all succeeded (so retries remain possible on failure)
-  if (!anyFailed) {
-    const updatedInfo = loadLibraryInfo(appID);
-    if (updatedInfo) {
-      delete updatedInfo.redistributables;
-      saveLibraryInfo(appID, updatedInfo);
+    // Clear redistributables from the library file only when all succeeded (so retries remain possible on failure)
+    if (!anyFailed) {
+      const updatedInfo = yield* library.get(appID);
+      if (updatedInfo) {
+        delete updatedInfo.redistributables;
+        yield* library.save(updatedInfo);
+      }
     }
-  }
 
-  sendNotification({
-    message: anyFailed
-      ? `Finished installing redistributables for ${libraryInfo.name} (some failed)`
-      : `Finished installing redistributables for ${libraryInfo.name}`,
-    id: generateNotificationId(),
-    type: anyFailed ? 'warning' : 'success',
+    sendNotification({
+      message: anyFailed
+        ? `Finished installing redistributables for ${libraryInfo.name} (some failed)`
+        : `Finished installing redistributables for ${libraryInfo.name}`,
+      id: generateNotificationId(),
+      type: anyFailed ? 'warning' : 'success',
+    });
+
+    const unresolvedCount = Math.max(
+      0,
+      totalRedistributables - completedCount - failedCount
+    );
+    reportProgress?.({
+      kind: 'done',
+      total: totalRedistributables,
+      completedCount,
+      failedCount: anyFailed ? failedCount + unresolvedCount : failedCount,
+      overallProgress: 100,
+      result: !anyFailed
+        ? 'success'
+        : completedCount > 0
+          ? 'partial'
+          : 'failed',
+    });
+
+    // Partial failure is distinct from total failure so the UI can warn without
+    // treating the whole setup as broken.
+    if (!anyFailed) return 'success';
+    return completedCount > 0 ? 'partial' : 'failed';
   });
-
-  const unresolvedCount = Math.max(
-    0,
-    totalRedistributables - completedCount - failedCount
-  );
-  reportProgress?.({
-    kind: 'done',
-    total: totalRedistributables,
-    completedCount,
-    failedCount: anyFailed ? failedCount + unresolvedCount : failedCount,
-    overallProgress: 100,
-    result: !anyFailed ? 'success' : completedCount > 0 ? 'partial' : 'failed',
-  });
-
-  // Partial failure is distinct from total failure so the UI can warn without
-  // treating the whole setup as broken.
-  if (!anyFailed) return 'success';
-  return completedCount > 0 ? 'partial' : 'failed';
 }
-async function initializePrefixWithUmuRun(
+function initializePrefixWithUmuRun(
   libraryInfo: LibraryInfo,
   umuId: string,
   winePrefix: string,
   logPrefix: string,
   signal?: AbortSignal
-): Promise<{ success: boolean; error?: string }> {
-  const umuInstalled = await isUmuInstalled();
-  if (!umuInstalled) {
-    logger.sync.info(
-      '[umu] UMU not found during prefix init, attempting auto-install'
-    );
-    const installResult = await installUmu();
-    if (!installResult.success) {
+): Effect.Effect<{ success: boolean; error?: string }> {
+  return Effect.gen(function* () {
+    const umuInstalled = yield* Effect.promise(isUmuInstalled);
+    if (!umuInstalled) {
+      logger.sync.info(
+        '[umu] UMU not found during prefix init, attempting auto-install'
+      );
+      const installResult = yield* Effect.promise(installUmu);
+      if (!installResult.success) {
+        return {
+          success: false,
+          error: installResult.error ?? 'Failed to install UMU',
+        };
+      }
+    }
+
+    if (signal?.aborted) {
       return {
         success: false,
-        error: installResult.error ?? 'Failed to install UMU',
+        error: 'UMU prefix initialization was cancelled',
       };
     }
-  }
 
-  if (signal?.aborted) {
-    return { success: false, error: 'UMU prefix initialization was cancelled' };
-  }
-
-  ensureUmuPrefixBase();
-  if (!fs.existsSync(winePrefix)) {
-    fs.mkdirSync(winePrefix, { recursive: true });
-  }
-
-  const gameId = convertUmuId(umuId);
-  const cwd = libraryInfo.cwd || process.cwd();
-  const protonPath = normalizeProtonPathValue(libraryInfo.umu?.protonVersion);
-
-  const initialized = await new Promise<boolean>((resolve) => {
-    let resolved = false;
-    let forceKillTimeout: ReturnType<typeof setTimeout> | undefined;
-    const initChildEnv: NodeJS.ProcessEnv = {
-      ...process.env,
-      UMU_LOG: 'debug',
-      GAMEID: gameId,
-      WINEPREFIX: winePrefix,
-      PWD: cwd,
-    };
-    if (protonPath) {
-      initChildEnv.PROTONPATH = protonPath;
+    ensureUmuPrefixBase();
+    if (!fs.existsSync(winePrefix)) {
+      fs.mkdirSync(winePrefix, { recursive: true });
     }
 
-    const initChild = spawn(umuRunExecutable, [''], {
-      cwd,
-      env: initChildEnv,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    streamChildProcessOutput(initChild, logPrefix);
+    const gameId = convertUmuId(umuId);
+    const cwd = libraryInfo.cwd || process.cwd();
+    const protonPath = normalizeProtonPathValue(libraryInfo.umu?.protonVersion);
 
-    let timedOut = false;
-    const handleAbort = () => {
-      if (!initChild.pid) return;
-      initChild.kill('SIGTERM');
-      forceKillTimeout = setTimeout(() => {
-        if (initChild.exitCode === null && initChild.signalCode === null) {
-          initChild.kill('SIGKILL');
-        }
-      }, 5_000);
-    };
-    const timeout = setTimeout(
-      () => {
-        timedOut = true;
-        handleAbort();
-      },
-      5 * 60 * 1000
-    );
-    const finalize = (result: boolean) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timeout);
-      if (forceKillTimeout) clearTimeout(forceKillTimeout);
-      signal?.removeEventListener('abort', handleAbort);
-      resolve(result);
-    };
-
-    signal?.addEventListener('abort', handleAbort, { once: true });
-    if (signal?.aborted) handleAbort();
-
-    initChild.on(
-      'close',
-      (code: number | null, childSignal: NodeJS.Signals | null) => {
-        finalize(
-          code === 0 && childSignal == null && !signal?.aborted && !timedOut
-        );
+    const initialized = yield* Effect.async<boolean>((resume) => {
+      const resolve = (result: boolean) => resume(Effect.succeed(result));
+      let resolved = false;
+      let forceKillTimeout: ReturnType<typeof setTimeout> | undefined;
+      const initChildEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        UMU_LOG: 'debug',
+        GAMEID: gameId,
+        WINEPREFIX: winePrefix,
+        PWD: cwd,
+      };
+      if (protonPath) {
+        initChildEnv.PROTONPATH = protonPath;
       }
-    );
 
-    initChild.on('error', (error) => {
-      logger.sync.error('[umu] Prefix init error:', error);
-      finalize(false);
+      const initChild = spawn(umuRunExecutable, [''], {
+        cwd,
+        env: initChildEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      streamChildProcessOutput(initChild, logPrefix);
+
+      let timedOut = false;
+      const handleAbort = () => {
+        if (!initChild.pid) return;
+        initChild.kill('SIGTERM');
+        forceKillTimeout = setTimeout(() => {
+          if (initChild.exitCode === null && initChild.signalCode === null) {
+            initChild.kill('SIGKILL');
+          }
+        }, 5_000);
+      };
+      const timeout = setTimeout(
+        () => {
+          timedOut = true;
+          handleAbort();
+        },
+        5 * 60 * 1000
+      );
+      const finalize = (result: boolean) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeout);
+        if (forceKillTimeout) clearTimeout(forceKillTimeout);
+        signal?.removeEventListener('abort', handleAbort);
+        resolve(result);
+      };
+
+      signal?.addEventListener('abort', handleAbort, { once: true });
+      if (signal?.aborted) handleAbort();
+
+      initChild.on(
+        'close',
+        (code: number | null, childSignal: NodeJS.Signals | null) => {
+          finalize(
+            code === 0 && childSignal == null && !signal?.aborted && !timedOut
+          );
+        }
+      );
+
+      initChild.on('error', (error) => {
+        logger.sync.error('[umu] Prefix init error:', error);
+        finalize(false);
+      });
     });
-  });
 
-  return initialized
-    ? { success: true }
-    : { success: false, error: 'UMU could not initialize the Wine prefix' };
+    return initialized
+      ? { success: true }
+      : { success: false, error: 'UMU could not initialize the Wine prefix' };
+  });
 }
 
 export const stagedPrefixMigration = (params: {
@@ -1030,102 +1074,119 @@ export const stagedPrefixMigration = (params: {
   finalPath: string;
   umuId: string;
   commit?: (libraryInfo: LibraryInfo) => void;
-}): Effect.Effect<LibraryInfo, PlatformError> =>
-  runStagedPrefixMigration({
-    libraryInfo: params.libraryInfo,
-    sourcePath: params.sourcePath,
-    finalPath: params.finalPath,
-    initialize: params.sourcePath
-      ? undefined
-      : async (stagingPath, signal) => {
-          logger.sync.info('[umu] Initializing a fresh staged UMU prefix');
-          const initialized = await initializePrefixWithUmuRun(
-            params.libraryInfo,
-            params.umuId,
-            stagingPath,
-            '[umu migration prefix-init]',
-            signal
-          );
-          if (!initialized.success) {
-            throw new Error(
-              initialized.error ?? 'UMU could not initialize the Wine prefix'
+}): Effect.Effect<LibraryInfo, PlatformError, Library> =>
+  Effect.gen(function* () {
+    const library = yield* Library;
+    // `stagedPrefixMigration` commits from inside a promise, so the default
+    // commit runs the library write on the application runtime.
+    return yield* runStagedPrefixMigration({
+      libraryInfo: params.libraryInfo,
+      sourcePath: params.sourcePath,
+      finalPath: params.finalPath,
+      initialize: params.sourcePath
+        ? undefined
+        : async (stagingPath, signal) => {
+            logger.sync.info('[umu] Initializing a fresh staged UMU prefix');
+            const initialized = await runElectronEffect(
+              initializePrefixWithUmuRun(
+                params.libraryInfo,
+                params.umuId,
+                stagingPath,
+                '[umu migration prefix-init]',
+                signal
+              )
             );
-          }
-        },
-    commit: params.commit ?? ((info) => saveLibraryInfo(params.appID, info)),
+            if (!initialized.success) {
+              throw new Error(
+                initialized.error ?? 'UMU could not initialize the Wine prefix'
+              );
+            }
+          },
+      commit:
+        params.commit ??
+        ((info) =>
+          runElectronSync(library.save({ ...info, appID: params.appID }))),
+    });
   });
 
 /** Migrate a legacy prefix through a validated sibling staging directory. */
-export async function migrateToUmu(
+export function migrateToUmu(
   appID: number,
   oldSteamAppId?: number,
   updates?: Partial<LibraryInfo>
-): Promise<{ success: boolean; error?: string; libraryInfo?: LibraryInfo }> {
-  if (!isLinux()) return { success: false, error: 'Only available on Linux' };
-  const libraryInfo = loadLibraryInfo(appID);
-  if (!libraryInfo) return { success: false, error: 'Game not found' };
+): Effect.Effect<
+  { success: boolean; error?: string; libraryInfo?: LibraryInfo },
+  DatabaseError,
+  Library
+> {
+  return Effect.gen(function* () {
+    if (!isLinux()) return { success: false, error: 'Only available on Linux' };
+    const library = yield* Library;
+    const libraryInfo = yield* library.get(appID);
+    if (!libraryInfo) return { success: false, error: 'Game not found' };
 
-  const legacyLaunchEnv = parseLeadingLaunchEnvFromArguments(
-    libraryInfo.launchArguments
-  );
-  const configuredLegacyPrefix =
-    libraryInfo.launchEnv?.WINEPREFIX ?? legacyLaunchEnv.WINEPREFIX;
-  const configuredCompatDataPath =
-    libraryInfo.launchEnv?.STEAM_COMPAT_DATA_PATH ??
-    legacyLaunchEnv.STEAM_COMPAT_DATA_PATH;
-  const legacyShortcutExecutable = libraryInfo.launchExecutable;
-  const legacyShortcutName = libraryInfo.version?.trim()
-    ? `${libraryInfo.name} (${libraryInfo.version})`
-    : libraryInfo.name;
-  Object.assign(libraryInfo, updates);
-  if (libraryInfo.launchEnv) {
-    const migratedLaunchEnv = { ...libraryInfo.launchEnv };
-    delete migratedLaunchEnv.WINEPREFIX;
-    delete migratedLaunchEnv.STEAM_COMPAT_DATA_PATH;
-    libraryInfo.launchEnv =
-      Object.keys(migratedLaunchEnv).length > 0 ? migratedLaunchEnv : undefined;
-  }
+    const legacyLaunchEnv = parseLeadingLaunchEnvFromArguments(
+      libraryInfo.launchArguments
+    );
+    const configuredLegacyPrefix =
+      libraryInfo.launchEnv?.WINEPREFIX ?? legacyLaunchEnv.WINEPREFIX;
+    const configuredCompatDataPath =
+      libraryInfo.launchEnv?.STEAM_COMPAT_DATA_PATH ??
+      legacyLaunchEnv.STEAM_COMPAT_DATA_PATH;
+    const legacyShortcutExecutable = libraryInfo.launchExecutable;
+    const legacyShortcutName = libraryInfo.version?.trim()
+      ? `${libraryInfo.name} (${libraryInfo.version})`
+      : libraryInfo.name;
+    Object.assign(libraryInfo, updates);
+    if (libraryInfo.launchEnv) {
+      const migratedLaunchEnv = { ...libraryInfo.launchEnv };
+      delete migratedLaunchEnv.WINEPREFIX;
+      delete migratedLaunchEnv.STEAM_COMPAT_DATA_PATH;
+      libraryInfo.launchEnv =
+        Object.keys(migratedLaunchEnv).length > 0
+          ? migratedLaunchEnv
+          : undefined;
+    }
 
-  if (!libraryInfo.umu) {
-    const fallbackUmuId = oldSteamAppId
-      ? (`steam:${oldSteamAppId}` as const)
-      : (`umu:${appID}` as const);
-    libraryInfo.umu = { umuId: fallbackUmuId };
-  }
-  if (oldSteamAppId !== undefined) {
-    libraryInfo.umu.steamShortcutReaddId = oldSteamAppId;
-    libraryInfo.umu.steamShortcutLegacyExecutable = legacyShortcutExecutable;
-    libraryInfo.umu.steamShortcutLegacyName = legacyShortcutName;
-  }
-  const effectiveDllOverrides = getEffectiveDllOverrides(libraryInfo);
-  if (effectiveDllOverrides.length > 0) {
-    libraryInfo.umu = {
-      ...libraryInfo.umu,
-      dllOverrides: effectiveDllOverrides,
-    };
-  }
-  if (libraryInfo.launchArguments) {
-    libraryInfo.launchArguments = libraryInfo.launchArguments
-      .replace(
-        /(?:^|\s)WINEPREFIX=(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s]*)/gi,
-        ' '
-      )
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
+    if (!libraryInfo.umu) {
+      const fallbackUmuId = oldSteamAppId
+        ? (`steam:${oldSteamAppId}` as const)
+        : (`umu:${appID}` as const);
+      libraryInfo.umu = { umuId: fallbackUmuId };
+    }
+    if (oldSteamAppId !== undefined) {
+      libraryInfo.umu.steamShortcutReaddId = oldSteamAppId;
+      libraryInfo.umu.steamShortcutLegacyExecutable = legacyShortcutExecutable;
+      libraryInfo.umu.steamShortcutLegacyName = legacyShortcutName;
+    }
+    const effectiveDllOverrides = getEffectiveDllOverrides(libraryInfo);
+    if (effectiveDllOverrides.length > 0) {
+      libraryInfo.umu = {
+        ...libraryInfo.umu,
+        dllOverrides: effectiveDllOverrides,
+      };
+    }
+    if (libraryInfo.launchArguments) {
+      libraryInfo.launchArguments = libraryInfo.launchArguments
+        .replace(
+          /(?:^|\s)WINEPREFIX=(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s]*)/gi,
+          ' '
+        )
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
 
-  const { umuId } = libraryInfo.umu;
-  const finalPath = getLibraryUmuWinePrefix(libraryInfo);
-  const sourcePath = resolveLegacyPrefixSource({
-    steamCompatDataPath: oldSteamAppId
-      ? path.join(getCompatDataDir(oldSteamAppId), oldSteamAppId.toString())
-      : undefined,
-    configuredCompatDataPath,
-    configuredPrefix: configuredLegacyPrefix,
-  });
+    const { umuId } = libraryInfo.umu;
+    const finalPath = getLibraryUmuWinePrefix(libraryInfo);
+    const sourcePath = resolveLegacyPrefixSource({
+      steamCompatDataPath: oldSteamAppId
+        ? path.join(getCompatDataDir(oldSteamAppId), oldSteamAppId.toString())
+        : undefined,
+      configuredCompatDataPath,
+      configuredPrefix: configuredLegacyPrefix,
+    });
 
-  const result = await runElectronEffect(
-    Effect.either(
+    const result = yield* Effect.either(
       stagedPrefixMigration({
         appID,
         libraryInfo,
@@ -1133,14 +1194,14 @@ export async function migrateToUmu(
         finalPath,
         umuId,
       })
-    )
-  );
-  if (result._tag === 'Left') {
-    logger.sync.error('[umu] Migration failed:', result.left);
-    return { success: false, error: result.left.message };
-  }
-  logger.sync.info('[umu] Migration completed successfully');
-  return { success: true, libraryInfo: result.right };
+    );
+    if (result._tag === 'Left') {
+      logger.sync.error('[umu] Migration failed:', result.left);
+      return { success: false, error: result.left.message };
+    }
+    logger.sync.info('[umu] Migration completed successfully');
+    return { success: true, libraryInfo: result.right };
+  });
 }
 
 const withUmuBoundary = <A>(
@@ -1167,7 +1228,8 @@ export function registerUmuHandlers() {
     procedure(ElectronRpc.app.launchWithUmu, (appID: number) =>
       runUmuBoundary(
         Effect.gen(function* () {
-          const libraryInfo = loadLibraryInfo(appID);
+          const library = yield* Library;
+          const libraryInfo = yield* library.get(appID);
           if (!libraryInfo?.umu) {
             return yield* Effect.fail(
               new PlatformError({
@@ -1176,23 +1238,19 @@ export function registerUmuHandlers() {
               })
             );
           }
-          return yield* withUmuBoundary(() => launchWithUmu(libraryInfo));
+          return yield* launchWithUmu(libraryInfo);
         })
       )
     ),
     ipcProcedure(
       ElectronRpc.app.installRedistributablesUmu,
       (_, appID: number) =>
-        runUmuBoundary(
-          withUmuBoundary(() => installRedistributablesWithUmu(appID))
-        )
+        runUmuBoundary(installRedistributablesWithUmu(appID))
     ),
     ipcProcedure(
       ElectronRpc.app.migrateToUmu,
       (_, appID: number, oldSteamAppId?: number) =>
-        runUmuBoundary(
-          withUmuBoundary(() => migrateToUmu(appID, oldSteamAppId))
-        )
+        runUmuBoundary(migrateToUmu(appID, oldSteamAppId))
     )
   );
 }

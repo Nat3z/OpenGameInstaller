@@ -7,7 +7,7 @@ import type {
   AddonDownloadStatus,
   AddonDownloadStatusUpdate,
 } from '@ogi-sdk/connect';
-import { formatError, runEffectBoundary } from '@ogi-sdk/errors';
+import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Cause, Effect } from 'effect';
 import type { BrowserWindow } from 'electron';
@@ -16,9 +16,9 @@ import type {
   DownloadServiceShape,
   DownloadStatus,
 } from '@/electron/handlers/handler.ddl.js';
-import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
-import { getSettings } from '@/electron/manager/manager.config.js';
 import { cancelQueuedDownload } from '@/electron/rpc/queue-cancel.js';
+import { runEffectBoundary } from '@/electron/runtime.js';
+import { Library, Settings } from '@/electron/services/index.js';
 import { consumeDownloadReplayEvents } from '@/lib/download-handshake.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -216,24 +216,24 @@ function handleDownloadRequest(
   };
 
   const operation = Effect.gen(function* () {
-    const { fileDownloadLocation } = yield* getSettings();
+    const { fileDownloadLocation } = yield* (yield* Settings).get;
     const configuredDir =
       fileDownloadLocation.length > 0 ? fileDownloadLocation : './downloads';
     const baseDir = resolve(process.cwd(), configuredDir);
-    const prepared = yield* Effect.try({
-      try: () => ({
-        jobs: request.files.map(
+    const jobs = yield* Effect.try({
+      try: () =>
+        request.files.map(
           (file): DownloadJob => ({
             link: file.link,
             path: resolveRelativeDownloadPath(baseDir, file.path),
             headers: file.headers,
           })
         ),
-        library: request.appID ? loadLibraryInfo(request.appID) : null,
-      }),
       catch: (cause) => cause,
     });
-    const { jobs, library } = prepared;
+    const library = request.appID
+      ? yield* (yield* Library).get(request.appID)
+      : null;
     yield* Effect.tryPromise({
       try: () =>
         Promise.all(

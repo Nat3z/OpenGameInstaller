@@ -6,6 +6,7 @@ import { join } from 'path';
 import { getDatabase } from '@/electron/database/index.js';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { execute as executeMigrations } from '@/electron/migrations.js';
+import type { AppServices } from '@/electron/services/index.js';
 import {
   reinstallAddonDependencies,
   removeCachedAppUpdates,
@@ -118,7 +119,7 @@ export type StartupTasksResult = {
  */
 export function runStartupTasks(
   mainWindow?: BrowserWindow | null
-): Effect.Effect<StartupTasksResult> {
+): Effect.Effect<StartupTasksResult, never, AppServices> {
   let shutdownPending = false;
 
   return Effect.scoped(

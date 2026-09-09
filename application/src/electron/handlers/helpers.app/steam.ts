@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import {
   ConfigError,
+  type DatabaseError,
   GameNotFound,
   SteamRunningError,
   SteamShortcutConflictError,
@@ -11,10 +12,6 @@ import {
   SteamVdfWriteError,
 } from '@ogi-sdk/errors';
 import { Context, Effect, Layer } from 'effect';
-import {
-  loadLibraryInfo,
-  saveLibraryInfo,
-} from '@/electron/handlers/helpers.app/library.js';
 import { getOgiExecutablePath } from '@/electron/handlers/helpers.app/platform.js';
 import {
   copySteamGridArtwork,
@@ -43,7 +40,7 @@ import {
   serializeBinaryVdf,
   updateSteamCompatToolMapping,
 } from '@/electron/lib/steam-vdf.js';
-import { getSteamCompatibilityTool } from '@/electron/manager/manager.config.js';
+import { Library, Settings } from '@/electron/services/index.js';
 
 export function getLegacyVersionedGameName(
   name: string,
@@ -55,6 +52,7 @@ export function getLegacyVersionedGameName(
 
 export type SteamServiceError =
   | ConfigError
+  | DatabaseError
   | GameNotFound
   | SteamRepositoryError
   | SteamProcessFailure
@@ -88,36 +86,41 @@ export interface SteamMutationOptions {
 // module-level semaphore keeps Steam closed for one complete mutation at a time.
 const steamMutationLock = Effect.unsafeMakeSemaphore(1);
 
-const loadGame = (appID: number) =>
-  Effect.try({
-    try: () => {
-      const appInfo = loadLibraryInfo(appID);
-      if (!appInfo) throw new GameNotFound({ gameId: appID });
-      return appInfo;
-    },
-    catch: (cause) =>
-      cause instanceof GameNotFound
-        ? cause
-        : new SteamVdfParseError({
+// The service tag exposes effects with no remaining requirements, so the
+// library is resolved once when the layer is built and closed over here.
+const makeLoadGame =
+  (library: Context.Tag.Service<Library>) =>
+  (
+    appID: number
+  ): Effect.Effect<LibraryInfo, GameNotFound | SteamVdfParseError> =>
+    library.require(appID).pipe(
+      Effect.catchTag('DatabaseError', (cause) =>
+        Effect.fail(
+          new SteamVdfParseError({
             message: `Could not read library metadata for game ${appID}`,
             path: 'library',
             cause,
-          }),
-  });
+          })
+        )
+      )
+    );
 
-const saveGame = (
-  appID: number,
-  appInfo: NonNullable<ReturnType<typeof loadLibraryInfo>>
-) =>
-  Effect.try({
-    try: () => saveLibraryInfo(appID, appInfo),
-    catch: (cause) =>
-      new SteamVdfWriteError({
-        message: `Could not save Steam shortcut metadata for game ${appID}`,
-        path: 'library',
-        cause,
-      }),
-  });
+const makeSaveGame =
+  (library: Context.Tag.Service<Library>) =>
+  (
+    appID: number,
+    appInfo: LibraryInfo
+  ): Effect.Effect<void, SteamVdfWriteError> =>
+    library.save({ ...appInfo, appID }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new SteamVdfWriteError({
+            message: `Could not save Steam shortcut metadata for game ${appID}`,
+            path: 'library',
+            cause,
+          })
+      )
+    );
 
 export class SteamService extends Context.Tag('SteamService')<
   SteamService,
@@ -138,16 +141,20 @@ export class SteamService extends Context.Tag('SteamService')<
 export const SteamServiceLive: Layer.Layer<
   SteamService,
   never,
-  SteamRepository | SteamProcess
+  SteamRepository | SteamProcess | Library | Settings
 > = Layer.effect(
   SteamService,
   Effect.gen(function* () {
     const repository = yield* SteamRepository;
     const steamProcess = yield* SteamProcess;
+    const library = yield* Library;
+    const settings = yield* Settings;
+    const loadGame = makeLoadGame(library);
+    const saveGame = makeSaveGame(library);
 
     const identityFor = (
       appID: number,
-      appInfo: NonNullable<ReturnType<typeof loadLibraryInfo>>,
+      appInfo: LibraryInfo,
       oldSteamAppId?: number
     ) => {
       const ogiExecutable = getOgiExecutablePath();
@@ -176,7 +183,7 @@ export const SteamServiceLive: Layer.Layer<
 
     const lookupShortcut = (
       appID: number,
-      appInfo: NonNullable<ReturnType<typeof loadLibraryInfo>>,
+      appInfo: LibraryInfo,
       oldSteamAppId?: number
     ) =>
       Effect.gen(function* () {
@@ -299,7 +306,7 @@ export const SteamServiceLive: Layer.Layer<
               appInfo.umu?.steamShortcutId);
         const compatibilityTool =
           process.platform === 'linux'
-            ? yield* getSteamCompatibilityTool()
+            ? yield* settings.steamCompatibilityTool
             : undefined;
         const ogiExecutable = getOgiExecutablePath();
         const startDir =
@@ -410,7 +417,7 @@ export const SteamServiceLive: Layer.Layer<
               appName,
               appId,
               userdataPath: location.user.userdataPath,
-            })
+            }).pipe(Effect.provideService(Settings, settings))
           );
           if (downloadedArtwork._tag === 'Left') {
             warnings.push(downloadedArtwork.left.message);

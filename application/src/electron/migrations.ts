@@ -1,4 +1,4 @@
-import type { FileSystemError } from '@ogi-sdk/errors';
+import type { DatabaseError, FileSystemError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { exec, spawn } from 'child_process';
 import { Effect } from 'effect';
@@ -6,12 +6,16 @@ import * as fsSync from 'fs';
 import * as os from 'os';
 import { join } from 'path';
 import semver from 'semver';
-import { getDatabase } from '@/electron/database/index.js';
 import { addToDesktop } from '@/electron/handlers/helpers.app/desktop-shortcut.js';
 import { normalizeAddonLink } from '@/electron/lib/addon-links.js';
 import { migrateLegacySteamGridDbKey } from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification, VERSION } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import {
+  type AppServices,
+  Database,
+  Settings,
+} from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -21,7 +25,7 @@ let migrations: {
     to: string;
     description: string;
     platform: 'linux' | 'win32' | 'all';
-    run: () => Promise<void> | Effect.Effect<void, unknown>;
+    run: () => Promise<void> | Effect.Effect<void, unknown, AppServices>;
   };
 } = {
   'install-steam-addon': {
@@ -29,16 +33,22 @@ let migrations: {
     to: '2.0.0',
     description: `Adds the Steam Catalog addon to the user's addons list. This is required because the user expects Steam listings to appear, but because the built-in Steam catalog was removed, this addon is needed to provide the same functionality.`,
     platform: 'all',
-    run: async () => {
-      const database = getDatabase();
-      const { addons } = database.getSettings();
-      if (!addons.some((addon) => addon.includes('Nat3z/steam-integration'))) {
-        database.updateSettings({
-          addons: [...addons, 'https://github.com/Nat3z/steam-integration'],
-        });
-      }
-      await sendIPCMessage('migration:event', 'install-steam-addon');
-    },
+    run: () =>
+      Effect.gen(function* () {
+        const settings = yield* Settings;
+        const addons = yield* settings.addons;
+        if (
+          !addons.some((addon) => addon.includes('Nat3z/steam-integration'))
+        ) {
+          yield* settings.setAddons([
+            ...addons,
+            'https://github.com/Nat3z/steam-integration',
+          ]);
+        }
+        yield* Effect.promise(() =>
+          sendIPCMessage('migration:event', 'install-steam-addon')
+        );
+      }),
   },
   'steamgriddb-launch': {
     from: '2.0.0',
@@ -55,33 +65,36 @@ let migrations: {
     description:
       'checks if the steam-addon was installed without an installation.log file and if so, repairs it.',
     platform: 'all',
-    run: async () => {
-      const { addons } = getDatabase().getSettings();
-      const hasSteamAddon = addons.some((addon) =>
-        addon.includes('Nat3z/steam-integration')
-      );
-      if (!hasSteamAddon) {
-        logger.sync.info(
-          'user does not have steam-integration in config. no need to repair.'
+    run: () =>
+      Effect.gen(function* () {
+        const addons = yield* (yield* Settings).addons;
+        const hasSteamAddon = addons.some((addon) =>
+          addon.includes('Nat3z/steam-integration')
         );
-        return;
-      }
+        if (!hasSteamAddon) {
+          logger.sync.info(
+            'user does not have steam-integration in config. no need to repair.'
+          );
+          return;
+        }
 
-      // check if installation.log exists in the addon path
-      const addonPath = join(
-        __dirname,
-        'addons',
-        'steam-integration',
-        'installation.log'
-      );
-      if (fsSync.existsSync(addonPath)) {
-        logger.sync.info('already installed, no need to repair.');
-        return;
-      }
+        // check if installation.log exists in the addon path
+        const addonPath = join(
+          __dirname,
+          'addons',
+          'steam-integration',
+          'installation.log'
+        );
+        if (fsSync.existsSync(addonPath)) {
+          logger.sync.info('already installed, no need to repair.');
+          return;
+        }
 
-      logger.sync.info('repairing steam-integration through installation...');
-      await sendIPCMessage('migration:event', 'install-steam-addon');
-    },
+        logger.sync.info('repairing steam-integration through installation...');
+        yield* Effect.promise(() =>
+          sendIPCMessage('migration:event', 'install-steam-addon')
+        );
+      }),
   },
   'install-flatpak-wine': {
     from: '2.1.2',
@@ -266,26 +279,27 @@ let migrations: {
     description:
       'Migrates legacy bare addon repository URLs to explicit marketplace or git associations.',
     platform: 'all',
-    run: async () => {
-      const database = getDatabase();
-      const originalAddons = database.getSettings().addons;
-      const migratedAddons = originalAddons.map((addon) =>
-        normalizeAddonLink(addon)
-      );
-
-      const changed = migratedAddons.some(
-        (addon, index) => addon !== originalAddons[index]
-      );
-      if (!changed) {
-        logger.sync.info(
-          '[migration] addon source associations already migrated'
+    run: () =>
+      Effect.gen(function* () {
+        const settings = yield* Settings;
+        const originalAddons = yield* settings.addons;
+        const migratedAddons = originalAddons.map((addon) =>
+          normalizeAddonLink(addon)
         );
-        return;
-      }
 
-      database.updateSettings({ addons: [...new Set(migratedAddons)] });
-      logger.sync.info('[migration] migrated addon source associations');
-    },
+        const changed = migratedAddons.some(
+          (addon, index) => addon !== originalAddons[index]
+        );
+        if (!changed) {
+          logger.sync.info(
+            '[migration] addon source associations already migrated'
+          );
+          return;
+        }
+
+        yield* settings.setAddons([...new Set(migratedAddons)]);
+        logger.sync.info('[migration] migrated addon source associations');
+      }),
   },
   'migrate-steamtinkerlaunch-steamgriddb-key': {
     from: '0.0.0',
@@ -293,10 +307,11 @@ let migrations: {
     description:
       'Migrates the SteamGridDB API key from the legacy SteamTinkerLaunch configuration.',
     platform: 'linux',
-    run: async () => {
-      const status = migrateLegacySteamGridDbKey();
-      logger.sync.info(`[migration] SteamGridDB key: ${status}`);
-    },
+    run: () =>
+      Effect.gen(function* () {
+        const status = yield* migrateLegacySteamGridDbKey();
+        logger.sync.info(`[migration] SteamGridDB key: ${status}`);
+      }),
   },
 };
 /**
@@ -304,14 +319,18 @@ let migrations: {
  * then records the current version. A fresh install skips straight to
  * recording the version.
  */
-export function execute(): Effect.Effect<void, FileSystemError> {
+export function execute(): Effect.Effect<
+  void,
+  FileSystemError | DatabaseError,
+  AppServices
+> {
   return Effect.gen(function* () {
-    const database = getDatabase();
-    const appState = database.getAppState();
+    const database = yield* Database;
+    const appState = yield* database.appState.get;
     // A fresh install has nothing to migrate; just record the version it
     // started on so the next upgrade knows where it came from.
     if (!appState.installed) {
-      database.updateAppState({ lastVersion: VERSION });
+      yield* database.appState.update({ lastVersion: VERSION });
       return;
     }
 
@@ -344,6 +363,6 @@ export function execute(): Effect.Effect<void, FileSystemError> {
       }
     }
 
-    database.updateAppState({ lastVersion: VERSION });
+    yield* database.appState.update({ lastVersion: VERSION });
   });
 }

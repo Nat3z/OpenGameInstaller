@@ -1,10 +1,10 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { SteamArtworkError } from '@ogi-sdk/errors';
+import { type DatabaseError, SteamArtworkError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
-import { getDatabase } from '@/electron/database/index.js';
 import { runElectronEffect } from '@/electron/runtime.js';
+import { Settings } from '@/electron/services/index.js';
 import { writeFileAtomic } from './steam-installation.js';
 
 const ARTWORK_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
@@ -18,16 +18,33 @@ export type SteamGridDbMigrationStatus =
   | 'migrated'
   | 'not-found';
 
-export const readSteamGridDbKey = (): string | undefined => {
-  const apiKey = getDatabase().getSettings().steamGridDbApiKey.trim();
-  return apiKey === '' ? undefined : apiKey;
-};
+export const readSteamGridDbKey = (): Effect.Effect<
+  string | undefined,
+  DatabaseError,
+  Settings
+> =>
+  Effect.gen(function* () {
+    const settings = yield* Settings;
+    const { steamGridDbApiKey } = yield* settings.get;
+    const apiKey = steamGridDbApiKey.trim();
+    return apiKey === '' ? undefined : apiKey;
+  });
 
-export const writeSteamGridDbKey = (apiKey: string): void => {
-  const trimmed = apiKey.trim();
-  if (!trimmed) throw new Error('SteamGridDB API key cannot be empty');
-  getDatabase().updateSettings({ steamGridDbApiKey: trimmed });
-};
+export const writeSteamGridDbKey = (
+  apiKey: string
+): Effect.Effect<void, DatabaseError | SteamArtworkError, Settings> =>
+  Effect.gen(function* () {
+    const trimmed = apiKey.trim();
+    if (!trimmed) {
+      return yield* Effect.fail(
+        new SteamArtworkError({
+          message: 'SteamGridDB API key cannot be empty',
+        })
+      );
+    }
+    const settings = yield* Settings;
+    yield* settings.update({ steamGridDbApiKey: trimmed });
+  });
 
 export const parseLegacySteamGridDbKey = (
   contents: string
@@ -46,51 +63,56 @@ export const parseLegacySteamGridDbKey = (
 export const migrateLegacySteamGridDbKey = (options?: {
   homeDirectory?: string;
   xdgConfigHome?: string;
-}): SteamGridDbMigrationStatus => {
-  if (readSteamGridDbKey()) return 'already-configured';
+}): Effect.Effect<
+  SteamGridDbMigrationStatus,
+  DatabaseError | SteamArtworkError,
+  Settings
+> =>
+  Effect.gen(function* () {
+    if (yield* readSteamGridDbKey()) return 'already-configured';
 
-  const homeDirectory = options?.homeDirectory ?? os.homedir();
-  const xdgConfigHome = options?.xdgConfigHome ?? process.env.XDG_CONFIG_HOME;
-  const candidates = [
-    xdgConfigHome
-      ? path.join(xdgConfigHome, 'steamtinkerlaunch/global.conf')
-      : undefined,
-    path.join(homeDirectory, '.config/steamtinkerlaunch/global.conf'),
-    path.join(
-      homeDirectory,
-      '.var/app/com.valvesoftware.Steam/.config/steamtinkerlaunch/global.conf'
-    ),
-  ].filter((candidate): candidate is string => candidate !== undefined);
-  const seen = new Set<string>();
+    const homeDirectory = options?.homeDirectory ?? os.homedir();
+    const xdgConfigHome = options?.xdgConfigHome ?? process.env.XDG_CONFIG_HOME;
+    const candidates = [
+      xdgConfigHome
+        ? path.join(xdgConfigHome, 'steamtinkerlaunch/global.conf')
+        : undefined,
+      path.join(homeDirectory, '.config/steamtinkerlaunch/global.conf'),
+      path.join(
+        homeDirectory,
+        '.var/app/com.valvesoftware.Steam/.config/steamtinkerlaunch/global.conf'
+      ),
+    ].filter((candidate): candidate is string => candidate !== undefined);
+    const seen = new Set<string>();
 
-  for (const candidate of candidates) {
-    let canonicalPath: string;
-    try {
-      canonicalPath = fs.existsSync(candidate)
-        ? fs.realpathSync.native(candidate)
-        : path.resolve(candidate);
-    } catch {
-      continue;
+    for (const candidate of candidates) {
+      let canonicalPath: string;
+      try {
+        canonicalPath = fs.existsSync(candidate)
+          ? fs.realpathSync.native(candidate)
+          : path.resolve(candidate);
+      } catch {
+        continue;
+      }
+      if (seen.has(canonicalPath)) continue;
+      seen.add(canonicalPath);
+      if (!fs.existsSync(canonicalPath)) continue;
+
+      let apiKey: string | undefined;
+      try {
+        apiKey = parseLegacySteamGridDbKey(
+          fs.readFileSync(canonicalPath, 'utf8')
+        );
+      } catch {
+        continue;
+      }
+      if (!apiKey) continue;
+      yield* writeSteamGridDbKey(apiKey);
+      return 'migrated';
     }
-    if (seen.has(canonicalPath)) continue;
-    seen.add(canonicalPath);
-    if (!fs.existsSync(canonicalPath)) continue;
 
-    let apiKey: string | undefined;
-    try {
-      apiKey = parseLegacySteamGridDbKey(
-        fs.readFileSync(canonicalPath, 'utf8')
-      );
-    } catch {
-      continue;
-    }
-    if (!apiKey) continue;
-    writeSteamGridDbKey(apiKey);
-    return 'migrated';
-  }
-
-  return 'not-found';
-};
+    return 'not-found';
+  });
 
 const fetchSteamGridDb = async <T>(url: string, apiKey: string): Promise<T> => {
   const response = await fetch(url, {
@@ -147,15 +169,24 @@ export const downloadSteamGridArtwork = (options: {
   appName: string;
   appId: number;
   userdataPath: string;
-}): Effect.Effect<void, SteamArtworkError> =>
+}): Effect.Effect<void, SteamArtworkError | DatabaseError, Settings> =>
+  Effect.gen(function* () {
+    let apiKey = yield* readSteamGridDbKey();
+    if (!apiKey && process.platform === 'linux') {
+      // A Steam Deck user may still have the key only in SteamTinkerLaunch.
+      yield* migrateLegacySteamGridDbKey();
+      apiKey = yield* readSteamGridDbKey();
+    }
+    if (!apiKey) return;
+    yield* fetchArtwork(options, apiKey);
+  });
+
+const fetchArtwork = (
+  options: { appName: string; appId: number; userdataPath: string },
+  apiKey: string
+): Effect.Effect<void, SteamArtworkError> =>
   Effect.tryPromise({
     try: async () => {
-      let apiKey = readSteamGridDbKey();
-      if (!apiKey && process.platform === 'linux') {
-        migrateLegacySteamGridDbKey();
-        apiKey = readSteamGridDbKey();
-      }
-      if (!apiKey) return;
       const games = await fetchSteamGridDb<SteamGridDbGame[]>(
         `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(options.appName)}`,
         apiKey

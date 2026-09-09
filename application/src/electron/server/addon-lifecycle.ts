@@ -3,10 +3,10 @@ import { AddonError, FileSystemError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import * as fs from 'fs/promises';
-import { getDatabase } from '@/electron/database/index.js';
 import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { getAddonServer } from '@/electron/server/addon-server.js';
+import { Database, Settings } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -29,7 +29,11 @@ export function isAddonEventAvailable(
 
 export function deleteInstalledAddon(
   addonID: string
-): Effect.Effect<DeleteInstalledAddonResult, FileSystemError | AddonError> {
+): Effect.Effect<
+  DeleteInstalledAddonResult,
+  FileSystemError | AddonError,
+  Settings | Database
+> {
   return Effect.gen(function* () {
     const client = getAddonServer().getClient(addonID);
     if (!client) {
@@ -46,22 +50,23 @@ export function deleteInstalledAddon(
       };
     }
 
-    yield* Effect.try({
-      try: () => {
-        const database = getDatabase();
-        database.updateSettings({
-          addons: database
-            .getSettings()
-            .addons.filter((addon) => addon !== client.addonLink),
-        });
-        database.deleteAddonConfig(addonID);
-      },
-      catch: (cause) =>
-        new FileSystemError({
-          message: `Failed to update addon configuration: ${String(cause)}`,
-          cause,
-        }),
-    });
+    yield* Effect.gen(function* () {
+      const settings = yield* Settings;
+      const database = yield* Database;
+      const addons = yield* settings.addons;
+      yield* settings.setAddons(
+        addons.filter((addon) => addon !== client.addonLink)
+      );
+      yield* database.addonConfig.delete(addonID);
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new FileSystemError({
+            message: `Failed to update addon configuration: ${String(cause)}`,
+            cause,
+          })
+      )
+    );
 
     yield* restartAddonServer();
     yield* Effect.sleep('1 second');

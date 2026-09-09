@@ -34,6 +34,8 @@ const createAddonServer = (secret?: string): AddonServer => {
   return instance;
 };
 
+// Read synchronously: the addon server's secret is needed before the runtime
+// has anything to run, and a failure here must fall back to checks-on.
 const readSecurityCheck = (): boolean => {
   try {
     return !getDatabase().getSettings().disableSecretCheck;

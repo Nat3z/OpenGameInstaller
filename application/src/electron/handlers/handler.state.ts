@@ -1,14 +1,22 @@
 import { createHash } from 'node:crypto';
 import * as net from 'node:net';
 import { extname } from 'node:path';
-import { ConfigError, formatError, ValidationError } from '@ogi-sdk/errors';
+import {
+  ConfigError,
+  type DatabaseError,
+  formatError,
+  ValidationError,
+} from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
-import { getDatabase } from '@/electron/database/index.js';
 import { isProtectedDeletePath } from '@/electron/lib/delete-guards.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
+import {
+  Database,
+  Settings as SettingsService,
+} from '@/electron/services/index.js';
 import type { FailedSetup, PersistedDownload } from '@/lib/download-state.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 import {
@@ -153,24 +161,36 @@ const validateAddonConfig = (
  */
 const validateDownloadPath = (
   downloadPath: unknown
-): Effect.Effect<string, ValidationError> => {
-  if (typeof downloadPath !== 'string' || downloadPath === '') {
-    return invalid('downloadInfo.downloadPath is required', 'downloadPath');
-  }
-  const root = getDatabase().getSettings().fileDownloadLocation;
-  return isProtectedDeletePath(downloadPath, { exact: [], subtrees: [root] })
-    ? Effect.succeed(downloadPath)
-    : invalid(
-        'downloadInfo.downloadPath must be inside the download location',
+): Effect.Effect<string, ValidationError | DatabaseError, SettingsService> =>
+  Effect.gen(function* () {
+    if (typeof downloadPath !== 'string' || downloadPath === '') {
+      return yield* invalid(
+        'downloadInfo.downloadPath is required',
         'downloadPath'
       );
-};
+    }
+    const settings = yield* SettingsService;
+    const { fileDownloadLocation } = yield* settings.get;
+    return isProtectedDeletePath(downloadPath, {
+      exact: [],
+      subtrees: [fileDownloadLocation],
+    })
+      ? downloadPath
+      : yield* invalid(
+          'downloadInfo.downloadPath must be inside the download location',
+          'downloadPath'
+        );
+  });
 
 // Download and failed-setup blobs are renderer-owned shapes; only the fields
 // the database keys on or later trusts as paths are checked.
 const validateDownload = (
   record: unknown
-): Effect.Effect<PersistedDownload, ValidationError> =>
+): Effect.Effect<
+  PersistedDownload,
+  ValidationError | DatabaseError,
+  SettingsService
+> =>
   Effect.gen(function* () {
     if (typeof record !== 'object' || record === null) {
       return yield* invalid('Download record must be an object', 'record');
@@ -206,7 +226,11 @@ const validateDownload = (
 
 const validateFailedSetup = (
   setup: unknown
-): Effect.Effect<FailedSetup, ValidationError> =>
+): Effect.Effect<
+  FailedSetup,
+  ValidationError | DatabaseError,
+  SettingsService
+> =>
   Effect.gen(function* () {
     if (typeof setup !== 'object' || setup === null) {
       return yield* invalid('Failed setup must be an object', 'setup');
@@ -324,7 +348,8 @@ const loadImage = (url: string) =>
       return yield* invalid('Image URL must not target a local host', 'url');
     }
     const key = createHash('sha256').update(parsed.href).digest('hex');
-    const cached = yield* Effect.sync(() => getDatabase().getCachedImage(key));
+    const database = yield* Database;
+    const cached = yield* database.imageCache.get(key);
     if (cached) return toDataUrl(cached.mimeType, cached.bytes);
 
     const response = yield* Effect.tryPromise({
@@ -343,46 +368,51 @@ const loadImage = (url: string) =>
     );
 
     // A cache write failure costs a re-fetch next time, nothing more.
-    yield* Effect.try({
-      try: () => getDatabase().putCachedImage(key, mimeType, bytes),
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.catchAll((cause) =>
-        Effect.sync(() =>
-          logger.sync.warn('[state] Could not cache image', cause)
+    yield* database.imageCache
+      .put(key, mimeType, bytes)
+      .pipe(
+        Effect.catchAll((cause) =>
+          Effect.sync(() =>
+            logger.sync.warn('[state] Could not cache image', cause)
+          )
         )
-      )
-    );
+      );
     return toDataUrl(mimeType, bytes);
   });
 
 export default function stateHandler() {
   return router(
     procedure(ElectronRpc.state.getSettings, () =>
-      runBoundary(Effect.sync(() => getDatabase().getSettings()))
+      runBoundary(Effect.flatMap(SettingsService, (settings) => settings.get))
     ),
     procedure(ElectronRpc.state.updateSettings, (patch: unknown) =>
       runBoundary(
-        validateSettingsPatch(patch).pipe(
-          Effect.map((validated) => getDatabase().updateSettings(validated))
-        )
+        Effect.gen(function* () {
+          const validated = yield* validateSettingsPatch(patch);
+          const settings = yield* SettingsService;
+          return yield* settings.update(validated);
+        })
       )
     ),
     procedure(ElectronRpc.state.getAppState, () =>
-      runBoundary(Effect.sync(() => getDatabase().getAppState()))
+      runBoundary(Effect.flatMap(Database, (database) => database.appState.get))
     ),
     procedure(ElectronRpc.state.updateAppState, (patch: unknown) =>
       runBoundary(
-        validateAppStatePatch(patch).pipe(
-          Effect.map((validated) => getDatabase().updateAppState(validated))
-        )
+        Effect.gen(function* () {
+          const validated = yield* validateAppStatePatch(patch);
+          const database = yield* Database;
+          return yield* database.appState.update(validated);
+        })
       )
     ),
     procedure(ElectronRpc.state.getAddonConfig, (addonId: unknown) =>
       runBoundary(
-        validateAddonId(addonId).pipe(
-          Effect.map((id) => getDatabase().getAddonConfig(id))
-        )
+        Effect.gen(function* () {
+          const id = yield* validateAddonId(addonId);
+          const database = yield* Database;
+          return yield* database.addonConfig.get(id);
+        })
       )
     ),
     procedure(
@@ -392,45 +422,62 @@ export default function stateHandler() {
           Effect.gen(function* () {
             const id = yield* validateAddonId(addonId);
             const config = yield* validateAddonConfig(values);
-            getDatabase().setAddonConfig(id, config);
+            const database = yield* Database;
+            yield* database.addonConfig.set(id, config);
           })
         )
     ),
     procedure(ElectronRpc.state.getUpdateState, () =>
-      runBoundary(Effect.sync(() => getDatabase().getUpdateState()))
+      runBoundary(
+        Effect.flatMap(Database, (database) => database.updateState.get)
+      )
     ),
     procedure(ElectronRpc.state.setUpdateState, (state: unknown) =>
       runBoundary(
-        validateUpdateState(state).pipe(
-          Effect.map((validated) => getDatabase().setUpdateState(validated))
-        )
+        Effect.gen(function* () {
+          const validated = yield* validateUpdateState(state);
+          const database = yield* Database;
+          yield* database.updateState.set(validated);
+        })
       )
     ),
     procedure(ElectronRpc.state.listDownloads, () =>
-      runBoundary(Effect.sync(() => getDatabase().listDownloads()))
+      runBoundary(
+        Effect.flatMap(Database, (database) => database.downloads.list)
+      )
     ),
     procedure(ElectronRpc.state.saveDownload, (record: unknown) =>
       runBoundary(
-        validateDownload(record).pipe(
-          Effect.map((validated) => getDatabase().saveDownload(validated))
-        )
+        Effect.gen(function* () {
+          const validated = yield* validateDownload(record);
+          const database = yield* Database;
+          yield* database.downloads.save(validated);
+        })
       )
     ),
     procedure(ElectronRpc.state.deleteDownload, (id: string) =>
-      runBoundary(Effect.sync(() => getDatabase().deleteDownload(id)))
+      runBoundary(
+        Effect.flatMap(Database, (database) => database.downloads.delete(id))
+      )
     ),
     procedure(ElectronRpc.state.listFailedSetups, () =>
-      runBoundary(Effect.sync(() => getDatabase().listFailedSetups()))
+      runBoundary(
+        Effect.flatMap(Database, (database) => database.failedSetups.list)
+      )
     ),
     procedure(ElectronRpc.state.saveFailedSetup, (setup: unknown) =>
       runBoundary(
-        validateFailedSetup(setup).pipe(
-          Effect.map((validated) => getDatabase().saveFailedSetup(validated))
-        )
+        Effect.gen(function* () {
+          const validated = yield* validateFailedSetup(setup);
+          const database = yield* Database;
+          yield* database.failedSetups.save(validated);
+        })
       )
     ),
     procedure(ElectronRpc.state.deleteFailedSetup, (id: string) =>
-      runBoundary(Effect.sync(() => getDatabase().deleteFailedSetup(id)))
+      runBoundary(
+        Effect.flatMap(Database, (database) => database.failedSetups.delete(id))
+      )
     ),
     procedure(ElectronRpc.state.loadImage, (url: string) =>
       runBoundary(loadImage(url))

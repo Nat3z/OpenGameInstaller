@@ -167,6 +167,7 @@ async function backupFilesAsync(
   const sourceRoot = dataDirectory;
 
   // Fold the write-ahead log into the main file so a plain copy is complete.
+  // Kept synchronous: the backup copy that follows is synchronous too.
   try {
     getDatabase().checkpoint();
   } catch (cause) {

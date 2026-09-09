@@ -1,16 +1,10 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import {
-  FileSystemError,
-  formatError,
-  ipcBoundary,
-  SteamRunningError,
-} from '@ogi-sdk/errors';
+import { FileSystemError, SteamRunningError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Layer } from 'effect';
 import { type BrowserWindow, dialog } from 'electron';
-import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import {
   getCurrentUsername,
@@ -39,6 +33,8 @@ import {
 import { getNonSteamLaunchId } from '@/electron/lib/steam-shortcuts.js';
 import { sendNotification } from '@/electron/main.js';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
+import { ipcServiceBoundary } from '@/electron/runtime.js';
+import { type AppServices, Library } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 export type SteamOperationResult =
@@ -51,13 +47,16 @@ const SteamLive = SteamServiceLive.pipe(
   Layer.provide(Layer.merge(SteamRepositoryLive(), SteamProcessLive))
 );
 
-const provideSteam = <A, E>(effect: Effect.Effect<A, E, SteamService>) =>
-  effect.pipe(Effect.provide(SteamLive));
+// `SteamLive` supplies only the Steam-specific dependencies; `Library` and
+// `Settings` stay in R so the application runtime provides them.
+const provideSteam = <A, E>(
+  effect: Effect.Effect<A, E, SteamService | AppServices>
+): Effect.Effect<A, E, AppServices> => Effect.provide(effect, SteamLive);
 
 export const getSteamShortcutForGame = (
   appID: number,
   oldSteamAppId?: number
-): Effect.Effect<SteamShortcutLookup, SteamServiceError> =>
+): Effect.Effect<SteamShortcutLookup, SteamServiceError, AppServices> =>
   provideSteam(
     Effect.gen(function* () {
       return yield* (yield* SteamService).lookup(appID, oldSteamAppId);
@@ -116,7 +115,11 @@ export const runSteamMutationWithConfirmation = (
   mainWindow: BrowserWindow,
   operation: 'add' | 'remove',
   options: SteamMutationOptions
-): Effect.Effect<SteamOperationResult, SteamServiceError | FileSystemError> =>
+): Effect.Effect<
+  SteamOperationResult,
+  SteamServiceError | FileSystemError,
+  AppServices
+> =>
   Effect.gen(function* () {
     const service = yield* SteamService;
     const initial = yield* Effect.either(service[operation](options));
@@ -140,14 +143,18 @@ export const runSteamMutationWithConfirmation = (
 export function addUmuGameToSteam(
   mainWindow: BrowserWindow,
   params: { appID: number; oldSteamAppId?: number }
-): Effect.Effect<SteamOperationResult, SteamServiceError | FileSystemError> {
+): Effect.Effect<
+  SteamOperationResult,
+  SteamServiceError | FileSystemError,
+  AppServices
+> {
   return runSteamMutationWithConfirmation(mainWindow, 'add', params);
 }
 
 export function addDeckGameToSteam(
   mainWindow: BrowserWindow,
   appID: number
-): Effect.Effect<void, SteamServiceError | FileSystemError> {
+): Effect.Effect<void, SteamServiceError | FileSystemError, AppServices> {
   if (!isLinux() || getCurrentUsername()?.toLowerCase() !== 'deck') {
     return Effect.void;
   }
@@ -264,7 +271,7 @@ Icon=steam_icon_${params.appID}
 export function registerSteamHandlers(mainWindow: BrowserWindow) {
   const getSteamAppId = ipcProcedure(
     ElectronRpc.app.getSteamAppId,
-    ipcBoundary((_, appID: number) =>
+    ipcServiceBoundary((_, appID: number) =>
       getSteamAppIdForGame(appID).pipe(
         Effect.map((appId) => ({ status: 'success' as const, appId }))
       )
@@ -273,14 +280,15 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
 
   const launchSteamApp = ipcProcedure(
     ElectronRpc.app.launchSteamApp,
-    ipcBoundary((_, appID: number) =>
+    ipcServiceBoundary((_, appID: number) =>
       Effect.gen(function* () {
         if (!isLinux()) {
           return yield* Effect.fail(
             new FileSystemError({ message: 'Only available on Linux' })
           );
         }
-        let appInfo = loadLibraryInfo(appID);
+        const library = yield* Library;
+        let appInfo = yield* library.get(appID);
         if (!appInfo) {
           return yield* Effect.fail(
             new FileSystemError({ message: 'Game not found' })
@@ -296,14 +304,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
           const { migrateToUmu } = yield* Effect.promise(
             () => import('@/electron/handlers/handler.umu.js')
           );
-          const migration = yield* Effect.tryPromise({
-            try: () => migrateToUmu(appID, existingSteamAppId),
-            catch: (cause) =>
-              new FileSystemError({
-                message: `Migration failed: ${formatError(cause)}`,
-                cause,
-              }),
-          });
+          const migration = yield* migrateToUmu(appID, existingSteamAppId);
           if (!migration.success) {
             return yield* Effect.fail(
               new FileSystemError({
@@ -311,7 +312,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
               })
             );
           }
-          appInfo = loadLibraryInfo(appID);
+          appInfo = yield* library.get(appID);
           if (!appInfo) {
             return yield* Effect.fail(
               new FileSystemError({
@@ -362,9 +363,11 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
 
   const checkPrefixExists = ipcProcedure(
     ElectronRpc.app.checkPrefixExists,
-    ipcBoundary((_, appID: number) =>
+    ipcServiceBoundary((_, appID: number) =>
       Effect.gen(function* () {
-        const appInfo = loadLibraryInfo(appID);
+        const appInfo = yield* Effect.flatMap(Library, (library) =>
+          library.get(appID)
+        );
         if (!appInfo) return { exists: false, error: 'Game not found' };
         if (appInfo.umu?.winePrefixPath) {
           return {
@@ -384,14 +387,15 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
 
   const addToSteam = ipcProcedure(
     ElectronRpc.app.addToSteam,
-    ipcBoundary((_, appID: number, oldSteamAppId: number | undefined) =>
+    ipcServiceBoundary((_, appID: number, oldSteamAppId: number | undefined) =>
       Effect.gen(function* () {
         if (!isLinux()) {
           return yield* Effect.fail(
             new FileSystemError({ message: 'Only available on Linux' })
           );
         }
-        let appInfo = loadLibraryInfo(appID);
+        const library = yield* Library;
+        let appInfo = yield* library.get(appID);
         if (!appInfo) {
           return yield* Effect.fail(
             new FileSystemError({ message: 'Game not found' })
@@ -405,14 +409,10 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
           const { migrateToUmu } = yield* Effect.promise(
             () => import('@/electron/handlers/handler.umu.js')
           );
-          const migration = yield* Effect.tryPromise({
-            try: () => migrateToUmu(appID, oldSteamAppId ?? detected),
-            catch: (cause) =>
-              new FileSystemError({
-                message: `Migration failed: ${formatError(cause)}`,
-                cause,
-              }),
-          });
+          const migration = yield* migrateToUmu(
+            appID,
+            oldSteamAppId ?? detected
+          );
           if (!migration.success) {
             return yield* Effect.fail(
               new FileSystemError({
@@ -420,7 +420,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
               })
             );
           }
-          appInfo = loadLibraryInfo(appID);
+          appInfo = yield* library.get(appID);
           if (!appInfo) {
             return yield* Effect.fail(
               new FileSystemError({
@@ -444,7 +444,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
 
   const removeFromSteam = ipcProcedure(
     ElectronRpc.app.removeFromSteam,
-    ipcBoundary((_, appID: number) => {
+    ipcServiceBoundary((_, appID: number) => {
       if (!isLinux()) {
         return Effect.fail(
           new FileSystemError({ message: 'Only available on Linux' })

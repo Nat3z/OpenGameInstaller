@@ -12,6 +12,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { Effect } from 'effect';
 import { AppDatabase } from '../src/electron/database/database.js';
 
 const moduleDirectory = fs.mkdtempSync(
@@ -24,14 +25,30 @@ mock.module('electron', () => ({
 
 const migrations = path.join(import.meta.dir, '../drizzle');
 
-let setDatabase: typeof import('../src/electron/database/index.js').setDatabase;
+let AppServicesTest: typeof import('../src/electron/services/index.js').AppServicesTest;
 let migrateLegacySteamGridDbKey: typeof import('../src/electron/lib/steam-grid-db.js').migrateLegacySteamGridDbKey;
 let parseLegacySteamGridDbKey: typeof import('../src/electron/lib/steam-grid-db.js').parseLegacySteamGridDbKey;
 let readSteamGridDbKey: typeof import('../src/electron/lib/steam-grid-db.js').readSteamGridDbKey;
 let writeSteamGridDbKey: typeof import('../src/electron/lib/steam-grid-db.js').writeSteamGridDbKey;
 
+/** Runs a settings-dependent effect against a fresh in-memory database. */
+let run: <A, E>(
+  effect: Effect.Effect<
+    A,
+    E,
+    import('../src/electron/services/index.js').Settings
+  >
+) => A;
+
+const useDatabase = (): void => {
+  const layer = AppServicesTest(
+    new AppDatabase(drizzle(new Database(':memory:')), migrations)
+  );
+  run = (effect) => Effect.runSync(Effect.provide(effect, layer));
+};
+
 beforeAll(async () => {
-  ({ setDatabase } = await import('../src/electron/database/index.js'));
+  ({ AppServicesTest } = await import('../src/electron/services/index.js'));
   ({
     migrateLegacySteamGridDbKey,
     parseLegacySteamGridDbKey,
@@ -41,7 +58,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  setDatabase(new AppDatabase(drizzle(new Database(':memory:')), migrations));
+  useDatabase();
 });
 
 const temporaryDirectories: string[] = [];
@@ -54,7 +71,6 @@ const temporaryDirectory = (): string => {
 };
 
 afterEach(() => {
-  setDatabase(undefined);
   for (const directory of temporaryDirectories.splice(0)) {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -62,9 +78,9 @@ afterEach(() => {
 
 describe('SteamGridDB configuration', () => {
   test('stores a trimmed key for OOBE and settings', () => {
-    writeSteamGridDbKey('  configured-key  ');
+    run(writeSteamGridDbKey('  configured-key  '));
 
-    expect(readSteamGridDbKey()).toBe('configured-key');
+    expect(run(readSteamGridDbKey())).toBe('configured-key');
   });
 
   test('parses the final valid legacy assignment', () => {
@@ -85,8 +101,10 @@ export SGDBAPIKEY='new-key' # current
     fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
     fs.writeFileSync(legacyPath, 'SGDBAPIKEY="migrated-key"\n');
 
-    expect(migrateLegacySteamGridDbKey({ homeDirectory })).toBe('migrated');
-    expect(readSteamGridDbKey()).toBe('migrated-key');
+    expect(run(migrateLegacySteamGridDbKey({ homeDirectory }))).toBe(
+      'migrated'
+    );
+    expect(run(readSteamGridDbKey())).toBe('migrated-key');
   });
 
   test('supports XDG and Flatpak legacy config paths', () => {
@@ -110,9 +128,7 @@ export SGDBAPIKEY='new-key' # current
     ];
 
     for (const [index, candidate] of cases.entries()) {
-      setDatabase(
-        new AppDatabase(drizzle(new Database(':memory:')), migrations)
-      );
+      useDatabase();
       const homeDirectory = temporaryDirectory();
       const xdgConfigHome = temporaryDirectory();
       const legacyPath = candidate.legacyPath(homeDirectory, xdgConfigHome);
@@ -120,11 +136,13 @@ export SGDBAPIKEY='new-key' # current
       fs.writeFileSync(legacyPath, `SGDBAPIKEY="candidate-${index}"\n`);
 
       expect(
-        migrateLegacySteamGridDbKey(
-          candidate.options(homeDirectory, xdgConfigHome)
+        run(
+          migrateLegacySteamGridDbKey(
+            candidate.options(homeDirectory, xdgConfigHome)
+          )
         )
       ).toBe('migrated');
-      expect(readSteamGridDbKey()).toBe(`candidate-${index}`);
+      expect(run(readSteamGridDbKey())).toBe(`candidate-${index}`);
     }
   });
 
@@ -136,18 +154,20 @@ export SGDBAPIKEY='new-key' # current
     );
     fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
     fs.writeFileSync(legacyPath, 'SGDBAPIKEY="legacy-key"\n');
-    writeSteamGridDbKey('current-key');
+    run(writeSteamGridDbKey('current-key'));
 
-    expect(migrateLegacySteamGridDbKey({ homeDirectory })).toBe(
+    expect(run(migrateLegacySteamGridDbKey({ homeDirectory }))).toBe(
       'already-configured'
     );
-    expect(readSteamGridDbKey()).toBe('current-key');
+    expect(run(readSteamGridDbKey())).toBe('current-key');
   });
 
   test('leaves the key unset when no legacy key exists', () => {
     const homeDirectory = temporaryDirectory();
 
-    expect(migrateLegacySteamGridDbKey({ homeDirectory })).toBe('not-found');
-    expect(readSteamGridDbKey()).toBeUndefined();
+    expect(run(migrateLegacySteamGridDbKey({ homeDirectory }))).toBe(
+      'not-found'
+    );
+    expect(run(readSteamGridDbKey())).toBeUndefined();
   });
 });

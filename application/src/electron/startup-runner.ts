@@ -4,6 +4,7 @@ import { Effect } from 'effect';
 import { app, BrowserWindow } from 'electron';
 import { join } from 'path';
 import { execute as executeMigrations } from '@/electron/migrations.js';
+import type { AppServices } from '@/electron/services/index.js';
 import {
   reinstallAddonDependencies,
   removeCachedAppUpdates,
@@ -116,7 +117,7 @@ export type StartupTasksResult = {
  */
 export function runStartupTasks(
   mainWindow?: BrowserWindow | null
-): Effect.Effect<StartupTasksResult, UpdateError> {
+): Effect.Effect<StartupTasksResult, UpdateError, AppServices> {
   let shutdownPending = false;
 
   return Effect.scoped(

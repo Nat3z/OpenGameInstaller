@@ -1,11 +1,14 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileSystemError, formatError } from '@ogi-sdk/errors';
+import {
+  type DatabaseError,
+  FileSystemError,
+  formatError,
+} from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { extraction } from 'ogi-addon';
-import { getDatabase } from '@/electron/database/index.js';
 import {
   fsTry,
   fsTryPromise,
@@ -16,6 +19,7 @@ import { getPersistedFilePaths } from '@/electron/lib/download-paths.js';
 import { sendIPCMessage } from '@/electron/main.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
+import { Database, Library, Settings } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -32,18 +36,23 @@ const MAX_CONTENT_ROOT_DEPTH = 10;
  * configured when they were saved). Setup only ever rewrites these, so a
  * game's install folder is deliberately not a valid target for mutation.
  */
-const downloadRoots = (): string[] => {
-  const database = getDatabase();
-  return [
-    database.getSettings().fileDownloadLocation,
-    ...database
-      .listDownloads()
-      .map((record) => record.downloadInfo.downloadPath),
-    ...database
-      .listFailedSetups()
-      .map((setup) => setup.downloadInfo.downloadPath),
-  ].filter((root) => root.trim() !== '');
-};
+const downloadRoots = (): Effect.Effect<
+  string[],
+  DatabaseError,
+  Database | Settings
+> =>
+  Effect.gen(function* () {
+    const database = yield* Database;
+    const settings = yield* Settings;
+    const { fileDownloadLocation } = yield* settings.get;
+    const downloads = yield* database.downloads.list;
+    const failedSetups = yield* database.failedSetups.list;
+    return [
+      fileDownloadLocation,
+      ...downloads.map((record) => record.downloadInfo.downloadPath),
+      ...failedSetups.map((setup) => setup.downloadInfo.downloadPath),
+    ].filter((root) => root.trim() !== '');
+  });
 
 const requireWithin = (
   value: string,
@@ -61,8 +70,13 @@ const requireWithin = (
   );
 
 /** A path inside a download directory; the only place setup may write. */
-const requireDownloadPath = (value: string) =>
-  requireWithin(value, downloadRoots());
+const requireDownloadPath = (
+  value: string
+): Effect.Effect<
+  string,
+  FileSystemError | DatabaseError,
+  Database | Settings
+> => Effect.flatMap(downloadRoots(), (roots) => requireWithin(value, roots));
 
 const resolveContentRoot = (
   directory: string
@@ -78,13 +92,22 @@ const resolveContentRoot = (
   });
 
 /** A path setup may read: a download directory or an owned game's folder. */
-const requireReadablePath = (value: string) =>
-  requireWithin(value, [
-    ...downloadRoots(),
-    ...getDatabase()
-      .listGames()
-      .map((game) => game.cwd),
-  ]);
+const requireReadablePath = (
+  value: string
+): Effect.Effect<
+  string,
+  FileSystemError | DatabaseError,
+  Database | Settings | Library
+> =>
+  Effect.gen(function* () {
+    const library = yield* Library;
+    const roots = yield* downloadRoots();
+    const games = yield* library.list;
+    return yield* requireWithin(value, [
+      ...roots,
+      ...games.map((game) => game.cwd),
+    ]);
+  });
 
 const stageOldFiles = (arg: { directory: string; keep: string[] }) =>
   Effect.gen(function* () {
@@ -230,9 +253,8 @@ const extractArchive = (arg: {
 
 const deleteDownloadFiles = (downloadId: string) =>
   Effect.gen(function* () {
-    const record = yield* Effect.sync(() =>
-      getDatabase().getDownload(downloadId)
-    );
+    const database = yield* Database;
+    const record = yield* database.downloads.get(downloadId);
     if (!record) return;
     const paths = getPersistedFilePaths(record.downloadInfo);
     for (const target of paths) {

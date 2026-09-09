@@ -1,17 +1,11 @@
 import { QBittorrent } from '@ctrl/qbittorrent';
-import {
-  formatError,
-  HttpError,
-  runEffectBoundary as run,
-  TorrentError,
-} from '@ogi-sdk/errors';
+import { formatError, HttpError, TorrentError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Deferred, Effect, Fiber } from 'effect';
 import { BrowserWindow } from 'electron';
 import { getTorrentInfoHash } from '@/electron/lib/torrent-hash.js';
 import { sendNotification } from '@/electron/main.js';
-import { getSettings } from '@/electron/manager/manager.config.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
 import {
@@ -19,6 +13,8 @@ import {
   removeQueueCancel,
 } from '@/electron/rpc/queue-cancel.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
+import { runEffectBoundary as run } from '@/electron/runtime.js';
+import { Settings } from '@/electron/services/index.js';
 import {
   clearDownloadHandshake,
   type DownloadHandshakeResult,
@@ -171,13 +167,13 @@ class TorrentDownload {
     });
   }
 
-  public start(): Effect.Effect<void> {
+  public start(): Effect.Effect<void, never, Settings> {
     return Effect.gen(this, function* () {
       this.lifecycleFiber = yield* Effect.forkDaemon(this.lifecycle());
     });
   }
 
-  private lifecycle(): Effect.Effect<void, never> {
+  private lifecycle(): Effect.Effect<void, never, Settings> {
     const download = Effect.scoped(
       Effect.gen(this, function* () {
         const queue = yield* Effect.acquireRelease(
@@ -238,10 +234,12 @@ class TorrentDownload {
 
   private readTorrentClientType(): Effect.Effect<
     TorrentClientType,
-    TorrentError
+    TorrentError,
+    Settings
   > {
     return Effect.gen(function* () {
-      const { torrentClient } = yield* getSettings();
+      const settings = yield* Settings;
+      const { torrentClient } = yield* settings.get;
       if (torrentClient === 'webtorrent' || torrentClient === 'qbittorrent') {
         return torrentClient;
       }
@@ -332,7 +330,7 @@ class TorrentDownload {
     });
   }
 
-  private runQbittorrent(): Effect.Effect<void, TorrentError> {
+  private runQbittorrent(): Effect.Effect<void, TorrentError, Settings> {
     return Effect.scoped(
       Effect.gen(this, function* () {
         yield* Effect.acquireRelease(this.addQbitTorrent(), () =>
@@ -353,10 +351,15 @@ class TorrentDownload {
     );
   }
 
-  private setupQbitClient(): Effect.Effect<QBittorrent, TorrentError> {
+  private setupQbitClient(): Effect.Effect<
+    QBittorrent,
+    TorrentError,
+    Settings
+  > {
     return Effect.gen(function* () {
+      const settings = yield* Settings;
       const { qbitHost, qbitPort, qbitUsername, qbitPassword } =
-        yield* getSettings();
+        yield* settings.get;
 
       return new QBittorrent({
         baseUrl: `${qbitHost}:${qbitPort}`,
@@ -373,7 +376,7 @@ class TorrentDownload {
     );
   }
 
-  private addQbitTorrent(): Effect.Effect<void, TorrentError> {
+  private addQbitTorrent(): Effect.Effect<void, TorrentError, Settings> {
     return Effect.gen(this, function* () {
       this.qbitClient = yield* this.setupQbitClient();
 

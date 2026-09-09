@@ -1,22 +1,17 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  ConfigError,
-  FileSystemError,
-  formatError,
-  HttpError,
-} from '@ogi-sdk/errors';
+import { FileSystemError, formatError, HttpError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
 import type { ReadStream } from 'original-fs';
 import RealDebrid from 'real-debrid-js';
-import { getDatabase } from '@/electron/database/index.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
+import { type AppServices, Settings } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.realDebrid);
@@ -33,10 +28,10 @@ const hostName = (host: unknown): string | undefined =>
       ? host.host
       : undefined;
 
-const notifyFailure = <A, E>(
-  effect: Effect.Effect<A, E>,
+const notifyFailure = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
   message: string
-): Effect.Effect<A | null> =>
+): Effect.Effect<A | null, never, R> =>
   effect.pipe(
     Effect.catchAll((error) =>
       Effect.sync(() => {
@@ -51,19 +46,16 @@ const notifyFailure = <A, E>(
     )
   );
 
-const run = <A, E>(effect: Effect.Effect<A, E>, message: string) =>
+const run = <A, E>(effect: Effect.Effect<A, E, AppServices>, message: string) =>
   runEffectBoundary(notifyFailure(effect, message));
 
 /** Loads the stored key into the client. False when it has never been set. */
 const updateKey = () =>
   Effect.gen(function* () {
-    const apiKey = yield* Effect.try({
-      try: () => getDatabase().getSettings().debridApiKey,
-      catch: (cause) =>
-        new ConfigError({ message: formatError(cause), key: 'debridApiKey' }),
-    });
-    realDebridClient = new RealDebrid({ apiKey: apiKey || 'UNSET' });
-    return apiKey !== '';
+    const settings = yield* Settings;
+    const { debridApiKey } = yield* settings.get;
+    realDebridClient = new RealDebrid({ apiKey: debridApiKey || 'UNSET' });
+    return debridApiKey !== '';
   });
 
 const downloadTorrent = (url: string, path: string) =>

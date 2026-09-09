@@ -3,11 +3,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { SteamArtworkError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
-import { __dirname } from '@/electron/manager/manager.paths.js';
+import { getDatabase } from '@/electron/database/index.js';
 import { runElectronEffect } from '@/electron/runtime.js';
 import { writeFileAtomic } from './steam-installation.js';
 
-const CONFIG_RELATIVE_PATH = 'config/option/steamgriddb.json';
 const ARTWORK_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 
 type SteamGridDbResponse<T> = { success: boolean; data: T };
@@ -19,31 +18,15 @@ export type SteamGridDbMigrationStatus =
   | 'migrated'
   | 'not-found';
 
-export const getSteamGridDbConfigPath = (baseDirectory = __dirname): string =>
-  path.join(baseDirectory, CONFIG_RELATIVE_PATH);
-
-export const readSteamGridDbKey = (
-  baseDirectory = __dirname
-): string | undefined => {
-  const configPath = getSteamGridDbConfigPath(baseDirectory);
-  if (!fs.existsSync(configPath)) return undefined;
-  const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
-    apiKey?: unknown;
-  };
-  return typeof parsed.apiKey === 'string' && parsed.apiKey.trim()
-    ? parsed.apiKey.trim()
-    : undefined;
+export const readSteamGridDbKey = (): string | undefined => {
+  const apiKey = getDatabase().getSettings().steamGridDbApiKey.trim();
+  return apiKey === '' ? undefined : apiKey;
 };
 
-export const writeSteamGridDbKey = (
-  apiKey: string,
-  baseDirectory = __dirname
-): void => {
+export const writeSteamGridDbKey = (apiKey: string): void => {
   const trimmed = apiKey.trim();
   if (!trimmed) throw new Error('SteamGridDB API key cannot be empty');
-  const configPath = getSteamGridDbConfigPath(baseDirectory);
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify({ apiKey: trimmed }));
+  getDatabase().updateSettings({ steamGridDbApiKey: trimmed });
 };
 
 export const parseLegacySteamGridDbKey = (
@@ -61,12 +44,10 @@ export const parseLegacySteamGridDbKey = (
 };
 
 export const migrateLegacySteamGridDbKey = (options?: {
-  baseDirectory?: string;
   homeDirectory?: string;
   xdgConfigHome?: string;
 }): SteamGridDbMigrationStatus => {
-  const baseDirectory = options?.baseDirectory ?? __dirname;
-  if (readSteamGridDbKey(baseDirectory)) return 'already-configured';
+  if (readSteamGridDbKey()) return 'already-configured';
 
   const homeDirectory = options?.homeDirectory ?? os.homedir();
   const xdgConfigHome = options?.xdgConfigHome ?? process.env.XDG_CONFIG_HOME;
@@ -104,7 +85,7 @@ export const migrateLegacySteamGridDbKey = (options?: {
       continue;
     }
     if (!apiKey) continue;
-    writeSteamGridDbKey(apiKey, baseDirectory);
+    writeSteamGridDbKey(apiKey);
     return 'migrated';
   }
 
@@ -166,16 +147,11 @@ export const downloadSteamGridArtwork = (options: {
   appName: string;
   appId: number;
   userdataPath: string;
-  baseDirectory?: string;
 }): Effect.Effect<void, SteamArtworkError> =>
   Effect.tryPromise({
     try: async () => {
-      let apiKey = readSteamGridDbKey(options.baseDirectory);
-      if (
-        !apiKey &&
-        options.baseDirectory === undefined &&
-        process.platform === 'linux'
-      ) {
+      let apiKey = readSteamGridDbKey();
+      if (!apiKey && process.platform === 'linux') {
         migrateLegacySteamGridDbKey();
         apiKey = readSteamGridDbKey();
       }

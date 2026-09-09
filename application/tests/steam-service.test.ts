@@ -1,7 +1,9 @@
+import { Database } from 'bun:sqlite';
 import {
   afterAll,
   afterEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   mock,
@@ -11,7 +13,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Effect, Layer } from 'effect';
+import { AppDatabase } from '../src/electron/database/database.js';
 import {
   type SteamLocation,
   SteamRepository,
@@ -36,23 +40,30 @@ mock.module('electron', () => ({
   app: { isPackaged: false, getAppPath: () => ogiDirectory },
 }));
 
+const migrations = path.join(import.meta.dir, '../drizzle');
+
+let database: AppDatabase;
+let setDatabase: typeof import('../src/electron/database/index.js').setDatabase;
 let SteamService: typeof import('../src/electron/handlers/helpers.app/steam.js').SteamService;
 let SteamServiceLive: typeof import('../src/electron/handlers/helpers.app/steam.js').SteamServiceLive;
 
 beforeAll(async () => {
+  ({ setDatabase } = await import('../src/electron/database/index.js'));
   ({ SteamService, SteamServiceLive } = await import(
     '../src/electron/handlers/helpers.app/steam.js'
   ));
+});
+
+beforeEach(() => {
+  database = new AppDatabase(drizzle(new Database(':memory:')), migrations);
+  setDatabase(database);
 });
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  fs.rmSync(path.join(ogiDirectory, 'config'), {
-    recursive: true,
-    force: true,
-  });
+  setDatabase(undefined);
 });
 
 afterAll(() => {
@@ -72,20 +83,11 @@ const libraryInfo = (appID: number): LibraryInfo => ({
 });
 
 const writeLibraryInfo = (appInfo: LibraryInfo): void => {
-  fs.mkdirSync(path.join(ogiDirectory, 'library'), { recursive: true });
-  fs.writeFileSync(
-    path.join(ogiDirectory, `library/${appInfo.appID}.json`),
-    JSON.stringify(appInfo)
-  );
+  database.saveGame(appInfo);
 };
 
 const writeCompatibilityTool = (value: string): void => {
-  const configPath = path.join(ogiDirectory, 'config/option/general.json');
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(
-    configPath,
-    JSON.stringify({ steamCompatibilityTool: value })
-  );
+  database.updateSettings({ steamCompatibilityTool: value });
 };
 
 const locationFor = (
@@ -253,11 +255,7 @@ describe('Steam service', () => {
     const gridDirectory = path.join(location.user.userdataPath, 'config/grid');
     fs.mkdirSync(gridDirectory, { recursive: true });
     fs.writeFileSync(path.join(gridDirectory, `${existing.appId}p.png`), 'art');
-    fs.mkdirSync(path.join(ogiDirectory, 'config/option'), { recursive: true });
-    fs.writeFileSync(
-      path.join(ogiDirectory, 'config/option/steamgriddb.json'),
-      JSON.stringify({ apiKey: 'test-key' })
-    );
+    database.updateSettings({ steamGridDbApiKey: 'test-key' });
     const fetchUrls: string[] = [];
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input);

@@ -20,6 +20,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { PassThrough, Readable } from 'stream';
 import { ElectronRpc } from '../src/lib/electron-rpc.js';
+import { DEFAULT_SETTINGS, type Settings } from '../src/lib/state.js';
 
 class MockAxiosError extends Error {
   constructor(
@@ -67,23 +68,28 @@ mock.module('@/electron/lib/online.js', () => ({
 mock.module('@/electron/main.js', () => ({
   sendNotification: mock(() => {}),
 }));
+// `mock.module` is process-wide, so this stands in for manager.config in every
+// test file of the run. It reads the injected database when there is one so
+// suites that seed real settings still see them.
+// Resolved lazily: a static import would load the real `electron` module
+// before the mock above is installed.
+let getDatabase:
+  | typeof import('../src/electron/database/index.js').getDatabase
+  | undefined;
+const currentSettings = (): Settings => {
+  try {
+    if (!getDatabase) {
+      getDatabase = require('../src/electron/database/index.js').getDatabase;
+    }
+    return getDatabase!().getSettings();
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+};
 mock.module('@/electron/manager/manager.config.js', () => ({
   getSteamCompatibilityTool: () =>
-    Effect.sync(() => {
-      const configPath = join(
-        process.env.OGI_DIRECTORY ?? '',
-        'config/option/general.json'
-      );
-      if (!existsSync(configPath)) return 'proton_experimental';
-      const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
-        steamCompatibilityTool?: unknown;
-      };
-      return typeof config.steamCompatibilityTool === 'string'
-        ? config.steamCompatibilityTool.trim()
-        : 'proton_experimental';
-    }),
-  getStoredValue: () => Effect.succeed(8),
-  refreshCached: () => Effect.void,
+    Effect.sync(() => currentSettings().steamCompatibilityTool.trim()),
+  getSettings: () => Effect.sync(currentSettings),
 }));
 mock.module('@/electron/manager/manager.queue.js', () => ({
   DOWNLOAD_QUEUE: {

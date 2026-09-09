@@ -16,6 +16,7 @@ import ConfigurationModal from '@/frontend/components/modal/ConfigurationModal.s
 import NotificationSideView from '@/frontend/components/NotificationSideView.svelte';
 import StorePage from '@/frontend/components/StorePage.svelte';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { appState, loadPersistedState } from '@/frontend/lib/core/state.svelte';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
 import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
@@ -25,7 +26,7 @@ import GameManager from '@/frontend/managers/GameManager.svelte';
 import { GamepadNavigator } from '@/frontend/managers/GamepadManager';
 import Notifications from '@/frontend/managers/NotificationManager.svelte';
 import RootPasswordGranter from '@/frontend/managers/RootPasswordGranter.svelte';
-import { appUpdates, loadPersistedUpdateState } from '@/frontend/states.svelte';
+import { loadPersistedUpdateState } from '@/frontend/states.svelte';
 import {
   addonUpdates,
   clearHeaderBackButton,
@@ -50,7 +51,6 @@ import {
 import {
   fetchAddonsWithConfigure,
   getAddonServerPromise,
-  getConfigClientOption,
   initDownloadPersistence,
   initSleepLock,
   isAddonEventAvailable,
@@ -79,8 +79,6 @@ let searchTimeout: NodeJS.Timeout | null = null;
 let collapsedAddons: Set<string> = $state(new Set());
 let loadingAddons: Set<string> = $state(new Set());
 let emptyAddons: Set<string> = $state(new Set());
-
-let recentlyLaunchedApps: LibraryInfo[] = $state([]);
 
 // Steam shortcut launch mode detection
 let launchGameId: number | null = $state(null);
@@ -127,7 +125,7 @@ const unreadNotificationCount = derived(
   ([$history, $readIds]) => $history.filter((n) => !$readIds.has(n.id)).length
 );
 
-onMount(() => {
+onMount(async () => {
   // Parse launch params first (before other initialization)
   parseLaunchParams();
 
@@ -135,19 +133,23 @@ onMount(() => {
   logger.sync.info('App mounted, initializing stores');
   showNotificationSideView.set(false);
   loading = true;
-  const installedOption = getConfigClientOption('installed') as {
-    installed: boolean;
-  };
-  logger.sync.info('installedOption', installedOption);
-  if (!installedOption || !installedOption.installed) {
+  // Settings and install state gate everything else, so load them first. If
+  // they cannot be read, stay on the main view rather than re-running setup
+  // over an existing installation.
+  const stateLoaded = await runFrontendEffect(
+    loadPersistedState().pipe(Effect.isSuccess)
+  );
+  if (!stateLoaded) {
+    createNotification({
+      id: 'state-load-failed',
+      message: 'Could not load your settings. Restart OpenGameInstaller.',
+      type: 'error',
+    });
+  } else if (!appState.installed) {
     logger.sync.info('OOBE not finished');
-    logger.sync.info(installedOption);
     finishedOOBE = false;
   }
   loading = false;
-
-  // get recently launched apps
-  updateRecents();
 
   // Initialize search-related data
   initializeSearch();
@@ -158,9 +160,10 @@ onMount(() => {
   initSleepLock((effect) =>
     runDetached(effect, 'Failed to synchronize sleep lock')
   );
-  const persistedUpdateState = loadPersistedUpdateState();
-  appUpdates.requiredReadds = persistedUpdateState.requiredReadds;
-  appUpdates.dismissedUpdates = persistedUpdateState.dismissedUpdates;
+  runDetached(
+    loadPersistedUpdateState().pipe(Effect.asVoid),
+    'Failed to load persisted update state'
+  );
   // send client-ready-for-events
   window.electronAPI.app.clientReadyForEvents();
   logger.sync.info('client-ready-for-events sent');
@@ -373,29 +376,6 @@ function toggleAddonCollapse(addonId: string) {
   }
   // Trigger reactivity
   collapsedAddons = new Set(collapsedAddons);
-}
-
-function updateRecents() {
-  let exists = window.electronAPI.fs.exists('./internals/apps.json');
-  let itemsAdded = 0;
-  if (exists) {
-    let apps: number[] = JSON.parse(
-      window.electronAPI.fs.read('./internals/apps.json')
-    );
-    // then get the app info via the ./library/{appID}.json
-    recentlyLaunchedApps = [];
-    apps.forEach((appID) => {
-      let exists = window.electronAPI.fs.exists(`./library/${appID}.json`);
-      if (itemsAdded >= 3) return;
-      if (exists) {
-        let appInfo: LibraryInfo = JSON.parse(
-          window.electronAPI.fs.read(`./library/${appID}.json`)
-        );
-        recentlyLaunchedApps.push(appInfo);
-        itemsAdded++;
-      }
-    });
-  }
 }
 
 let heldPageOpened: number | undefined;

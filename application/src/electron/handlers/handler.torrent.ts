@@ -11,10 +11,7 @@ import { Deferred, Effect, Fiber } from 'effect';
 import { BrowserWindow } from 'electron';
 import { getTorrentInfoHash } from '@/electron/lib/torrent-hash.js';
 import { sendNotification } from '@/electron/main.js';
-import {
-  getStoredValue,
-  refreshCached,
-} from '@/electron/manager/manager.config.js';
+import { getSettings } from '@/electron/manager/manager.config.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import { torrent as wtConnect } from '@/electron/manager/manager.webtorrent.js';
 import {
@@ -244,14 +241,9 @@ class TorrentDownload {
     TorrentError
   > {
     return Effect.gen(function* () {
-      yield* refreshCached('general');
-      const configured: unknown = yield* getStoredValue(
-        'general',
-        'torrentClient'
-      );
-      if (configured === undefined) return 'webtorrent';
-      if (configured === 'webtorrent' || configured === 'qbittorrent') {
-        return configured;
+      const { torrentClient } = yield* getSettings();
+      if (torrentClient === 'webtorrent' || torrentClient === 'qbittorrent') {
+        return torrentClient;
       }
       return 'unselected';
     }).pipe(
@@ -363,26 +355,13 @@ class TorrentDownload {
 
   private setupQbitClient(): Effect.Effect<QBittorrent, TorrentError> {
     return Effect.gen(function* () {
-      yield* refreshCached('qbittorrent');
-      const host: unknown = yield* getStoredValue('qbittorrent', 'qbitHost');
-      const port: unknown = yield* getStoredValue('qbittorrent', 'qbitPort');
-      const username: unknown = yield* getStoredValue(
-        'qbittorrent',
-        'qbitUsername'
-      );
-      const password: unknown = yield* getStoredValue(
-        'qbittorrent',
-        'qbitPassword'
-      );
+      const { qbitHost, qbitPort, qbitUsername, qbitPassword } =
+        yield* getSettings();
 
-      const configuredPort =
-        typeof port === 'string' || typeof port === 'number'
-          ? String(port)
-          : '8080';
       return new QBittorrent({
-        baseUrl: `${typeof host === 'string' ? host : 'http://127.0.0.1'}:${configuredPort}`,
-        username: typeof username === 'string' ? username : 'admin',
-        password: typeof password === 'string' ? password : '',
+        baseUrl: `${qbitHost}:${qbitPort}`,
+        username: qbitUsername,
+        password: qbitPassword,
       });
     }).pipe(
       Effect.mapError((cause) =>

@@ -21,7 +21,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
-import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification, notifications } from '@/frontend/store.svelte';
 import {
@@ -29,10 +29,9 @@ import {
   queryConnectedAddons,
   runTask,
 } from '@/frontend/utils';
+import type { AddonConfigValues } from '@/lib/state';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
-
-const fs = window.electronAPI.fs;
 
 let {
   addonId,
@@ -49,10 +48,20 @@ let deleteConfirmationModalOpen: boolean = $state(false);
 let backConfirmationModalOpen: boolean = $state(false);
 let selectedValues: Record<string, string> = $state({});
 let runningActions: Record<string, boolean> = $state({});
+// Values saved for this addon; template defaults fill any missing key.
+let storedConfig: AddonConfigValues = $state({});
 
 onMount(() => {
-  runFrontendEffect(queryConnectedAddons<ConfigTemplateAndInfo>())
-    .then((data) => {
+  Promise.all([
+    runFrontendEffect(queryConnectedAddons<ConfigTemplateAndInfo>()),
+    runFrontendEffect(
+      electronRpc.state
+        .getAddonConfig(addonId)
+        .pipe(Effect.orElseSucceed(() => null))
+    ),
+  ])
+    .then(([data, stored]) => {
+      storedConfig = stored ?? {};
       const addon = data.find((a: ConfigTemplateAndInfo) => a.id === addonId);
       if (addon) {
         selectedAddon = addon;
@@ -181,7 +190,11 @@ async function updateConfig() {
         return;
       }
 
-      fs.write('./config/' + addonId + '.json', JSON.stringify(config));
+      storedConfig = config;
+      runDetached(
+        electronRpc.state.setAddonConfig(addonId, config),
+        'Failed to save addon configuration'
+      );
     })
     .catch((error) => {
       logger.sync.error('Failed to update addon configuration:', error);
@@ -198,16 +211,9 @@ async function updateConfig() {
 
 function getStoredOrDefaultValue(key: string): any {
   if (!selectedAddon) return undefined;
-  if (!fs.exists('./config/' + selectedAddon.id + '.json')) {
-    return selectedAddon.configTemplate[key].defaultValue;
-  } else {
-    const storedConfig = JSON.parse(
-      fs.read('./config/' + selectedAddon.id + '.json')
-    );
-    return storedConfig.hasOwnProperty(key)
-      ? storedConfig[key]
-      : selectedAddon.configTemplate[key].defaultValue;
-  }
+  return Object.hasOwn(storedConfig, key)
+    ? storedConfig[key]
+    : selectedAddon.configTemplate[key].defaultValue;
 }
 
 function browseForFolder(event: MouseEvent, type: 'file' | 'folder') {

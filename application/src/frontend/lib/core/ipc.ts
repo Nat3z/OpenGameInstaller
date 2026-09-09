@@ -2,11 +2,11 @@ import { type ConnectedAddonInfo, Connection } from '@ogi-sdk/client-kit';
 import { AddonError, NetworkError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schedule } from 'effect';
-import { getConfigClientOption } from '@/frontend/lib/config/client';
 import {
   runFrontendEffect,
   runFrontendSync,
 } from '@/frontend/lib/core/runtime';
+import { settings } from '@/frontend/lib/core/state.svelte';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -48,10 +48,7 @@ function initialize(server: Connection): Effect.Effect<void, NetworkError> {
 }
 
 export function connectClientSdk() {
-  const developerConfig = getConfigClientOption('developer') as {
-    clientSdkUrl?: string;
-  } | null;
-  const url = developerConfig?.clientSdkUrl ?? 'ws://127.0.0.1:7654';
+  const url = settings.clientSdkUrl || 'ws://127.0.0.1:7654';
 
   return Effect.tryPromise({
     try: () => Connection.make({ url }),

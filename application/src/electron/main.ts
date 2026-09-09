@@ -3,8 +3,8 @@ import '@/electron/lib/source-maps.js';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
-import fs, { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { closeDatabase, getDatabase } from '@/electron/database/index.js';
 import { startAddons } from '@/electron/handlers/handler.addon.js';
 import {
   awaitPendingFileDeletions,
@@ -40,7 +40,7 @@ import {
 } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 import {
-  addonServer,
+  getAddonServer,
   isAddonServerListening,
   isSecurityCheckEnabled,
   port,
@@ -49,7 +49,6 @@ import {
 } from '@/electron/server/addon-server.js';
 import {
   checkForAddonUpdates,
-  convertLibrary,
   IS_NIXOS,
   startupEnvironmentReady,
 } from '@/electron/startup.js';
@@ -173,16 +172,7 @@ app.disableHardwareAcceleration();
 /* Sync IPC for initial theme: must be registered before renderer loads to avoid flash */
 ipcMain.on('get-initial-theme', (event) => {
   try {
-    const configPath = join(__dirname, 'config/option/general.json');
-    if (existsSync(configPath)) {
-      const data = JSON.parse(readFileSync(configPath, 'utf-8')) as {
-        theme?: string;
-      };
-      const t = data.theme;
-      event.returnValue = t === 'dark' || t === 'synthwave' ? t : 'light';
-    } else {
-      event.returnValue = 'light';
-    }
+    event.returnValue = getDatabase().getSettings().theme;
   } catch {
     event.returnValue = 'light';
   }
@@ -362,7 +352,7 @@ async function onMainAppReady() {
   if (ogiDebug()) {
     mainWindow?.webContents?.openDevTools();
   }
-  if (!isSecurityCheckEnabled) {
+  if (!isSecurityCheckEnabled()) {
     sendNotification({
       message:
         "Security checks are disabled and application security LOWERED. Only enable if you know what you're doing.",
@@ -370,8 +360,6 @@ async function onMainAppReady() {
       type: 'warning',
     });
   }
-
-  convertLibrary();
 
   mainWindow?.webContents?.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
@@ -443,14 +431,12 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
     'file://' +
       join(app.getAppPath(), 'public', 'splash.html') +
       '?secret=' +
-      addonServer.getSecret()
+      getAddonServer().getSecret()
   );
 
   mainWindow.on('closed', function () {
     mainWindow = null;
   });
-
-  fs.mkdir(join(__dirname, 'config'), (_) => {});
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
@@ -490,7 +476,7 @@ async function startAppFlow(win: BrowserWindow) {
         'file://' +
           join(app.getAppPath(), 'out', 'renderer', 'index.html') +
           '?secret=' +
-          addonServer.getSecret()
+          getAddonServer().getSecret()
       );
     }
     win.once('ready-to-show', onMainAppReady);
@@ -777,6 +763,7 @@ app.on('window-all-closed', () => {
       }
       for (const interval of torrentIntervals) clearInterval(interval);
       if (isAddonServerListening) yield* stopAddonServer();
+      yield* Effect.sync(closeDatabase);
     }).pipe(
       Effect.catchAll((error) => logger.error('Error during cleanup:', error))
     )

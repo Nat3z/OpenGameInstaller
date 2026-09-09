@@ -8,6 +8,11 @@ import { fade } from 'svelte/transition';
 import { communityAddonArraySchema } from '@/electron/lib/marketplace-schema';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import {
+  appState,
+  updateAppState,
+  updateSettings,
+} from '@/frontend/lib/core/state.svelte';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   type CommunityAddon,
@@ -16,6 +21,7 @@ import {
   oobeLog,
 } from '@/frontend/store.svelte';
 import { installAddonsAndReconnect } from '@/frontend/utils';
+import type { Settings } from '@/lib/state';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -249,29 +255,19 @@ async function downloadTools() {
 
   if (result[1]) {
     stage = 1.5;
-    // write the directory first ./config/option
-    window.electronAPI.fs.mkdir('./config/option/');
-    window.electronAPI.fs.write(
-      './config/option/installed.json',
-      JSON.stringify({ restartRequired: true, installed: false })
-    );
+    // The tool install needs a restart; remember where to resume.
+    await updateAppState({ oobeRestartRequired: true });
   } else stage = 2;
 }
 
-function submitTorrenter() {
+/** Saves the chosen client's credentials; other services keep theirs. */
+async function submitTorrenter() {
+  const inputValue = (selector: string) =>
+    (document.querySelector(selector) as HTMLInputElement | null)?.value ?? '';
+  let patch: Partial<Settings> | undefined;
   if (selectedTorrenter === 'real-debrid') {
     logger.sync.info('Submitting RD API Key');
-    // save a file with the api key
-    const apiKey = document.querySelector(
-      'input[data-rd-key]'
-    ) as HTMLInputElement;
-    window.electronAPI.fs.mkdir('./config/option/');
-    window.electronAPI.fs.write(
-      './config/option/realdebrid.json',
-      JSON.stringify({ debridApiKey: apiKey.value, torboxApiKey: '' })
-    );
-
-    fulfilledRequirements = true;
+    patch = { debridApiKey: inputValue('input[data-rd-key]') };
   } else if (selectedTorrenter === 'qbittorrent') {
     logger.sync.info('Submitting qBittorrent');
     const ip = document.querySelector('input[data-qb-ip]') as HTMLInputElement;
@@ -289,75 +285,30 @@ function submitTorrenter() {
       logger.sync.error('Missing qBittorrent fields');
       return;
     }
-
-    window.electronAPI.fs.mkdir('./config/option/');
-    window.electronAPI.fs.write(
-      './config/option/qbittorrent.json',
-      JSON.stringify({
-        qbitHost: ip.value,
-        qbitPort: port.value,
-        qbitUsername: username.value,
-        qbitPassword: password.value,
-      })
-    );
-
-    fulfilledRequirements = true;
+    patch = {
+      qbitHost: ip.value,
+      qbitPort: port.value,
+      qbitUsername: username.value,
+      qbitPassword: password.value,
+    };
   } else if (selectedTorrenter === 'torbox') {
     logger.sync.info('Submitting TorBox API Key');
-    // save a file with the api key
-    const apiKey = document.querySelector(
-      'input[data-torbox-key]'
-    ) as HTMLInputElement;
-    window.electronAPI.fs.mkdir('./config/option/');
-    window.electronAPI.fs.write(
-      './config/option/realdebrid.json',
-      JSON.stringify({ torboxApiKey: apiKey.value, debridApiKey: '' })
-    );
-    fulfilledRequirements = true;
+    patch = { torboxApiKey: inputValue('input[data-torbox-key]') };
   } else if (selectedTorrenter === 'premiumize') {
     logger.sync.info('Submitting Premiumize API Key');
-    // save a file with the api key
-    const apiKey = document.querySelector(
-      'input[data-premiumize-key]'
-    ) as HTMLInputElement;
-    window.electronAPI.fs.mkdir('./config/option/');
-    window.electronAPI.fs.write(
-      './config/option/realdebrid.json',
-      JSON.stringify({ premiumizeApiKey: apiKey.value, debridApiKey: '' })
-    );
-    fulfilledRequirements = true;
+    patch = { premiumizeApiKey: inputValue('input[data-premiumize-key]') };
   } else if (selectedTorrenter === 'all-debrid') {
     logger.sync.info('Submitting AllDebrid API Key');
-    const apiKey = document.querySelector(
-      'input[data-alldebrid-key]'
-    ) as HTMLInputElement | null;
-    if (!apiKey) {
-      logger.sync.error('Missing AllDebrid API key input');
-      return;
-    }
-    const key = apiKey.value.trim();
+    const key = inputValue('input[data-alldebrid-key]').trim();
     if (!key) {
       logger.sync.error('Missing AllDebrid API key');
       return;
     }
-    window.electronAPI.fs.mkdir('./config/option/');
-    let config: Record<string, string> = {};
-    if (window.electronAPI.fs.exists('./config/option/realdebrid.json')) {
-      try {
-        config = JSON.parse(
-          window.electronAPI.fs.read('./config/option/realdebrid.json')
-        );
-      } catch {
-        // use empty config
-      }
-    }
-    config.alldebridApiKey = key;
-    window.electronAPI.fs.write(
-      './config/option/realdebrid.json',
-      JSON.stringify(config)
-    );
-    fulfilledRequirements = true;
+    patch = { alldebridApiKey: key };
   }
+  if (!patch) return;
+  await updateSettings(patch);
+  fulfilledRequirements = true;
 }
 
 let downloadLocation = '';
@@ -374,14 +325,18 @@ async function updateDownloadLocation() {
   downloadLocation = path;
 }
 
-function sendDownloadLocation(event: MouseEvent) {
+async function sendDownloadLocation(event: MouseEvent) {
   const htmlElement = document.querySelector(
     'input[data-dwloc]'
   )!! as HTMLInputElement;
   downloadLocation = htmlElement.value;
   if (
     downloadLocation === '' ||
-    !window.electronAPI.fs.exists(downloadLocation)
+    !(await runFrontendEffect(
+      electronRpc.fs
+        .pathExists(downloadLocation)
+        .pipe(Effect.orElseSucceed(() => false))
+    ))
   ) {
     logger.sync.error('No download location selected');
     const button = event.target as HTMLButtonElement;
@@ -455,23 +410,15 @@ async function finishSetup() {
     .filter((addon) => addon !== '');
   const allAddons = [...new Set([...selectedAddons, ...customAddons])];
 
-  let generalConfig = {
-    theme: selectedTheme,
+  await updateSettings({
+    theme: selectedTheme as Settings['theme'],
     fileDownloadLocation: downloadLocation,
     addons: [],
-    torrentClient: selectedTorrenter,
+    torrentClient: selectedTorrenter as Settings['torrentClient'],
     marketplaceSources: oobeMarketplaceSources,
-  };
-  window.electronAPI.fs.mkdir('./config/option/');
-  window.electronAPI.fs.write(
-    './config/option/general.json',
-    JSON.stringify(generalConfig)
-  );
+  });
   await runFrontendEffect(installAddonsAndReconnect(allAddons));
-  window.electronAPI.fs.write(
-    './config/option/installed.json',
-    JSON.stringify({ installed: true })
-  );
+  await updateAppState({ installed: true, oobeRestartRequired: false });
   document.getElementById('oobe')?.animate([{ opacity: 1 }, { opacity: 0 }], {
     duration: 500,
     fill: 'forwards',
@@ -532,19 +479,10 @@ onMount(async () => {
   currentOS = await runFrontendEffect(electronRpc.app.getOS());
   isSteamDeck = await runFrontendEffect(electronRpc.app.isSteamDeck());
 
-  if (window.electronAPI.fs.exists('./config/option/installed.json')) {
-    const installed = JSON.parse(
-      window.electronAPI.fs.read('./config/option/installed.json')
-    );
-    if (installed.restartRequired) {
-      // Update the file first to clear the restart flag
-      window.electronAPI.fs.write(
-        './config/option/installed.json',
-        JSON.stringify({ restartRequired: false, installed: false })
-      );
-      // Then set the stage to continue to torrenting
-      stage = 2;
-    }
+  if (appState.oobeRestartRequired) {
+    // Clear the flag first, then resume at the torrent client step.
+    await updateAppState({ oobeRestartRequired: false });
+    stage = 2;
   }
   communityList = [];
   await loadCommunityAddonsFromMarketplaces(oobeMarketplaceSources);

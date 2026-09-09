@@ -1,86 +1,22 @@
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 
-const logger = createLogger(LOGGER_PREFIXES.frontend);
-
-/**
- * Loads all apps and orders them according to the apps.json file if it exists.
- * Apps are ordered by the order in apps.json, with any new apps appended to the end.
- *
- * @returns A promise that resolves to an ordered array of LibraryInfo
- */
-export async function getAllApps(): Promise<LibraryInfo[]> {
-  const apps = await runFrontendEffect(electronRpc.app.getAllApps());
-
-  if (window.electronAPI.fs.exists('./internals/apps.json')) {
-    const appsOrdered: number[] = JSON.parse(
-      window.electronAPI.fs.read('./internals/apps.json')
-    );
-
-    // Map ordered IDs to apps, filtering out undefined values
-    let library = appsOrdered
-      .map((id) => apps.find((app) => app.appID === id))
-      .filter((app): app is LibraryInfo => app !== undefined);
-
-    // Remove duplicate apps (keep first occurrence)
-    library = library.filter(
-      (app, index) =>
-        library.findIndex((libApp) => libApp.appID === app.appID) === index
-    );
-
-    // Add any apps that aren't in the ordered list
-    apps.forEach((app) => {
-      if (!library.find((libApp) => libApp.appID === app.appID)) {
-        logger.sync.info('Adding app to library: ' + app.name);
-        library.push(app);
-      }
-    });
-
-    return library;
-  } else {
-    return apps;
-  }
+/** Loads the library, most recently launched first. */
+export function getAllApps(): Promise<LibraryInfo[]> {
+  return runFrontendEffect(electronRpc.app.getAllApps());
 }
 
-/**
- * Gets the recently played apps from the library based on apps.json order.
- * Returns the first 4 apps from the ordered list.
- *
- * @param library - The library array to get recently played apps from
- * @returns An array of LibraryInfo representing recently played apps (max 4)
- */
-export function getRecentlyPlayed(library: LibraryInfo[]): LibraryInfo[] {
-  if (window.electronAPI.fs.exists('./internals/apps.json')) {
-    const appsOrdered: number[] = JSON.parse(
-      window.electronAPI.fs.read('./internals/apps.json')
-    );
-
-    const recentlyPlayed: LibraryInfo[] = [];
-    let itemsAdded = 0;
-
-    appsOrdered.forEach((appID) => {
-      if (itemsAdded >= 4) return;
-      const app = library.find((libApp) => libApp.appID === appID);
-      if (app) {
-        recentlyPlayed.push(app);
-        itemsAdded++;
-      }
-    });
-
-    return recentlyPlayed;
-  } else {
-    return [];
-  }
+/** The first games of a recency-ordered library, at most `limit`. */
+export function getRecentlyPlayed(
+  library: LibraryInfo[],
+  limit = 4
+): LibraryInfo[] {
+  return library.slice(0, limit);
 }
 
-export function getApp(appID: number): LibraryInfo | undefined {
-  if (window.electronAPI.fs.exists(`./library/${appID}.json`)) {
-    return JSON.parse(window.electronAPI.fs.read(`./library/${appID}.json`));
-  } else {
-    return undefined;
-  }
+export function getApp(appID: number): Promise<LibraryInfo | null> {
+  return runFrontendEffect(electronRpc.app.getLibraryInfo(appID));
 }
 
 /**

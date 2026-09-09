@@ -14,12 +14,20 @@ import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import RangeInput from '@/frontend/components/RangeInput.svelte';
 import ThemePicker from '@/frontend/components/ThemePicker.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import {
+  settings,
+  updateAppState,
+  updateSettings,
+} from '@/frontend/lib/core/state.svelte';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
+import type { Settings } from '@/lib/state';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
-const fs = window.electronAPI.fs;
+// Option ids double as `Settings` keys; action/describer entries are UI-only.
+type SettingKey = keyof Settings;
+const isSettingKey = (key: string): key is SettingKey => key in settings;
 
 function isValidGitUrl(gitUrl: string): boolean {
   const trimmed = gitUrl.trim();
@@ -328,8 +336,8 @@ let options: OptionsCategory[] = [
         defaultValue: '',
         value: '',
         type: 'action',
-        action: () => {
-          window.electronAPI.fs.delete('./config/option/installed.json');
+        action: async () => {
+          await updateAppState({ installed: false });
           window.location.reload();
         },
       },
@@ -366,9 +374,12 @@ function selectOption(addon: OptionsCategory) {
   }
 }
 
-function updateConfig() {
-  const config: any = {};
+async function updateConfig() {
+  // Values are validated by the main process; the loop below only knows
+  // the option's UI type, so the patch is assembled loosely here.
+  const config: Record<string, Settings[SettingKey]> = {};
   for (const key of Object.keys(selectedOption!!.options)) {
+    if (!isSettingKey(key)) continue;
     if (!selectedOption) return;
     const element = document.getElementById(key) as
       | HTMLInputElement
@@ -402,7 +413,11 @@ function updateConfig() {
               if (!line) continue;
               const parsed = parseAddonLink(line);
               if (parsed.kind === 'local') {
-                if (!window.electronAPI.fs.exists(parsed.path)) {
+                if (
+                  !(await runFrontendEffect(
+                    electronRpc.fs.pathExists(parsed.path)
+                  ))
+                ) {
                   createNotification({
                     id: Math.random().toString(36).substring(7),
                     message: 'Invalid Local File in Addons',
@@ -458,20 +473,21 @@ function updateConfig() {
       }
     }
   }
-  // save this config to local storage
   if (!selectedOption) return;
-  fs.write(
-    './config/option/' + selectedOption.id + '.json',
-    JSON.stringify(config)
-  );
+  try {
+    await updateSettings(config as Partial<Settings>);
+  } catch (error) {
+    logger.sync.error('Failed to save settings:', error);
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to save settings',
+      type: 'error',
+    });
+  }
 }
 
-// Returns the persisted value only, undefined when nothing was saved yet.
-function getStoredValue(key: string) {
-  if (!selectedOption) return undefined;
-  const configPath = './config/option/' + selectedOption.id + '.json';
-  if (!fs.exists(configPath)) return undefined;
-  return JSON.parse(fs.read(configPath))[key];
+function getStoredValue(key: string): Settings[SettingKey] | undefined {
+  return isSettingKey(key) ? settings[key] : undefined;
 }
 
 function getStoredOrDefaultValue(key: string) {
@@ -905,7 +921,7 @@ onMount(() => {
                                 id={key}
                                 class="input-checkbox"
                                 onchange={updateConfig}
-                                checked={getStoredOrDefaultValue(key)}
+                                checked={getStoredOrDefaultValue(key) === true}
                               />
                               <span class="checkbox-checkmark"></span>
                             </label>
@@ -1027,7 +1043,7 @@ onMount(() => {
                               id={key}
                               class="input-textarea"
                               onchange={updateConfig}
-                              value={getStoredOrDefaultValue(key).join('\n')}
+                              value={settings.addons.join('\n')}
                               placeholder={key === 'addons'
                                 ? 'Enter addon URLs, one per line...'
                                 : ''}

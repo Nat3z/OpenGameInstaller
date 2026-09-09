@@ -2,7 +2,7 @@ import { DownloadError, formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
-import { getConfigClientOption } from '@/frontend/lib/config/client';
+import { settings } from '@/frontend/lib/core/state.svelte';
 import { resetButtonOnExit } from '@/frontend/lib/downloads/button-state';
 import { ALL_SERVICES } from '@/frontend/lib/downloads/services';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
@@ -44,10 +44,7 @@ export function startDownloadEffect(
     Effect.gen(function* () {
       let downloadHandler: string = result.downloadType;
       if (downloadHandler === 'torrent' || downloadHandler === 'magnet') {
-        const generalOptions = getConfigClientOption<{
-          torrentClient?: string;
-        }>('general');
-        const torrentClient = generalOptions?.torrentClient ?? 'disable';
+        const torrentClient = settings.torrentClient;
         if (torrentClient === 'disable') {
           return yield* Effect.fail(
             new DownloadError({

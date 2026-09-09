@@ -1,73 +1,27 @@
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import { Effect } from 'effect';
+import { runDetached } from '@/frontend/lib/core/runtime';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
+import type { DismissedUpdate, RequiredReadd } from '@/lib/state';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
-type RequiredReadd = {
-  appID: number;
-  steamAppId?: number;
-};
 
-type DismissedUpdate = {
-  appID: number;
-  updateVersion: string;
-};
+let persistenceReady = false;
 
-// Load persisted update state from filesystem
-export function loadPersistedUpdateState(): {
-  requiredReadds: RequiredReadd[];
-  dismissedUpdates: DismissedUpdate[];
-} {
-  try {
-    if (typeof window !== 'undefined' && window.electronAPI?.fs) {
-      // Ensure internals directory exists
-      if (!window.electronAPI.fs.exists('./internals')) {
-        window.electronAPI.fs.mkdir('./internals');
-      }
-
-      const statePath = './internals/update-state.json';
-      if (window.electronAPI.fs.exists(statePath)) {
-        const stored = window.electronAPI.fs.read(statePath);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          const requiredReadds = Array.isArray(parsed.requiredReadds)
-            ? parsed.requiredReadds
-                .filter((v: unknown): v is RequiredReadd => {
-                  if (typeof v !== 'object' || v === null) return false;
-                  const record = v as Record<string, unknown>;
-                  return (
-                    typeof record.appID === 'number' &&
-                    (record.steamAppId === undefined ||
-                      typeof record.steamAppId === 'number')
-                  );
-                })
-                .map((entry: RequiredReadd) => ({
-                  appID: entry.appID,
-                  steamAppId:
-                    entry.steamAppId && entry.steamAppId !== 0
-                      ? entry.steamAppId
-                      : undefined,
-                }))
-            : [];
-          const dismissedUpdates = Array.isArray(parsed.dismissedUpdates)
-            ? parsed.dismissedUpdates.filter(
-                (v: unknown): v is DismissedUpdate => {
-                  return (
-                    typeof v === 'object' &&
-                    v !== null &&
-                    typeof (v as Record<string, unknown>).appID === 'number' &&
-                    typeof (v as Record<string, unknown>).updateVersion ===
-                      'string'
-                  );
-                }
-              )
-            : [];
-          return { requiredReadds, dismissedUpdates };
-        }
-      }
-    }
-  } catch (e) {
-    logger.sync.error('Failed to load persisted update state:', e);
-  }
-  return { requiredReadds: [], dismissedUpdates: [] };
+/** Loads the persisted update state; persistence starts once it is loaded. */
+export function loadPersistedUpdateState() {
+  return electronRpc.state.getUpdateState().pipe(
+    Effect.tap((state) =>
+      Effect.sync(() => {
+        appUpdates.requiredReadds = state.requiredReadds;
+        appUpdates.dismissedUpdates = state.dismissedUpdates;
+        persistenceReady = true;
+      })
+    ),
+    Effect.tapError((error) =>
+      logger.error('Failed to load persisted update state:', error)
+    )
+  );
 }
 
 export let appUpdates = $state({
@@ -103,62 +57,16 @@ export function completeRequiredReadd(appID: number): void {
   );
 }
 
-let initTimeout = true;
 $effect.root(() => {
   $effect(() => {
-    // Track the value to persist
     const requiredReadds = appUpdates.requiredReadds;
     const dismissedUpdates = appUpdates.dismissedUpdates;
-
-    // Handle async work with proper cleanup
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-
-    const persistState = async () => {
-      if (initTimeout) {
-        await new Promise<void>((resolve) => {
-          timeoutId = setTimeout(() => {
-            timeoutId = null;
-            resolve();
-          }, 1000);
-        });
-        if (cancelled) return;
-        initTimeout = false;
-      }
-
-      if (cancelled) return;
-
-      try {
-        if (typeof window !== 'undefined' && window.electronAPI?.fs) {
-          // Ensure internals directory exists
-          if (!window.electronAPI.fs.exists('./internals')) {
-            window.electronAPI.fs.mkdir('./internals');
-          }
-
-          const stateToSave = {
-            requiredReadds,
-            dismissedUpdates,
-          };
-          window.electronAPI.fs.write(
-            './internals/update-state.json',
-            JSON.stringify(stateToSave, null, 2)
-          );
-        }
-      } catch (e) {
-        logger.sync.error('Failed to persist update state:', e);
-      }
-    };
-
-    persistState();
-
-    // Cleanup function - clears timeout if effect re-runs before timeout completes
-    return () => {
-      cancelled = true;
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-    };
+    // Never persist the empty initial state over what is on disk.
+    if (!persistenceReady) return;
+    runDetached(
+      electronRpc.state.setUpdateState({ requiredReadds, dismissedUpdates }),
+      'Failed to persist update state'
+    );
   });
 });
 

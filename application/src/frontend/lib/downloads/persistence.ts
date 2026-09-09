@@ -1,8 +1,8 @@
-import { FileSystemError, formatError } from '@ogi-sdk/errors';
+import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
-import { getPersistedFilePaths } from '@/frontend/lib/downloads/paths';
+import { runDetached } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   currentDownloads,
@@ -10,6 +10,7 @@ import {
   type RedistributableInstall,
   redistributableInstalls,
 } from '@/frontend/store.svelte';
+import type { PersistedDownload } from '@/lib/download-state';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -19,34 +20,9 @@ type PersistableStatus =
   | 'paused'
   | 'installing-redistributables';
 
-const PERSIST_DIR = './in-progress-downloads';
-
-interface PersistedRecord {
-  id: string;
-  updatedAt: number;
-  downloadInfo: DownloadStatusAndInfo;
-  redistributableInstall?: RedistributableInstall;
-}
-
 const lastSavedAtById: Map<string, number> = new Map();
 let unsubscribeDownloads: (() => void) | undefined;
 let unsubscribeRedistributables: (() => void) | undefined;
-
-function ensureDir(): Effect.Effect<void, FileSystemError> {
-  return Effect.try({
-    try: () => {
-      if (!window.electronAPI.fs.exists(PERSIST_DIR)) {
-        window.electronAPI.fs.mkdir(PERSIST_DIR);
-      }
-    },
-    catch: (cause) =>
-      new FileSystemError({
-        message: `Failed to ensure persistence directory: ${formatError(cause)}`,
-        path: PERSIST_DIR,
-        cause,
-      }),
-  });
-}
 
 function isPersistableStatus(
   status: string | undefined
@@ -62,7 +38,7 @@ function isPersistableStatus(
 // 'merging' is only persistable while the backend merges chunk files: the
 // chunk files on disk let a restart resume without re-downloading. Post-
 // download processing (moving/extracting) is covered by the failed-setups
-// recovery file instead.
+// recovery record instead.
 function isPersistableDownload(download: DownloadStatusAndInfo): boolean {
   return (
     isPersistableStatus(download.status) &&
@@ -71,50 +47,36 @@ function isPersistableDownload(download: DownloadStatusAndInfo): boolean {
   );
 }
 
-function recordPath(id: string) {
-  return `${PERSIST_DIR}/${id}.json`;
-}
-
 function saveRecord(download: DownloadStatusAndInfo, force = false) {
-  try {
-    const now = Date.now();
-    const last = lastSavedAtById.get(download.id) || 0;
-    if (!force && now - last < 1000) return; // throttle per ID (1s)
-    lastSavedAtById.set(download.id, now);
+  const now = Date.now();
+  const last = lastSavedAtById.get(download.id) || 0;
+  if (!force && now - last < 1000) return; // throttle per ID (1s)
+  lastSavedAtById.set(download.id, now);
 
-    const maybeRedistributableInstall =
-      download.status === 'installing-redistributables'
-        ? get(redistributableInstalls)[download.id]
-        : undefined;
+  const maybeRedistributableInstall =
+    download.status === 'installing-redistributables'
+      ? get(redistributableInstalls)[download.id]
+      : undefined;
 
-    const record: PersistedRecord = {
-      id: download.id,
-      updatedAt: now,
-      downloadInfo: download,
-      ...(maybeRedistributableInstall
-        ? { redistributableInstall: maybeRedistributableInstall }
-        : {}),
-    };
-    window.electronAPI.fs.write(
-      recordPath(download.id),
-      JSON.stringify(record, null, 2)
-    );
-  } catch (e) {
-    logger.sync.error(
-      'Failed to persist in-progress download:',
-      download.id,
-      e
-    );
-  }
+  const record: PersistedDownload = {
+    id: download.id,
+    updatedAt: now,
+    downloadInfo: download,
+    ...(maybeRedistributableInstall
+      ? { redistributableInstall: maybeRedistributableInstall }
+      : {}),
+  };
+  runDetached(
+    electronRpc.state.saveDownload(record),
+    `Failed to persist in-progress download ${download.id}`
+  );
 }
 
 function removeRecord(id: string) {
-  try {
-    const path = recordPath(id);
-    window.electronAPI.fs.delete(path);
-  } catch (e) {
-    logger.sync.error('Failed to remove persisted download:', id, e);
-  }
+  runDetached(
+    electronRpc.state.deleteDownload(id),
+    `Failed to remove persisted download ${id}`
+  );
 }
 
 function isRedistributableInstall(
@@ -142,59 +104,37 @@ function isRedistributableInstall(
 }
 
 export function loadPersistedDownloads() {
-  return ensureDir().pipe(
-    Effect.zipRight(
-      electronRpc.fs.getFilesInDir(PERSIST_DIR).pipe(
-        Effect.mapError(
-          (cause) =>
-            new FileSystemError({
-              message: `Failed to load persisted downloads: ${formatError(cause)}`,
-              path: PERSIST_DIR,
-              cause,
-            })
-        )
-      )
-    ),
-    Effect.map((files) => {
+  return electronRpc.state.listDownloads().pipe(
+    Effect.map((records) => {
       const restored: DownloadStatusAndInfo[] = [];
       const redistributableInstallByDownloadId: Record<
         string,
         RedistributableInstall
       > = {};
 
-      for (const file of files ?? []) {
-        if (!file.endsWith('.json')) continue;
-        try {
-          const parsed = JSON.parse(
-            window.electronAPI.fs.read(`${PERSIST_DIR}/${file}`)
-          ) as PersistedRecord;
-          if (!parsed?.downloadInfo) continue;
-          const info = parsed.downloadInfo;
-          if (!isPersistableStatus(info.status)) continue;
+      for (const record of records) {
+        const info = record.downloadInfo;
+        if (!info || !isPersistableStatus(info.status)) continue;
 
-          if (info.status === 'installing-redistributables') {
-            if (isRedistributableInstall(parsed.redistributableInstall)) {
-              redistributableInstallByDownloadId[info.id] =
-                parsed.redistributableInstall;
-            }
-            info.status = 'paused';
-            restored.push(info);
-            continue;
-          }
-          if (
-            info.usedDebridService &&
-            (info.downloadType === 'torrent' ||
-              info.downloadType === 'magnet') &&
-            (!info.downloadURL || info.downloadURL === info.originalDownloadURL)
-          ) {
-            continue;
+        if (info.status === 'installing-redistributables') {
+          if (isRedistributableInstall(record.redistributableInstall)) {
+            redistributableInstallByDownloadId[info.id] =
+              record.redistributableInstall;
           }
           info.status = 'paused';
-          info.queuePosition = undefined;
           restored.push(info);
-        } catch (error) {
-          logger.sync.error('Failed to parse persisted download:', file, error);
+          continue;
         }
+        if (
+          info.usedDebridService &&
+          (info.downloadType === 'torrent' || info.downloadType === 'magnet') &&
+          (!info.downloadURL || info.downloadURL === info.originalDownloadURL)
+        ) {
+          continue;
+        }
+        info.status = 'paused';
+        info.queuePosition = undefined;
+        restored.push(info);
       }
       return { downloads: restored, redistributableInstallByDownloadId };
     })
@@ -206,7 +146,10 @@ export function initDownloadPersistence() {
     const restoredState = yield* loadPersistedDownloads().pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
-          logger.sync.error('Failed to hydrate persisted downloads:', error);
+          logger.sync.error(
+            'Failed to hydrate persisted downloads:',
+            formatError(error)
+          );
           return {
             downloads: [],
             redistributableInstallByDownloadId: {},
@@ -285,43 +228,13 @@ export function initDownloadPersistence() {
   });
 }
 
+/** Removes the files a persisted download wrote to disk. */
 export function deleteDownloadedItems(id: string) {
-  const record = recordPath(id);
-  return Effect.try({
-    try: () => {
-      if (!window.electronAPI.fs.exists(record)) return undefined;
-      return JSON.parse(window.electronAPI.fs.read(record)) as PersistedRecord;
-    },
-    catch: (cause) =>
-      new FileSystemError({
-        message: `Failed to read persisted download: ${formatError(cause)}`,
-        path: record,
-        cause,
-      }),
-  }).pipe(
-    Effect.flatMap((parsed) =>
-      parsed
-        ? Effect.forEach(
-            getPersistedFilePaths(parsed.downloadInfo),
-            (filePath) =>
-              electronRpc.fs.deleteAsync(filePath).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new FileSystemError({
-                      message: `Failed to delete downloaded file: ${formatError(cause)}`,
-                      path: filePath,
-                      cause,
-                    })
-                ),
-                Effect.tapError((error) =>
-                  logger.error(error.message, error.path, error.cause)
-                ),
-                Effect.ignore
-              ),
-            { discard: true }
-          )
-        : Effect.void
-    )
+  return electronRpc.setup.deleteDownloadFiles(id).pipe(
+    Effect.tapError((error) =>
+      logger.error('Failed to delete downloaded files:', id, error)
+    ),
+    Effect.ignore
   );
 }
 

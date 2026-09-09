@@ -810,7 +810,12 @@ onDestroy(() => {
                 <button
                   class="btn btn-primary btn-sm"
                   onclick={() =>
-                    window.electronAPI.fs.showFileLoc(download.downloadPath)}
+                    runDetached(
+                      electronRpc.fs
+                        .showItemInFolder(download.downloadPath)
+                        .pipe(Effect.asVoid),
+                      'Failed to open the download folder'
+                    )}
                 >
                   <svg
                     class="w-4 h-4 mr-2"

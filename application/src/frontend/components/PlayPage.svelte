@@ -121,7 +121,14 @@ const addonFailurePrompt = createLaunchPrompt();
 
 async function launchGame() {
   if ($gamesLaunched[libraryInfo.appID]) return;
-  if (libraryInfo.cwd && !window.electronAPI.fs.exists(libraryInfo.cwd)) {
+  if (
+    libraryInfo.cwd &&
+    !(await runFrontendEffect(
+      electronRpc.fs
+        .pathExists(libraryInfo.cwd)
+        .pipe(Effect.orElseSucceed(() => false))
+    ))
+  ) {
     createNotification({
       id: Math.random().toString(36).substring(7),
       message:
@@ -195,29 +202,8 @@ async function launchGame() {
     return;
   }
 
+  // Launch recency is recorded by the main process on a successful launch.
   logger.sync.info('launchGame complete');
-  if (!window.electronAPI.fs.exists('./internals')) {
-    window.electronAPI.fs.mkdir('./internals');
-    window.electronAPI.fs.write(
-      './internals/apps.json',
-      JSON.stringify([], null, 2)
-    );
-  }
-
-  // reorders the recent launched apps to the front of the list
-  if (window.electronAPI.fs.exists('./internals/apps.json')) {
-    let appsOrdered: number[] = JSON.parse(
-      window.electronAPI.fs.read('./internals/apps.json')
-    );
-    // remove the appID from the list
-    appsOrdered = appsOrdered.filter((id) => id !== libraryInfo.appID);
-    // add it to the front
-    appsOrdered.unshift(libraryInfo.appID);
-    window.electronAPI.fs.write(
-      './internals/apps.json',
-      JSON.stringify(appsOrdered, null, 2)
-    );
-  }
 }
 
 onMount(() => {
@@ -265,31 +251,34 @@ function openGameConfiguration() {
   openedGameConfiguration = true;
 }
 
-function onFinish(data: any) {
+async function onFinish(data: any) {
   openedGameConfiguration = false;
-  // set the configuration for the game
   if (!data) return;
-  libraryInfo.cwd = data.cwd;
-  libraryInfo.launchExecutable = data.launchExecutable;
-  libraryInfo.launchArguments = data.launchArguments;
-  if (libraryInfo.umu) {
-    libraryInfo.umu = {
-      ...libraryInfo.umu,
-      ...(Array.isArray(data.dllOverrides) && {
-        dllOverrides:
-          data.dllOverrides.length > 0 ? data.dllOverrides : undefined,
-      }),
-      ...(typeof data.protonVersion === 'string' && {
-        // 'umu-proton' is umu's default; storing it explicitly is redundant.
-        protonVersion:
-          data.protonVersion === 'umu-proton' ? undefined : data.protonVersion,
-      }),
-    };
-  }
-  window.electronAPI.fs.write(
-    './library/' + libraryInfo.appID + '.json',
-    JSON.stringify(libraryInfo, null, 2)
+  // The main process owns the umu normalisation (empty overrides, default proton).
+  const result = await runFrontendEffect(
+    electronRpc.app.configureGame(libraryInfo.appID, {
+      cwd: data.cwd,
+      launchExecutable: data.launchExecutable,
+      launchArguments: data.launchArguments,
+      dllOverrides: Array.isArray(data.dllOverrides)
+        ? data.dllOverrides
+        : undefined,
+      protonVersion:
+        typeof data.protonVersion === 'string' ? data.protonVersion : undefined,
+    })
   );
+  if (result !== 'success') {
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'Failed to save the game configuration',
+      type: 'error',
+    });
+    return;
+  }
+  const saved = await runFrontendEffect(
+    electronRpc.app.getLibraryInfo(libraryInfo.appID)
+  );
+  if (saved) libraryInfo = saved;
 }
 
 onDestroy(() => {

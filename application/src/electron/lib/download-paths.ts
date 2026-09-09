@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -94,26 +95,13 @@ export function getPersistedFilePaths(
   return [];
 }
 
-/** Resolves `..` segments and checks the result stays inside `baseDir`. */
+/** Whether `candidatePath` resolves to `baseDir` or somewhere beneath it. */
 function isPathContained(candidatePath: string, baseDir: string): boolean {
-  const normalizedBase = baseDir.replace(/[/\\]+/g, '/').replace(/\/+$/, '');
-  const normalizedCandidate = candidatePath.replace(/[/\\]+/g, '/');
-
-  const resolved: string[] = [];
-  if (!normalizedCandidate.startsWith('/')) {
-    resolved.push(...normalizedBase.split('/').filter(Boolean));
-  }
-  for (const part of normalizedCandidate.split('/')) {
-    if (part === '..') {
-      resolved.pop();
-    } else if (part !== '' && part !== '.') {
-      resolved.push(part);
-    }
-  }
-
-  const resolvedPath = resolved.join('/');
+  const base = path.resolve(baseDir);
+  const target = path.resolve(base, candidatePath);
+  const relative = path.relative(base, target);
   return (
-    resolvedPath === normalizedBase ||
-    resolvedPath.startsWith(`${normalizedBase}/`)
+    relative === '' ||
+    (!relative.startsWith('..') && !path.isAbsolute(relative))
   );
 }

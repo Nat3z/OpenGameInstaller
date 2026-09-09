@@ -1,5 +1,5 @@
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect } from 'effect';
+import { Effect, Schedule } from 'effect';
 import { runDetached } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { DismissedUpdate, RequiredReadd } from '@/lib/state';
@@ -18,6 +18,7 @@ export function loadPersistedUpdateState() {
         persistenceReady = true;
       })
     ),
+    Effect.retry(Schedule.intersect(Schedule.recurs(3), Schedule.spaced(500))),
     Effect.tapError((error) =>
       logger.error('Failed to load persisted update state:', error)
     )

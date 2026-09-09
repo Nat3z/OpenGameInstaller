@@ -523,7 +523,6 @@ function handleRunTask(task: SearchResult, addonID: string) {
     <!-- Hero Banner Section -->
     <div class="relative h-64 w-full shrink-0 overflow-hidden">
       <Image
-        classifier={libraryInfo.appID.toString() + '-cover'}
         src={libraryInfo.coverImage}
         alt={libraryInfo.name}
         class="h-full w-full object-cover rounded-t-lg rounded-b-none"

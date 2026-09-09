@@ -195,3 +195,25 @@ describe('legacy import', () => {
     expect(fs.existsSync(path.join(directory, 'library/10.json'))).toBe(true);
   });
 });
+
+describe('download path containment', () => {
+  test('accepts stored paths inside the root on every platform layout', async () => {
+    const { getPersistedFilePaths } = await import(
+      '../src/electron/lib/download-paths.js'
+    );
+    const root = process.platform === 'win32' ? 'C:\\dl\\game' : '/dl/game';
+    const inside = `${root}${process.platform === 'win32' ? '\\' : '/'}part1.bin`;
+    expect(
+      getPersistedFilePaths({
+        downloadPath: root,
+        files: [{ name: 'part1.bin', path: inside }],
+      })
+    ).toEqual([inside]);
+    expect(
+      getPersistedFilePaths({
+        downloadPath: root,
+        files: [{ name: 'evil', path: `${root}/../../etc/passwd` }],
+      })
+    ).toEqual([`${root}/evil`]);
+  });
+});

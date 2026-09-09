@@ -62,9 +62,8 @@ const updateKey = () =>
       catch: (cause) =>
         new ConfigError({ message: formatError(cause), key: 'debridApiKey' }),
     });
-    if (apiKey === '') return false;
-    realDebridClient = new RealDebrid({ apiKey });
-    return true;
+    realDebridClient = new RealDebrid({ apiKey: apiKey || 'UNSET' });
+    return apiKey !== '';
   });
 
 const downloadTorrent = (url: string, path: string) =>

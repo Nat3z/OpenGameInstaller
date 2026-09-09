@@ -1,5 +1,5 @@
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect } from 'effect';
+import { Effect, Schedule } from 'effect';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import type { AppState, Settings } from '@/lib/state';
@@ -22,6 +22,7 @@ function assign<A extends object>(target: A, source: A): void {
   Object.assign(target, source);
 }
 
+/** Fails after a few attempts; callers must not treat the defaults as real. */
 export function loadPersistedState() {
   return Effect.gen(function* () {
     const [nextSettings, nextAppState] = yield* Effect.all([
@@ -31,6 +32,7 @@ export function loadPersistedState() {
     assign(settings, nextSettings);
     assign(appState, nextAppState);
   }).pipe(
+    Effect.retry(Schedule.intersect(Schedule.recurs(3), Schedule.spaced(500))),
     Effect.tapError((error) => logger.error('Failed to load state:', error))
   );
 }

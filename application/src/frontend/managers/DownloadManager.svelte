@@ -163,8 +163,15 @@ async function processDownloadComplete(
         : []),
     ];
     dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
+    // A failed stage is treated like a dirty one: no recovery file is written
+    // and old_files (if created) is reverted on error.
     const staging = await runFrontendEffect(
-      electronRpc.setup.stageOldFiles({ directory: outputDir, keep })
+      electronRpc.setup.stageOldFiles({ directory: outputDir, keep }).pipe(
+        Effect.tapError((error) =>
+          logger.error('Failed to stage old_files:', error)
+        ),
+        Effect.orElseSucceed(() => ({ staged: true, moved: 0, failed: 1 }))
+      )
     );
     stagedOldFiles = staging.staged;
     stagedCleanly = staging.failed === 0;

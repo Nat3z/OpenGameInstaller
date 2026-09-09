@@ -54,7 +54,11 @@ let storedConfig: AddonConfigValues = $state({});
 onMount(() => {
   Promise.all([
     runFrontendEffect(queryConnectedAddons<ConfigTemplateAndInfo>()),
-    runFrontendEffect(electronRpc.state.getAddonConfig(addonId)),
+    runFrontendEffect(
+      electronRpc.state
+        .getAddonConfig(addonId)
+        .pipe(Effect.orElseSucceed(() => null))
+    ),
   ])
     .then(([data, stored]) => {
       storedConfig = stored ?? {};

@@ -415,7 +415,9 @@ async function updateConfig() {
               if (parsed.kind === 'local') {
                 if (
                   !(await runFrontendEffect(
-                    electronRpc.fs.pathExists(parsed.path)
+                    electronRpc.fs
+                      .pathExists(parsed.path)
+                      .pipe(Effect.orElseSucceed(() => false))
                   ))
                 ) {
                   createNotification({

@@ -27,16 +27,14 @@ const OLD_FILES = 'old_files';
 const MAX_CONTENT_ROOT_DEPTH = 10;
 
 /**
- * Directories the renderer may operate on: the download location, every
- * owned game's install folder, and where in-flight or failed downloads landed.
- * Anything else is refused so a compromised renderer cannot reach into
- * unrelated user data.
+ * Where downloads land: the configured location plus the recorded path of
+ * every in-flight or failed download. Setup only ever rewrites these, so a
+ * game's install folder is deliberately not a valid target for mutation.
  */
-const managedRoots = (): string[] => {
+const downloadRoots = (): string[] => {
   const database = getDatabase();
   return [
     database.getSettings().fileDownloadLocation,
-    ...database.listGames().map((game) => game.cwd),
     ...database
       .listDownloads()
       .map((record) => record.downloadInfo.downloadPath),
@@ -46,13 +44,13 @@ const managedRoots = (): string[] => {
   ].filter((root) => root.trim() !== '');
 };
 
-const requireManaged = (
-  value: string
+const requireWithin = (
+  value: string,
+  roots: string[]
 ): Effect.Effect<string, FileSystemError> =>
   requireAbsolute(value).pipe(
     Effect.filterOrFail(
-      (target) =>
-        isProtectedDeletePath(target, { exact: [], subtrees: managedRoots() }),
+      (target) => isProtectedDeletePath(target, { exact: [], subtrees: roots }),
       (target) =>
         new FileSystemError({
           message: 'Path is outside the directories OpenGameInstaller manages',
@@ -60,6 +58,10 @@ const requireManaged = (
         })
     )
   );
+
+/** A path inside a download directory; the only place setup may write. */
+const requireDownloadPath = (value: string) =>
+  requireWithin(value, downloadRoots());
 
 const resolveContentRoot = (
   directory: string
@@ -74,9 +76,18 @@ const resolveContentRoot = (
     return current;
   });
 
+/** A path setup may read: a download directory or an owned game's folder. */
+const requireReadablePath = (value: string) =>
+  requireWithin(value, [
+    ...downloadRoots(),
+    ...getDatabase()
+      .listGames()
+      .map((game) => game.cwd),
+  ]);
+
 const stageOldFiles = (arg: { directory: string; keep: string[] }) =>
   Effect.gen(function* () {
-    const directory = yield* requireManaged(arg.directory);
+    const directory = yield* requireDownloadPath(arg.directory);
     const keep = new Set([...arg.keep, OLD_FILES]);
     const entries = yield* fsTry(directory, () => fs.readdirSync(directory));
     const toMove = entries.filter((entry) => !keep.has(entry));
@@ -111,7 +122,7 @@ const stageOldFiles = (arg: { directory: string; keep: string[] }) =>
 
 const revertOldFiles = (directory: string) =>
   Effect.gen(function* () {
-    const root = yield* requireManaged(directory);
+    const root = yield* requireDownloadPath(directory);
     const source = join(root, OLD_FILES);
     const exists = yield* fsTry(source, () => fs.existsSync(source));
     if (!exists) return true;
@@ -141,8 +152,8 @@ const extractArchive = (arg: {
   downloadId?: string;
 }) =>
   Effect.gen(function* () {
-    const archivePath = yield* requireManaged(arg.archivePath);
-    const outputDir = yield* requireManaged(arg.outputDir);
+    const archivePath = yield* requireDownloadPath(arg.archivePath);
+    const outputDir = yield* requireDownloadPath(arg.outputDir);
     const exists = yield* fsTry(archivePath, () => fs.existsSync(archivePath));
     if (!exists) {
       return yield* Effect.fail(
@@ -248,7 +259,7 @@ export default function handler() {
     ),
     procedure(ElectronRpc.setup.discardOldFiles, (directory: string) =>
       runBoundary(
-        requireManaged(directory).pipe(
+        requireDownloadPath(directory).pipe(
           Effect.flatMap((root) => {
             const target = join(root, OLD_FILES);
             return fsTryPromise(target, () =>
@@ -261,14 +272,14 @@ export default function handler() {
     ),
     procedure(ElectronRpc.setup.resolveContentRoot, (directory: string) =>
       runBoundary(
-        requireManaged(directory).pipe(Effect.flatMap(resolveContentRoot))
+        requireDownloadPath(directory).pipe(Effect.flatMap(resolveContentRoot))
       )
     ),
     procedure(
       ElectronRpc.setup.findArchive,
       (directory: string, kind: 'rar' | 'zip') =>
         runBoundary(
-          requireManaged(directory).pipe(
+          requireDownloadPath(directory).pipe(
             Effect.flatMap((root) =>
               fsTry(root, (): string | null => {
                 const suffix = `.${kind}`;
@@ -295,7 +306,7 @@ export default function handler() {
     ),
     procedure(ElectronRpc.setup.listDlls, (directory: string) =>
       runBoundary(
-        requireManaged(directory).pipe(
+        requireReadablePath(directory).pipe(
           Effect.flatMap((root) =>
             fsTry(root, () =>
               fs.readdirSync(root).filter((entry) => /\.dll$/i.test(entry))

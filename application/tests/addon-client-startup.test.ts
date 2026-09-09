@@ -1,8 +1,12 @@
 import { expect, mock, test } from 'bun:test';
 import { Effect } from 'effect';
 
+// Svelte runes cannot be evaluated by bun; the settings mirror is stubbed.
+mock.module('@/frontend/lib/core/state.svelte', () => ({
+  settings: { clientSdkUrl: 'ws://127.0.0.1:7654' },
+}));
+
 mock.module('@/frontend/lib/config/client', () => ({
-  getConfigClientOption: () => null,
   fetchAddonsWithConfigure: () => Effect.succeed([]),
 }));
 

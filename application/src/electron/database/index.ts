@@ -8,7 +8,7 @@ import { __dirname } from '@/electron/manager/manager.paths.js';
 import { AppDatabase } from './database.js';
 import { importLegacyState } from './legacy-import.js';
 
-export { AppDatabase } from './database.js';
+export { AppDatabase, type LibraryRemoval } from './database.js';
 
 export const DATABASE_FILENAME = 'ogi.sqlite';
 

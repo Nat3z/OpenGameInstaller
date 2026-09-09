@@ -1,4 +1,4 @@
-import { AddonError, AddonNotFound, ipcBoundary } from '@ogi-sdk/errors';
+import { AddonError, AddonNotFound, type DatabaseError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { exec } from 'child_process';
@@ -6,7 +6,6 @@ import { Effect, Schedule } from 'effect';
 import { BrowserWindow } from 'electron';
 import fs from 'fs';
 import { dirname, isAbsolute, join, resolve } from 'path';
-import { getDatabase } from '@/electron/database/index.js';
 import {
   normalizeAddonLink,
   parseAddonLink,
@@ -18,12 +17,14 @@ import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
+import { ipcServiceBoundary } from '@/electron/runtime.js';
 import { deleteInstalledAddon } from '@/electron/server/addon-lifecycle.js';
 import {
   port,
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
+import { Settings } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -64,15 +65,13 @@ function isGitRepository(addonPath: string): boolean {
 
 const loadedMarketplaces: AddonMarketplace[] = [];
 
-export function startAddons(): Effect.Effect<void, AddonError> {
+export function startAddons(): Effect.Effect<
+  void,
+  AddonError | DatabaseError,
+  Settings
+> {
   return Effect.gen(function* () {
-    const addons = yield* Effect.try({
-      try: () => getDatabase().getSettings().addons,
-      catch: (cause) =>
-        new AddonError({
-          message: `Failed to read addon configuration: ${String(cause)}`,
-        }),
-    });
+    const addons = yield* (yield* Settings).addons;
 
     yield* Effect.forEach(
       addons,
@@ -128,7 +127,11 @@ const MAX_ATTEMPTS_HEALTH_CHECK = 60;
 const HEALTH_CHECK_TIMEOUT_MS =
   MAX_ATTEMPTS_HEALTH_CHECK * HEALTH_CHECK_INTERVAL_MS;
 
-export function restartAddonServer(): Effect.Effect<void, AddonError> {
+export function restartAddonServer(): Effect.Effect<
+  void,
+  AddonError,
+  Settings
+> {
   return Effect.gen(function* () {
     logger.sync.info('Stopping server...');
     yield* stopAddonServer().pipe(
@@ -184,7 +187,17 @@ export function restartAddonServer(): Effect.Effect<void, AddonError> {
 
     logger.sync.info(`Addon Server is running on http://localhost:${port}`);
     logger.sync.info(`Server is being executed by electron!`);
-    yield* startAddons();
+    // startAddons reads settings from the database; fold that failure back into
+    // AddonError so the restart keeps a single error type.
+    yield* startAddons().pipe(
+      Effect.catchTag('DatabaseError', (cause) =>
+        Effect.fail(
+          new AddonError({
+            message: `Failed to read addon configuration: ${cause.message}`,
+          })
+        )
+      )
+    );
     yield* waitForAddonManifests();
     yield* Effect.tryPromise({
       try: () => sendIPCMessage('addon-manifests-ready'),
@@ -233,7 +246,7 @@ export function loadMarketplace(
 export default function AddonManagerHandler(mainWindow: BrowserWindow) {
   const installAddons = ipcProcedure(
     ElectronRpc.installAddons,
-    ipcBoundary((_, addons: string[]) =>
+    ipcServiceBoundary((_, addons: string[]) =>
       Effect.gen(function* () {
         // addons is an array of URLs to the addons to install. these should be valid git repositories
         addons = Array.isArray(addons)
@@ -243,13 +256,8 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
               .filter(Boolean)
           : [];
 
-        const stagedUpdate = yield* Effect.try({
-          try: () => ({ addons: getDatabase().getSettings().addons }),
-          catch: (cause) =>
-            new AddonError({
-              message: `Failed to read addon configuration: ${String(cause)}`,
-            }),
-        });
+        const settings = yield* Settings;
+        const stagedUpdate = { addons: yield* settings.addons };
         if (addons.length === 0) {
           sendNotification({
             message: 'No addons to install',
@@ -594,14 +602,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
             )
           );
         }
-        yield* Effect.try({
-          try: () =>
-            getDatabase().updateSettings({ addons: stagedUpdate.addons }),
-          catch: (cause) =>
-            new AddonError({
-              message: `Failed to write addon configuration: ${String(cause)}`,
-            }),
-        });
+        yield* settings.setAddons(stagedUpdate.addons);
         yield* restartAddonServer();
         return stagedUpdate.addons;
       })
@@ -610,12 +611,12 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
   const restartAddonServerProcedure = ipcProcedure(
     ElectronRpc.restartAddonServer,
-    ipcBoundary(() => restartAddonServer())
+    ipcServiceBoundary(() => restartAddonServer())
   );
 
   const ensureAddonsSpawnedProcedure = ipcProcedure(
     ElectronRpc.ensureAddonsSpawned,
-    ipcBoundary(() =>
+    ipcServiceBoundary(() =>
       startAddons().pipe(
         Effect.zipRight(waitForAddonManifests()),
         Effect.asVoid
@@ -625,7 +626,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
   const deleteInstalledAddonProcedure = ipcProcedure(
     ElectronRpc.deleteInstalledAddon,
-    ipcBoundary((_, addonID: string) =>
+    ipcServiceBoundary((_, addonID: string) =>
       Effect.gen(function* () {
         if (typeof addonID !== 'string' || addonID.trim().length === 0) {
           return { success: false, message: 'Invalid addon ID' };
@@ -637,7 +638,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
   const cleanAddons = ipcProcedure(
     ElectronRpc.cleanAddons,
-    ipcBoundary((_, marketplaceUrls: string[]) =>
+    ipcServiceBoundary((_, marketplaceUrls: string[]) =>
       Effect.gen(function* () {
         yield* Effect.forEach(
           [...Addon.running.values()],
@@ -686,7 +687,7 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
 
   const updateAddons = ipcProcedure(
     ElectronRpc.updateAddons,
-    ipcBoundary((_) =>
+    ipcServiceBoundary((_) =>
       Effect.gen(function* () {
         // check if wifi is available
         const isWifiAvailable = yield* Effect.tryPromise({
@@ -714,21 +715,13 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
         );
 
         // pull all of the addons
-        const config = yield* Effect.try({
-          try: () => {
-            if (!fs.existsSync(join(__dirname, 'addons/'))) return null;
-            const { addons } = getDatabase().getSettings();
-            return {
-              addons,
-              normalizedAddons: addons.map((addon) =>
-                normalizeAddonLink(addon)
-              ),
-            };
-          },
-          catch: (cause) =>
-            new AddonError({
-              message: `Failed to read addon configuration: ${String(cause)}`,
-            }),
+        const config = yield* Effect.gen(function* () {
+          if (!fs.existsSync(join(__dirname, 'addons/'))) return null;
+          const addons = yield* (yield* Settings).addons;
+          return {
+            addons,
+            normalizedAddons: addons.map((addon) => normalizeAddonLink(addon)),
+          };
         });
         if (!config) return;
         const { addons, normalizedAddons } = config;

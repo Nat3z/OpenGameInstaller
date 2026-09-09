@@ -1,4 +1,8 @@
-import { AddonError, FileSystemError, formatError } from '@ogi-sdk/errors';
+import type {
+  AddonError,
+  DatabaseError,
+  FileSystemError,
+} from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { exec } from 'child_process';
 import { Effect } from 'effect';
@@ -15,7 +19,6 @@ import {
 } from 'original-fs';
 import path, { dirname, isAbsolute, join, resolve } from 'path';
 import semver from 'semver';
-import { getDatabase } from '@/electron/database/index.js';
 import { loadMarketplace } from '@/electron/handlers/handler.addon.js';
 import {
   normalizeAddonLink,
@@ -25,6 +28,7 @@ import { isNixOSCommandResult } from '@/electron/lib/nix-detection.js';
 import { sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { Settings } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -583,14 +587,12 @@ export async function restoreBackup(
  */
 export function reinstallAddonDependencies(
   onProgress?: (addon: string, current: number, total: number) => void
-): Effect.Effect<void> {
+): Effect.Effect<void, never, Settings> {
   return Effect.gen(function* () {
     logger.sync.info('[startup] Reinstalling addon dependencies...');
 
-    const addons = yield* Effect.try({
-      try: () => getDatabase().getSettings().addons,
-      catch: (cause) => cause,
-    });
+    const settings = yield* Settings;
+    const addons = yield* settings.addons;
 
     if (addons.length === 0) {
       logger.sync.info('[startup] No addons configured, skipping reinstall');
@@ -703,19 +705,13 @@ function isGitRepository(repoPath: string): boolean {
 
 export function checkForAddonUpdates(
   mainWindow: BrowserWindow
-): Effect.Effect<void, AddonError | FileSystemError> {
+): Effect.Effect<void, AddonError | FileSystemError | DatabaseError, Settings> {
   return Effect.gen(function* () {
     if (!fs.existsSync(join(__dirname, 'addons'))) {
       return;
     }
-    const addons = yield* Effect.try({
-      try: () => getDatabase().getSettings().addons,
-      catch: (cause) =>
-        new FileSystemError({
-          message: `Failed to read addon update configuration: ${formatError(cause)}`,
-          cause,
-        }),
-    });
+    const settings = yield* Settings;
+    const addons = yield* settings.addons;
     const normalizedAddons = addons.map((addon) => normalizeAddonLink(addon));
     for (const addonWithMarketplaceUrl of normalizedAddons) {
       const parsedAddon = parseAddonLink(addonWithMarketplaceUrl);

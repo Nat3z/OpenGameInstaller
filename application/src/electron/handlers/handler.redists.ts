@@ -11,11 +11,11 @@ import {
   migrateToUmu,
   type RedistributableInstallProgress,
 } from '@/electron/handlers/handler.umu.js';
-import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendIPCMessage } from '@/electron/main.js';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
+import { Library } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const installRedistributables = (
@@ -48,7 +48,8 @@ const installRedistributables = (
         })
       );
     }
-    const appInfo = loadLibraryInfo(appID) as
+    const library = yield* Library;
+    const appInfo = (yield* library.get(appID)) as
       | (LibraryInfo & { redistributables?: { name: string; path: string }[] })
       | null;
     if (!appInfo) {
@@ -83,11 +84,7 @@ const installRedistributables = (
           });
         })
       );
-      const migration = yield* Effect.tryPromise({
-        try: () => migrateToUmu(appID, steamAppId),
-        catch: (cause) =>
-          new LibraryError({ message: formatError(cause), gameId: appID }),
-      });
+      const migration = yield* migrateToUmu(appID, steamAppId);
       if (!migration.success) {
         const error =
           migration.error ?? 'Failed to migrate legacy prefix to UMU';
@@ -106,11 +103,7 @@ const installRedistributables = (
       }
     }
 
-    const result = yield* Effect.tryPromise({
-      try: () => installRedistributablesWithUmu(appID, emitProgress),
-      catch: (cause) =>
-        new LibraryError({ message: formatError(cause), gameId: appID }),
-    });
+    const result = yield* installRedistributablesWithUmu(appID, emitProgress);
 
     yield* Effect.forkDaemon(addDeckGameToSteam(mainWindow, appID));
 
@@ -132,6 +125,7 @@ export function registerRedistributableHandlers(mainWindow: BrowserWindow) {
         runEffectBoundary(
           installRedistributables(mainWindow, appID, downloadId).pipe(
             Effect.catchTags({
+              DatabaseError: () => Effect.succeed('failed' as const),
               PlatformError: () => Effect.succeed('failed' as const),
               LibraryError: (error) =>
                 Effect.succeed(

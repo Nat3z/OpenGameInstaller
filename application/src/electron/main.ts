@@ -1,6 +1,7 @@
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import '@/electron/lib/source-maps.js';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
+import { formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import { join } from 'path';
@@ -13,7 +14,6 @@ import {
   hasPendingFileDeletions,
   launchGameFromLibrary,
 } from '@/electron/handlers/handler.library.js';
-import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import {
   isGamescopeSession,
   tagWindowForGamescope,
@@ -47,6 +47,7 @@ import {
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
+import { Library } from '@/electron/services/index.js';
 import {
   checkForAddonUpdates,
   IS_NIXOS,
@@ -169,7 +170,9 @@ logger.sync.info('Running in directory: ' + __dirname);
 // disable hardware acceleration
 app.disableHardwareAcceleration();
 
-/* Sync IPC for initial theme: must be registered before renderer loads to avoid flash */
+/* Sync IPC for initial theme: must be registered before renderer loads to avoid
+   flash. Reads the database directly because it runs before the window exists
+   and Electron requires a synchronous return value. */
 ipcMain.on('get-initial-theme', (event) => {
   try {
     event.returnValue = getDatabase().getSettings().theme;
@@ -530,12 +533,20 @@ async function runAddonLaunchEvent(
   gameId: number,
   launchType: 'pre' | 'post'
 ): Promise<{ success: boolean; error?: string }> {
-  const libraryInfo = loadLibraryInfo(gameId);
-  if (!libraryInfo) {
-    return { success: false, error: 'Game not found in library' };
-  }
-
-  return runElectronEffect(runLaunchAppHooks(libraryInfo, launchType));
+  return runElectronEffect(
+    Effect.gen(function* () {
+      const library = yield* Library;
+      const libraryInfo = yield* library.get(gameId);
+      if (!libraryInfo) {
+        return { success: false, error: 'Game not found in library' };
+      }
+      return yield* runLaunchAppHooks(libraryInfo, launchType);
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.succeed({ success: false, error: formatError(error) })
+      )
+    )
+  );
 }
 
 async function handleRemoteLaunchRequest(

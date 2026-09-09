@@ -83,6 +83,17 @@ export class AddonLoadError extends Data.TaggedError('AddonLoadError')<{
 }> {}
 
 // =============================================================================
+// Database Errors
+// =============================================================================
+
+export class DatabaseError extends Data.TaggedError('DatabaseError')<{
+  readonly message: string;
+  /** The `AppDatabase` call that failed, e.g. `settings.update`. */
+  readonly operation: string;
+  readonly cause?: unknown;
+}> {}
+
+// =============================================================================
 // Config Errors
 // =============================================================================
 
@@ -265,6 +276,7 @@ export type OgiError =
   | AddonNotFound
   | AddonLoadError
   | ConfigError
+  | DatabaseError
   | DebridError
   | DebridAuthError
   | DebridApiError

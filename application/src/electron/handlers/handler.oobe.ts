@@ -211,11 +211,7 @@ export default function OOBEHandler() {
     ),
     procedure(ElectronRpc.oobe.setSteamGridDBKey, (key: string) =>
       runEffectBoundary(
-        Effect.try({
-          try: () => writeSteamGridDbKey(key),
-          catch: (cause) =>
-            new FileSystemError({ message: formatError(cause), cause }),
-        }).pipe(
+        writeSteamGridDbKey(key).pipe(
           Effect.as(true),
           Effect.catchAll((error) =>
             Effect.sync(() => {

@@ -1,3 +1,4 @@
+import { Database as Sqlite } from 'bun:sqlite';
 import {
   afterEach,
   beforeAll,
@@ -8,6 +9,7 @@ import {
   test,
 } from 'bun:test';
 import { DownloadAborted } from '@ogi-sdk/errors';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Effect } from 'effect';
 import {
   existsSync,
@@ -19,8 +21,8 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PassThrough, Readable } from 'stream';
+import { AppDatabase } from '../src/electron/database/database.js';
 import { ElectronRpc } from '../src/lib/electron-rpc.js';
-import { DEFAULT_SETTINGS, type Settings } from '../src/lib/state.js';
 
 class MockAxiosError extends Error {
   constructor(
@@ -68,29 +70,6 @@ mock.module('@/electron/lib/online.js', () => ({
 mock.module('@/electron/main.js', () => ({
   sendNotification: mock(() => {}),
 }));
-// `mock.module` is process-wide, so this stands in for manager.config in every
-// test file of the run. It reads the injected database when there is one so
-// suites that seed real settings still see them.
-// Resolved lazily: a static import would load the real `electron` module
-// before the mock above is installed.
-let getDatabase:
-  | typeof import('../src/electron/database/index.js').getDatabase
-  | undefined;
-const currentSettings = (): Settings => {
-  try {
-    if (!getDatabase) {
-      getDatabase = require('../src/electron/database/index.js').getDatabase;
-    }
-    return getDatabase!().getSettings();
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-};
-mock.module('@/electron/manager/manager.config.js', () => ({
-  getSteamCompatibilityTool: () =>
-    Effect.sync(() => currentSettings().steamCompatibilityTool.trim()),
-  getSettings: () => Effect.sync(currentSettings),
-}));
 mock.module('@/electron/manager/manager.queue.js', () => ({
   DOWNLOAD_QUEUE: {
     enqueue: () => ({
@@ -113,15 +92,21 @@ mock.module('@/lib/download-handshake.js', () => ({
 
 let Download: typeof import('../src/electron/handlers/handler.ddl.js').Download;
 let registerDdlHandler: typeof import('../src/electron/handlers/handler.ddl.js').default;
+let setDatabase: typeof import('../src/electron/database/index.js').setDatabase;
 const testDirectories: string[] = [];
+const migrations = join(import.meta.dir, '../drizzle');
 
 beforeAll(async () => {
+  ({ setDatabase } = await import('../src/electron/database/index.js'));
   ({ Download, default: registerDdlHandler } = await import(
     '../src/electron/handlers/handler.ddl.js'
   ));
 });
 
 beforeEach(() => {
+  // The handler reads settings through the live `Database` layer, which
+  // resolves the process-wide database on every call.
+  setDatabase(new AppDatabase(drizzle(new Sqlite(':memory:')), migrations));
   get.mockClear();
   head.mockClear();
   registerDownloadHandshake.mockClear();
@@ -139,6 +124,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setDatabase(undefined);
   for (const directory of testDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }

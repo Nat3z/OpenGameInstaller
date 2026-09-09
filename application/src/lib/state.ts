@@ -34,7 +34,9 @@ export interface Settings {
   steamGridDbApiKey: string;
 }
 
-export const DEFAULT_MARKETPLACE_SOURCES = ['https://ogi-marketplace.nat3z.com'];
+export const DEFAULT_MARKETPLACE_SOURCES = [
+  'https://ogi-marketplace.nat3z.com',
+];
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'light',

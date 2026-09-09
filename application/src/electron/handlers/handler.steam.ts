@@ -10,10 +10,7 @@ import {
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Layer } from 'effect';
 import { type BrowserWindow, dialog } from 'electron';
-import {
-  ensureLibraryDir,
-  loadLibraryInfo,
-} from '@/electron/handlers/helpers.app/library.js';
+import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import {
   getCurrentUsername,
@@ -394,7 +391,6 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
             new FileSystemError({ message: 'Only available on Linux' })
           );
         }
-        ensureLibraryDir();
         let appInfo = loadLibraryInfo(appID);
         if (!appInfo) {
           return yield* Effect.fail(

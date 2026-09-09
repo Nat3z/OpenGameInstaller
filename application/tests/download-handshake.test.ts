@@ -6,7 +6,9 @@ import { beforeAll, describe, expect, mock, test } from 'bun:test';
 mock.module('@/electron/rpc/router-core.js', () =>
   require('../src/electron/rpc/router-core.js')
 );
-mock.module('@/lib/electron-rpc.js', () => require('../src/lib/electron-rpc.js'));
+mock.module('@/lib/electron-rpc.js', () =>
+  require('../src/lib/electron-rpc.js')
+);
 
 let handshake: typeof import('../src/lib/download-handshake.js');
 

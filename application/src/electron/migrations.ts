@@ -1,12 +1,12 @@
-import { FileSystemError, formatError } from '@ogi-sdk/errors';
+import type { FileSystemError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { exec, spawn } from 'child_process';
 import { Effect } from 'effect';
 import * as fsSync from 'fs';
-import * as fs from 'fs/promises';
 import * as os from 'os';
 import { join } from 'path';
 import semver from 'semver';
+import { getDatabase } from '@/electron/database/index.js';
 import { addToDesktop } from '@/electron/handlers/helpers.app/desktop-shortcut.js';
 import { normalizeAddonLink } from '@/electron/lib/addon-links.js';
 import { migrateLegacySteamGridDbKey } from '@/electron/lib/steam-grid-db.js';
@@ -24,52 +24,20 @@ let migrations: {
     run: () => Promise<void> | Effect.Effect<void, unknown>;
   };
 } = {
-  'add-theme-to-general': {
-    from: '0.0.0',
-    to: '2.8.0',
-    description: 'Add theme setting to general.json for theme support.',
-    platform: 'all',
-    run: async () => {
-      const configPath = join(__dirname, 'config/option/general.json');
-      if (!fsSync.existsSync(configPath)) return;
-      const generalConfig = await fs.readFile(configPath, 'utf-8');
-      const generalConfigObj = JSON.parse(generalConfig) as Record<
-        string,
-        unknown
-      >;
-      if (generalConfigObj.theme !== undefined) return;
-      generalConfigObj.theme = 'light';
-      await fs.writeFile(configPath, JSON.stringify(generalConfigObj));
-    },
-  },
   'install-steam-addon': {
     from: '1.6.8',
     to: '2.0.0',
     description: `Adds the Steam Catalog addon to the user's addons list. This is required because the user expects Steam listings to appear, but because the built-in Steam catalog was removed, this addon is needed to provide the same functionality.`,
     platform: 'all',
     run: async () => {
-      const generalConfig = await fs.readFile(
-        join(__dirname, 'config/option/general.json'),
-        'utf-8'
-      );
-      const generalConfigObj = JSON.parse(generalConfig);
-      const addons = generalConfigObj.addons;
-      const hasSteamAddon =
-        addons.find((addon: string) =>
-          addon.includes('Nat3z/steam-integration')
-        ) !== undefined;
-      if (!hasSteamAddon) {
-        addons.push('https://github.com/Nat3z/steam-integration');
+      const database = getDatabase();
+      const { addons } = database.getSettings();
+      if (!addons.some((addon) => addon.includes('Nat3z/steam-integration'))) {
+        database.updateSettings({
+          addons: [...addons, 'https://github.com/Nat3z/steam-integration'],
+        });
       }
-
-      await fs.writeFile(
-        join(__dirname, 'config/option/general.json'),
-        JSON.stringify(generalConfigObj)
-      );
-      await new Promise<void>(async (resolve) => {
-        await sendIPCMessage('migration:event', 'install-steam-addon');
-        resolve();
-      });
+      await sendIPCMessage('migration:event', 'install-steam-addon');
     },
   },
   'steamgriddb-launch': {
@@ -88,16 +56,10 @@ let migrations: {
       'checks if the steam-addon was installed without an installation.log file and if so, repairs it.',
     platform: 'all',
     run: async () => {
-      const generalConfig = await fs.readFile(
-        join(__dirname, 'config/option/general.json'),
-        'utf-8'
+      const { addons } = getDatabase().getSettings();
+      const hasSteamAddon = addons.some((addon) =>
+        addon.includes('Nat3z/steam-integration')
       );
-      const generalConfigObj = JSON.parse(generalConfig);
-      const addons = generalConfigObj.addons;
-      const hasSteamAddon =
-        addons.find((addon: string) =>
-          addon.includes('Nat3z/steam-integration')
-        ) !== undefined;
       if (!hasSteamAddon) {
         logger.sync.info(
           'user does not have steam-integration in config. no need to repair.'
@@ -305,24 +267,15 @@ let migrations: {
       'Migrates legacy bare addon repository URLs to explicit marketplace or git associations.',
     platform: 'all',
     run: async () => {
-      const configPath = join(__dirname, 'config/option/general.json');
-      if (!fsSync.existsSync(configPath)) return;
+      const database = getDatabase();
+      const originalAddons = database.getSettings().addons;
+      const migratedAddons = originalAddons.map((addon) =>
+        normalizeAddonLink(addon)
+      );
 
-      const generalConfig = await fs.readFile(configPath, 'utf-8');
-      const generalConfigObj = JSON.parse(generalConfig) as {
-        addons?: unknown;
-      };
-      if (!Array.isArray(generalConfigObj.addons)) return;
-
-      const originalAddons = generalConfigObj.addons;
-      const migratedAddons = originalAddons
-        .filter((addon): addon is string => typeof addon === 'string')
-        .map((addon) => normalizeAddonLink(addon));
-
-      const changed =
-        migratedAddons.length !== originalAddons.length ||
-        migratedAddons.some((addon, index) => addon !== originalAddons[index]);
-
+      const changed = migratedAddons.some(
+        (addon, index) => addon !== originalAddons[index]
+      );
       if (!changed) {
         logger.sync.info(
           '[migration] addon source associations already migrated'
@@ -330,8 +283,7 @@ let migrations: {
         return;
       }
 
-      generalConfigObj.addons = [...new Set(migratedAddons)];
-      await fs.writeFile(configPath, JSON.stringify(generalConfigObj));
+      database.updateSettings({ addons: [...new Set(migratedAddons)] });
       logger.sync.info('[migration] migrated addon source associations');
     },
   },
@@ -346,157 +298,25 @@ let migrations: {
       logger.sync.info(`[migration] SteamGridDB key: ${status}`);
     },
   },
-  'migrate-update-state-format': {
-    from: '0.0.0',
-    to: '3.0.0',
-    description:
-      'Migrates update-state.json from old format (array of numbers) to new format (array of objects with appID and steamAppId)',
-    platform: 'all',
-    run: async () => {
-      const updateStatePath = join(__dirname, 'internals/update-state.json');
-
-      // Skip if file doesn't exist
-      if (!fsSync.existsSync(updateStatePath)) {
-        logger.sync.info(
-          '[migration] update-state.json does not exist, skipping migration'
-        );
-        return;
-      }
-
-      try {
-        const fileContent = await fs.readFile(updateStatePath, 'utf-8');
-        const parsed = JSON.parse(fileContent);
-
-        // Check if it's already in the new format
-        if (
-          Array.isArray(parsed.requiredReadds) &&
-          parsed.requiredReadds.length > 0 &&
-          typeof parsed.requiredReadds[0] === 'object' &&
-          parsed.requiredReadds[0] !== null &&
-          'appID' in parsed.requiredReadds[0] &&
-          'steamAppId' in parsed.requiredReadds[0]
-        ) {
-          logger.sync.info(
-            '[migration] update-state.json already in new format, skipping migration'
-          );
-          return;
-        }
-
-        // Check if it has any old format entries (array containing numbers)
-        if (Array.isArray(parsed.requiredReadds)) {
-          const hasOldFormat = parsed.requiredReadds.some(
-            (v: unknown) => typeof v === 'number' && Number.isFinite(v)
-          );
-
-          if (hasOldFormat) {
-            logger.sync.info(
-              '[migration] Converting update-state.json from old format to new format'
-            );
-
-            // Convert: keep new format entries, remove old format entries
-            const convertedRequiredReadds = parsed.requiredReadds
-              .filter(
-                (v: unknown): v is { appID: number; steamAppId: number } => {
-                  return (
-                    typeof v === 'object' &&
-                    v !== null &&
-                    typeof (v as Record<string, unknown>).appID === 'number' &&
-                    typeof (v as Record<string, unknown>).steamAppId ===
-                      'number'
-                  );
-                }
-              )
-              .map((v: { appID: number; steamAppId: number }) => ({
-                appID: v.appID,
-                steamAppId: v.steamAppId,
-              }));
-
-            const oldCount =
-              parsed.requiredReadds.length - convertedRequiredReadds.length;
-            if (oldCount > 0) {
-              logger.sync.info(
-                `[migration] Removed ${oldCount} old format entries (steamAppId unknown)`
-              );
-            }
-
-            const migratedData = {
-              requiredReadds: convertedRequiredReadds,
-            };
-
-            await fs.writeFile(
-              updateStatePath,
-              JSON.stringify(migratedData, null, 2)
-            );
-            logger.sync.info(
-              '[migration] Successfully migrated update-state.json'
-            );
-          } else {
-            logger.sync.info(
-              '[migration] update-state.json already in new format, skipping migration'
-            );
-          }
-        } else {
-          logger.sync.info(
-            '[migration] update-state.json format is unrecognized, skipping migration'
-          );
-        }
-      } catch (error) {
-        logger.sync.error(
-          '[migration] Error migrating update-state.json:',
-          error
-        );
-        // Don't throw - migration failures shouldn't break the app
-      }
-    },
-  },
 };
 /**
- * Run any pending migrations appropriate for the current installation and platform.
- *
- * Reads the last applied version from config/option/lastVersion.txt (defaults to "0.0.0"), skips running migrations if the installation marker config/option/installed.json is missing, executes each migration whose version range applies to the stored last version and whose platform matches the current process, and updates config/option/lastVersion.txt to the current VERSION when finished.
+ * Runs every migration that applies to the version recorded in the database,
+ * then records the current version. A fresh install skips straight to
+ * recording the version.
  */
 export function execute(): Effect.Effect<void, FileSystemError> {
   return Effect.gen(function* () {
-    // check if the thing is even installed, if not, don't run any migrations because it was just installed
-    const configDir = join(__dirname, 'config/option');
-    if (!fsSync.existsSync(join(configDir, 'installed.json'))) {
-      // generate the folder path too
-      yield* Effect.tryPromise({
-        try: async () => {
-          await fs.mkdir(configDir, { recursive: true });
-          // no need to run migrations, the person hasn't even launched anything.
-          await fs.writeFile(
-            join(configDir, 'lastVersion.txt'),
-            VERSION,
-            'utf-8'
-          );
-        },
-        catch: (cause) =>
-          new FileSystemError({
-            message: `Failed to initialize migration state: ${formatError(cause)}`,
-            path: configDir,
-            cause,
-          }),
-      });
+    const database = getDatabase();
+    const appState = database.getAppState();
+    // A fresh install has nothing to migrate; just record the version it
+    // started on so the next upgrade knows where it came from.
+    if (!appState.installed) {
+      database.updateAppState({ lastVersion: VERSION });
       return;
     }
 
-    let lastVersion: string = '0.0.0';
-    const lastVersionPath = join(configDir, 'lastVersion.txt');
-    if (fsSync.existsSync(lastVersionPath)) {
-      lastVersion = yield* Effect.tryPromise({
-        try: () => fs.readFile(lastVersionPath, 'utf-8'),
-        catch: (cause) =>
-          new FileSystemError({
-            message: `Failed to read migration state: ${formatError(cause)}`,
-            path: lastVersionPath,
-            cause,
-          }),
-      });
-    }
-
+    const lastVersion = appState.lastVersion ?? '0.0.0';
     logger.sync.info('[migration] local version:', lastVersion);
-    // enroll into certain migrations
     for (const migration of Object.values(migrations)) {
       if (
         semver.gte(lastVersion, migration.from) &&
@@ -524,14 +344,6 @@ export function execute(): Effect.Effect<void, FileSystemError> {
       }
     }
 
-    yield* Effect.tryPromise({
-      try: () => fs.writeFile(lastVersionPath, VERSION),
-      catch: (cause) =>
-        new FileSystemError({
-          message: `Failed to save migration state: ${formatError(cause)}`,
-          path: lastVersionPath,
-          cause,
-        }),
-    });
+    database.updateAppState({ lastVersion: VERSION });
   });
 }

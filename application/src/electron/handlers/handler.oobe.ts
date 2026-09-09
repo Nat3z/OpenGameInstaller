@@ -12,10 +12,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
 import { getBunSetupAction } from '@/electron/lib/bun-setup.js';
-import {
-  getSteamGridDbConfigPath,
-  writeSteamGridDbKey,
-} from '@/electron/lib/steam-grid-db.js';
+import { writeSteamGridDbKey } from '@/electron/lib/steam-grid-db.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
@@ -217,11 +214,7 @@ export default function OOBEHandler() {
         Effect.try({
           try: () => writeSteamGridDbKey(key),
           catch: (cause) =>
-            new FileSystemError({
-              message: formatError(cause),
-              path: getSteamGridDbConfigPath(),
-              cause,
-            }),
+            new FileSystemError({ message: formatError(cause), cause }),
         }).pipe(
           Effect.as(true),
           Effect.catchAll((error) =>

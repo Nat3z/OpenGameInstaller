@@ -129,7 +129,12 @@ export const planGameFileDeletion = (input: {
   return { kind: 'delete' };
 };
 
-/** App-owned directories that must never be wiped by a game removal. */
+/**
+ * App-owned directories that must never be wiped by a game removal. State now
+ * lives in `ogi.sqlite` directly under the data dir, which is already an
+ * exact-protected root; these four legacy directories still exist on upgraded
+ * installs and stay listed so they are never deleted either.
+ */
 export const appMetadataSubtrees = (dataDir: string): string[] => [
   join(dataDir, 'config'),
   join(dataDir, 'internals'),

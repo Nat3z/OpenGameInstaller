@@ -1,12 +1,18 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
-import { FileSystemError, formatError, HttpError } from '@ogi-sdk/errors';
+import {
+  ConfigError,
+  FileSystemError,
+  formatError,
+  HttpError,
+} from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
-import { Effect, Schema } from 'effect';
+import { Effect } from 'effect';
 import type { ReadStream } from 'original-fs';
 import RealDebrid from 'real-debrid-js';
+import { getDatabase } from '@/electron/database/index.js';
 import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
@@ -15,8 +21,6 @@ import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.realDebrid);
 
-const CONFIG_PATH = join(__dirname, 'config/option/realdebrid.json');
-const ConfigSchema = Schema.Struct({ debridApiKey: Schema.String });
 let realDebridClient = new RealDebrid({ apiKey: 'UNSET' });
 
 const hostName = (host: unknown): string | undefined =>
@@ -50,37 +54,16 @@ const notifyFailure = <A, E>(
 const run = <A, E>(effect: Effect.Effect<A, E>, message: string) =>
   runEffectBoundary(notifyFailure(effect, message));
 
+/** Loads the stored key into the client. False when it has never been set. */
 const updateKey = () =>
   Effect.gen(function* () {
-    const raw = yield* Effect.tryPromise({
-      try: () => fsAsync.readFile(CONFIG_PATH, 'utf-8'),
+    const apiKey = yield* Effect.try({
+      try: () => getDatabase().getSettings().debridApiKey,
       catch: (cause) =>
-        new FileSystemError({
-          message: formatError(cause),
-          path: CONFIG_PATH,
-          cause,
-        }),
+        new ConfigError({ message: formatError(cause), key: 'debridApiKey' }),
     });
-    const unknown = yield* Effect.try({
-      try: () => JSON.parse(raw) as unknown,
-      catch: (cause) =>
-        new FileSystemError({
-          message: formatError(cause),
-          path: CONFIG_PATH,
-          cause,
-        }),
-    });
-    const config = yield* Schema.decodeUnknown(ConfigSchema)(unknown).pipe(
-      Effect.mapError(
-        (cause) =>
-          new FileSystemError({
-            message: String(cause),
-            path: CONFIG_PATH,
-            cause,
-          })
-      )
-    );
-    realDebridClient = new RealDebrid({ apiKey: config.debridApiKey });
+    if (apiKey === '') return false;
+    realDebridClient = new RealDebrid({ apiKey });
     return true;
   });
 

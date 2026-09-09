@@ -152,7 +152,7 @@ function openMarketplaceSourceManager() {
 }
 
 async function refreshMarketplaceSources(sources: string[]) {
-  saveMarketplaceSources(sources);
+  await saveMarketplaceSources(sources);
   await fetchCommunityAddons();
 }
 

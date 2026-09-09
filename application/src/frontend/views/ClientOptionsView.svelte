@@ -21,7 +21,7 @@ import {
 } from '@/frontend/lib/core/state.svelte';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
-import type { Settings } from '@/lib/state';
+import { DEFAULT_SETTINGS, type Settings } from '@/lib/state';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -698,12 +698,12 @@ async function loadCompatibilityTools() {
         )
       )
   );
-  // Keep an explicitly saved tool selectable even if its directory is gone.
-  // The unsaved default is skipped so an empty scan shows the no-tools hint.
-  const storedTool = getStoredValue('steamCompatibilityTool');
+  // Keep a chosen tool selectable even if its directory is gone. The stored
+  // default is skipped so an empty scan shows the no-tools hint.
+  const storedTool = settings.steamCompatibilityTool;
   if (
-    typeof storedTool === 'string' &&
     storedTool &&
+    storedTool !== DEFAULT_SETTINGS.steamCompatibilityTool &&
     !tools.some((tool) => tool.id === storedTool)
   ) {
     tools.push({ id: storedTool, name: `${storedTool} (not installed)` });

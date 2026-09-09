@@ -1,4 +1,3 @@
-import type { LibraryInfo } from '@ogi-sdk/connect';
 import { AddonError, FileSystemError, formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { exec } from 'child_process';
@@ -16,6 +15,7 @@ import {
 } from 'original-fs';
 import path, { dirname, isAbsolute, join, resolve } from 'path';
 import semver from 'semver';
+import { getDatabase } from '@/electron/database/index.js';
 import { loadMarketplace } from '@/electron/handlers/handler.addon.js';
 import {
   normalizeAddonLink,
@@ -587,22 +587,12 @@ export function reinstallAddonDependencies(
   return Effect.gen(function* () {
     logger.sync.info('[startup] Reinstalling addon dependencies...');
 
-    // Check if general config exists
-    const configPath = join(__dirname, 'config/option/general.json');
-    if (!fs.existsSync(configPath)) {
-      logger.sync.info(
-        '[startup] No general config found, skipping addon reinstall'
-      );
-      return;
-    }
-
-    const generalConfig = yield* Effect.try({
-      try: () => JSON.parse(fs.readFileSync(configPath, 'utf-8')),
+    const addons = yield* Effect.try({
+      try: () => getDatabase().getSettings().addons,
       catch: (cause) => cause,
     });
-    const addons = generalConfig.addons as string[] | undefined;
 
-    if (!addons || addons.length === 0) {
+    if (addons.length === 0) {
       logger.sync.info('[startup] No addons configured, skipping reinstall');
       return;
     }
@@ -677,30 +667,6 @@ export function reinstallAddonDependencies(
   );
 }
 
-export async function convertLibrary() {
-  // read the library directory
-  const libraryPath = join(__dirname, 'library/');
-  if (!fs.existsSync(libraryPath)) {
-    return;
-  }
-  const files = fs.readdirSync(libraryPath);
-  for (const file of files) {
-    const filePath = join(libraryPath, file);
-    const fileData = fs.readFileSync(filePath, 'utf-8');
-    let data: LibraryInfo & { steamAppID?: number } = JSON.parse(fileData);
-    if (data.steamAppID) {
-      // convert the app id to an appID
-      data.appID = data.steamAppID;
-      delete data.steamAppID;
-      data.coverImage = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${data.appID}/library_hero.jpg`;
-      data.titleImage = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${data.appID}/logo_2x.png`;
-      data.addonsource = 'steam';
-      data.storefront = 'steam';
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 4));
-      logger.sync.info(`Converted ${file} to new format`);
-    }
-  }
-}
 function isGitRepository(repoPath: string): boolean {
   if (!fs.existsSync(repoPath)) {
     return false;
@@ -742,17 +708,14 @@ export function checkForAddonUpdates(
     if (!fs.existsSync(join(__dirname, 'addons'))) {
       return;
     }
-    const configPath = join(__dirname, 'config/option/general.json');
-    const generalConfig = yield* Effect.try({
-      try: () => JSON.parse(fs.readFileSync(configPath, 'utf-8')),
+    const addons = yield* Effect.try({
+      try: () => getDatabase().getSettings().addons,
       catch: (cause) =>
         new FileSystemError({
           message: `Failed to read addon update configuration: ${formatError(cause)}`,
-          path: configPath,
           cause,
         }),
     });
-    const addons = generalConfig.addons as string[];
     const normalizedAddons = addons.map((addon) => normalizeAddonLink(addon));
     for (const addonWithMarketplaceUrl of normalizedAddons) {
       const parsedAddon = parseAddonLink(addonWithMarketplaceUrl);

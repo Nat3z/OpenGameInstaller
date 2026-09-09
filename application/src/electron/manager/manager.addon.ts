@@ -15,7 +15,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schema } from 'effect';
 import { isGameSpecificLaunch } from '@/electron/lib/single-instance-launch.js';
 import { sendNotification } from '@/electron/main.js';
-import { addonServer, port } from '@/electron/server/addon-server.js';
+import { getAddonServer, port } from '@/electron/server/addon-server.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -43,7 +43,7 @@ export class Addon extends ExecutorAddon {
       ).pipe(
         Effect.mapError((cause) => new AddonLoadError({ addonName, cause }))
       );
-      const secret = addonServer.getSecret();
+      const secret = getAddonServer().getSecret();
       // gameLaunch describes the session type, not individual launches: a
       // dedicated Steam-shortcut session spawns addons with the flag set,
       // while forwarded launches into a running full-app session correctly
@@ -124,11 +124,11 @@ export class Addon extends ExecutorAddon {
       if (!this.getChildProcess()) return undefined;
       Addon.running.set(this.config.path, this);
       let attempts = 0;
-      while (!addonServer.getClient(this.config.name) && attempts <= 10) {
+      while (!getAddonServer().getClient(this.config.name) && attempts <= 10) {
         attempts += 1;
         yield* Effect.sleep('500 millis');
       }
-      const client = addonServer.getClient(this.config.name);
+      const client = getAddonServer().getClient(this.config.name);
       if (!client) return undefined;
       client.filePath = this.config.path;
       client.addonLink = addonLink;

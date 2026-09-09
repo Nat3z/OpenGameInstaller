@@ -28,7 +28,8 @@ const MAX_CONTENT_ROOT_DEPTH = 10;
 
 /**
  * Where downloads land: the configured location plus the recorded path of
- * every in-flight or failed download. Setup only ever rewrites these, so a
+ * every in-flight or failed download (validated against the location that was
+ * configured when they were saved). Setup only ever rewrites these, so a
  * game's install folder is deliberately not a valid target for mutation.
  */
 const downloadRoots = (): string[] => {

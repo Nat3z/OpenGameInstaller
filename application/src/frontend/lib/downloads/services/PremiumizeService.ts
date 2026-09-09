@@ -1,7 +1,7 @@
 import { DebridError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
-import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { settings } from '@/frontend/lib/core/state.svelte';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
@@ -76,10 +76,7 @@ export class PremiumizeService extends BaseService {
       }
 
       tempId = this.queueRequestDownload(result, appID, 'premiumize');
-      const options = getConfigClientOption<{ premiumizeApiKey?: string }>(
-        'realdebrid'
-      );
-      if (!options?.premiumizeApiKey) {
+      if (!settings.premiumizeApiKey) {
         return yield* Effect.fail(
           new DebridError({
             message: 'Please set your Premiumize API key in the settings.',
@@ -87,7 +84,7 @@ export class PremiumizeService extends BaseService {
           })
         );
       }
-      const { premiumizeApiKey } = options;
+      const premiumizeApiKey = settings.premiumizeApiKey;
 
       const responseFolder = yield* premiumizeRpc(
         electronRpc.app.axios({

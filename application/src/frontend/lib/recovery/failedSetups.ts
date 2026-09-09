@@ -3,6 +3,7 @@ import { FileSystemError, formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Schedule } from 'effect';
 import { get } from 'svelte/store';
+import { runDetached } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   unrarAndReturnOutputDir,
@@ -20,55 +21,23 @@ import {
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
-const FAILED_SETUPS_DIR = './failed-setups';
-
-function failedSetupPath(id: string): string {
-  return `${FAILED_SETUPS_DIR}/${id}.json`;
-}
-
-function ensureFailedSetupsDir(): void {
-  if (!window.electronAPI.fs.exists(FAILED_SETUPS_DIR)) {
-    window.electronAPI.fs.mkdir(FAILED_SETUPS_DIR);
-  }
-}
-
 export function loadFailedSetups() {
-  return Effect.sync(ensureFailedSetupsDir).pipe(
-    Effect.andThen(
-      electronRpc.fs.getFilesInDir(FAILED_SETUPS_DIR).pipe(
-        Effect.mapError(
-          (cause) =>
-            new FileSystemError({
-              message: 'Failed to list saved setup recoveries.',
-              path: FAILED_SETUPS_DIR,
-              cause,
-            })
-        )
-      )
-    ),
-    Effect.map((files) => {
-      // Pending recoveries share this directory; hide entries whose download
-      // is still live in this session so they only surface after a crash.
+  return electronRpc.state.listFailedSetups().pipe(
+    Effect.map((setups) => {
+      // Pending recoveries share this table; hide entries whose download is
+      // still live in this session so they only surface after a crash.
       const activeDownloadIds = new Set(
         get(currentDownloads)
           .filter((download) => download.status !== 'error')
           .map((download) => download.id)
       );
       const byDownloadId = new Map<string, FailedSetup>();
-      for (const file of files) {
-        if (!file.endsWith('.json')) continue;
-        try {
-          const setup = JSON.parse(
-            window.electronAPI.fs.read(`${FAILED_SETUPS_DIR}/${file}`)
-          ) as FailedSetup;
-          const key = setup.downloadInfo?.id ?? setup.id;
-          if (!key || activeDownloadIds.has(key)) continue;
-          const existing = byDownloadId.get(key);
-          if (!existing || (setup.timestamp ?? 0) > (existing.timestamp ?? 0)) {
-            byDownloadId.set(key, setup);
-          }
-        } catch (error) {
-          logger.sync.error('Error loading failed setup file:', file, error);
+      for (const setup of setups) {
+        const key = setup.downloadInfo?.id ?? setup.id;
+        if (!key || activeDownloadIds.has(key)) continue;
+        const existing = byDownloadId.get(key);
+        if (!existing || (setup.timestamp ?? 0) > (existing.timestamp ?? 0)) {
+          byDownloadId.set(key, setup);
         }
       }
       failedSetups.set(Array.from(byDownloadId.values()));
@@ -79,16 +48,18 @@ export function loadFailedSetups() {
   );
 }
 
+function persist(setup: FailedSetup, label: string): void {
+  runDetached(electronRpc.state.saveFailedSetup(setup), label);
+}
+
 export function removeFailedSetup(setupId: string): void {
-  try {
-    const path = failedSetupPath(setupId);
-    if (window.electronAPI.fs.exists(path)) window.electronAPI.fs.delete(path);
-    failedSetups.update((setups) =>
-      setups.filter((setup) => setup.id !== setupId)
-    );
-  } catch (error) {
-    logger.sync.error('Error removing failed setup:', error);
-  }
+  runDetached(
+    electronRpc.state.deleteFailedSetup(setupId),
+    'Error removing failed setup'
+  );
+  failedSetups.update((setups) =>
+    setups.filter((setup) => setup.id !== setupId)
+  );
 }
 
 export function saveFailedSetup(setupInfo: {
@@ -97,59 +68,45 @@ export function saveFailedSetup(setupInfo: {
   error: string;
   should: 'call-addon' | 'call-unrar' | 'call-unzip';
 }): void {
-  try {
-    ensureFailedSetupsDir();
-    const id = setupInfo.downloadInfo.id;
-    const saved: FailedSetup = {
-      id,
-      timestamp: Date.now(),
-      ...setupInfo,
-      retryCount: 0,
-    };
-    window.electronAPI.fs.write(
-      failedSetupPath(id),
-      JSON.stringify(saved, null, 2)
-    );
-    failedSetups.update((setups) => {
-      const index = setups.findIndex((setup) => setup.downloadInfo?.id === id);
-      if (index < 0) return [...setups, saved];
-      const updated = [...setups];
-      updated[index] = saved;
-      return updated;
-    });
-  } catch (error) {
-    logger.sync.error('Failed to save setup info:', error);
-  }
+  const id = setupInfo.downloadInfo.id;
+  const saved: FailedSetup = {
+    id,
+    timestamp: Date.now(),
+    ...setupInfo,
+    retryCount: 0,
+  };
+  persist(saved, 'Failed to save setup info');
+  failedSetups.update((setups) => {
+    const index = setups.findIndex((setup) => setup.downloadInfo?.id === id);
+    if (index < 0) return [...setups, saved];
+    const updated = [...setups];
+    updated[index] = saved;
+    return updated;
+  });
 }
 
 /**
- * Writes a recovery file to disk without surfacing it in the failed-setups
- * store. Saved once old_files staging is done and again after extraction, so
- * closing the app mid-processing leaves a recoverable entry on next launch
- * instead of forcing a re-download. Deleted once setup completes.
+ * Saves a recovery record without surfacing it in the failed-setups store.
+ * Saved once old_files staging is done and again after extraction, so closing
+ * the app mid-processing leaves a recoverable entry on next launch instead of
+ * forcing a re-download. Deleted once setup completes.
  */
 export function savePendingRecovery(setupInfo: {
   downloadInfo: DownloadStatusAndInfo;
   setupData: SetupCommandData;
   should: 'call-addon' | 'call-unrar' | 'call-unzip';
 }): void {
-  try {
-    ensureFailedSetupsDir();
-    const id = setupInfo.downloadInfo.id;
-    const saved: FailedSetup = {
+  const id = setupInfo.downloadInfo.id;
+  persist(
+    {
       id,
       timestamp: Date.now(),
       ...setupInfo,
       error: 'The app was closed before setup could finish.',
       retryCount: 0,
-    };
-    window.electronAPI.fs.write(
-      failedSetupPath(id),
-      JSON.stringify(saved, null, 2)
-    );
-  } catch (error) {
-    logger.sync.error('Failed to save pending recovery:', error);
-  }
+    },
+    'Failed to save pending recovery'
+  );
 }
 
 function updateRetry(failedSetup: FailedSetup, error: unknown): void {
@@ -158,14 +115,7 @@ function updateRetry(failedSetup: FailedSetup, error: unknown): void {
     retryCount: failedSetup.retryCount + 1,
     error: formatError(error),
   };
-  try {
-    window.electronAPI.fs.write(
-      failedSetupPath(failedSetup.id),
-      JSON.stringify(updated, null, 2)
-    );
-  } catch (writeError) {
-    logger.sync.error('Failed to persist setup retry:', writeError);
-  }
+  persist(updated, 'Failed to persist setup retry');
   failedSetups.update((setups) =>
     setups.map((setup) => (setup.id === failedSetup.id ? updated : setup))
   );

@@ -16,6 +16,8 @@ import {
   queryConnectedAddons,
 } from '@/frontend/lib/core/ipc';
 import { runFrontendSync } from '@/frontend/lib/core/runtime';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
+import type { AddonConfigValues } from '@/lib/state';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -25,14 +27,10 @@ export interface ConfigTemplateAndInfo extends AddonInfo {
 
 export function validateAddonId(id: string): string | null {
   if (!/^[A-Za-z0-9_-]+$/.test(id)) {
-    logger.sync.error(`Invalid addon id "${id}": rejected for path safety`);
+    logger.sync.error(`Invalid addon id "${id}": rejected as a config key`);
     return null;
   }
   return id;
-}
-
-function addonConfigPath(addonId: string): string {
-  return `./config/${addonId}.json`;
 }
 
 function defaultConfigValue(
@@ -60,10 +58,10 @@ function defaultConfigValue(
   return undefined;
 }
 
-function buildDefaultConfig(
+export function buildDefaultConfig(
   configTemplate: ConfigurationFile
-): Record<string, number | boolean | string> {
-  const config: Record<string, number | boolean | string> = {};
+): AddonConfigValues {
+  const config: AddonConfigValues = {};
   for (const key in configTemplate) {
     const value = defaultConfigValue(configTemplate[key]);
     if (value !== undefined) {
@@ -73,16 +71,6 @@ function buildDefaultConfig(
   return config;
 }
 
-export function getConfigClientOption<T>(id: string): T | null {
-  const safeId = validateAddonId(id);
-  if (!safeId) return null;
-  if (!window.electronAPI.fs.exists('./config/option/' + safeId + '.json'))
-    return null;
-  const config = window.electronAPI.fs.read(
-    './config/option/' + safeId + '.json'
-  );
-  return JSON.parse(config) as T;
-}
 function waitForConfiguredAddons(maxWaitMs = 15_000, pollMs = 100) {
   return Effect.gen(function* () {
     const deadline = Date.now() + maxWaitMs;
@@ -110,36 +98,25 @@ function configureConnectedAddons() {
           const safeId = validateAddonId(addon.id);
           if (!safeId || !addon.configTemplate) return;
 
-          const configPath = addonConfigPath(safeId);
-          let config: Record<string, number | boolean | string>;
-          if (!window.electronAPI.fs.exists(configPath)) {
-            config = buildDefaultConfig(addon.configTemplate);
-            window.electronAPI.fs.write(
-              configPath,
-              JSON.stringify(config, null, 2)
-            );
-          } else {
-            config = yield* Effect.try({
-              try: () => {
-                const parsed: unknown = JSON.parse(
-                  window.electronAPI.fs.read(configPath)
-                );
-                if (typeof parsed !== 'object' || parsed === null) {
-                  throw new Error('Expected addon configuration object');
-                }
-                return parsed as Record<string, number | boolean | string>;
-              },
-              catch: (cause) => cause,
-            }).pipe(
-              Effect.catchAll(() =>
-                Effect.sync(() => {
-                  const defaults = buildDefaultConfig(addon.configTemplate);
-                  window.electronAPI.fs.write(
-                    configPath,
-                    JSON.stringify(defaults, null, 2)
-                  );
-                  return defaults;
+          // First configuration seeds the addon's defaults so they show in settings.
+          let config = yield* electronRpc.state.getAddonConfig(safeId).pipe(
+            Effect.mapError(
+              (cause) =>
+                new AddonError({
+                  message: `Failed to read addon configuration: ${formatError(cause)}`,
+                  addonName: safeId,
                 })
+            )
+          );
+          if (!config) {
+            config = buildDefaultConfig(addon.configTemplate);
+            yield* electronRpc.state.setAddonConfig(safeId, config).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AddonError({
+                    message: `Failed to save addon configuration: ${formatError(cause)}`,
+                    addonName: safeId,
+                  })
               )
             );
           }

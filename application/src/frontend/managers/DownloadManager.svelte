@@ -5,7 +5,6 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import type { AddonDownloadCardPayload } from '@/electron/server/addon-downloads';
-import { getApp } from '@/frontend/lib/core/library';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
@@ -15,6 +14,7 @@ import {
 } from '@/frontend/lib/recovery/failedSetups';
 // no direct use of EventListenerTypes in this module anymore
 import {
+  drillDownSingleDirectories,
   resolveRarArchivePath,
   unrarAndReturnOutputDir,
   unzipAndReturnOutputDir,
@@ -57,7 +57,10 @@ function dispatchSetupEvent(
   );
 }
 
-function buildSetupData(item: DownloadStatusAndInfo): SetupCommandData {
+function buildSetupData(
+  item: DownloadStatusAndInfo,
+  currentLibraryInfo: LibraryInfo | null
+): SetupCommandData {
   return {
     path: item.downloadPath,
     type: item.downloadType as 'direct' | 'torrent' | 'magnet',
@@ -71,7 +74,7 @@ function buildSetupData(item: DownloadStatusAndInfo): SetupCommandData {
     ...(item.isUpdate
       ? {
           for: 'update' as const,
-          currentLibraryInfo: getApp(item.appID) as LibraryInfo,
+          currentLibraryInfo: currentLibraryInfo as LibraryInfo,
         }
       : { for: 'game' as const }),
   };
@@ -141,54 +144,35 @@ async function processDownloadComplete(
   let stagedOldFiles = false;
   let stagedCleanly = true;
 
+  // The library entry is only needed for update setups; read it once up front.
+  const currentLibraryInfo = downloadedItem.isUpdate
+    ? await runFrontendEffect(
+        electronRpc.app
+          .getLibraryInfo(downloadedItem.appID)
+          .pipe(Effect.orElseSucceed(() => null))
+      )
+    : null;
+
   // Move existing files into old_files before setup unless this update opted out.
-  const currentFiles = await runFrontendEffect(
-    electronRpc.fs.getFilesInDir(outputDir)
-  );
-  const filesNotToMove = [
-    ...(downloadedItem.files ?? []).map((file) => file.name),
-    basename(downloadedItem.downloadPath),
-    ...(isTorrent ? [basename(downloadedItem.downloadPath) + '.torrent'] : []),
-    'old_files',
-  ];
-  const filesToMove = currentFiles.filter(
-    (file) => !filesNotToMove.includes(file)
-  );
-  logger.sync.info('Current files: ', currentFiles);
-  logger.sync.info('downloadedItem.files: ', downloadedItem.files);
-  logger.sync.info('outputDir: ', outputDir);
-  logger.sync.info('originalOutputDir: ', originalOutputDir);
-  logger.sync.info(
-    'downloadedItem.downloadPath: ',
-    downloadedItem.downloadPath
-  );
-
-  if (shouldStageOldFiles && filesToMove.length > 0) {
+  if (shouldStageOldFiles) {
+    const keep = [
+      ...(downloadedItem.files ?? []).map((file) => file.name),
+      basename(downloadedItem.downloadPath),
+      ...(isTorrent
+        ? [basename(downloadedItem.downloadPath) + '.torrent']
+        : []),
+    ];
     dispatchSetupEvent('log', downloadID, ['Moving all files to old_files']);
-    await window.electronAPI.fs.mkdir(outputDir + '/old_files');
-    stagedOldFiles = true;
-
-    logger.sync.info('Files not to move: ', filesNotToMove);
-    let movedCount = 0;
-    for (const file of filesToMove) {
-      const result = await runFrontendEffect(
-        electronRpc.fs.move({
-          source: outputDir + '/' + file,
-          destination: outputDir + '/old_files/' + file,
-        })
-      );
-      if (result !== 'success') {
-        logger.sync.error('Failed to move file: ', file);
-        stagedCleanly = false;
-      }
-      movedCount++;
-      updateDownloadStatus(downloadID, {
-        progress: movedCount / filesToMove.length,
-      });
+    const staging = await runFrontendEffect(
+      electronRpc.setup.stageOldFiles({ directory: outputDir, keep })
+    );
+    stagedOldFiles = staging.staged;
+    stagedCleanly = staging.failed === 0;
+    if (staging.staged) {
+      dispatchSetupEvent('log', downloadID, ['Moved all files']);
+      logger.sync.info('Moved files to old_files:', staging);
     }
-    dispatchSetupEvent('log', downloadID, ['Moved all files']);
-    logger.sync.info('Moved all files to old_files');
-  } else if (downloadedItem.isUpdate && !shouldStageOldFiles) {
+  } else if (downloadedItem.isUpdate) {
     dispatchSetupEvent('log', downloadID, [
       'Addon requested in-place update: skipping old_files backup',
     ]);
@@ -209,7 +193,7 @@ async function processDownloadComplete(
     savePendingRecovery({
       downloadInfo: downloadedItem,
       setupData: {
-        ...buildSetupData(downloadedItem),
+        ...buildSetupData(downloadedItem, currentLibraryInfo),
         ...(path !== undefined ? { path } : {}),
       },
       should,
@@ -221,53 +205,27 @@ async function processDownloadComplete(
 
   async function revertOldFiles() {
     if (!stagedOldFiles) return;
-    if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files')) return;
-    const oldFiles = await runFrontendEffect(
-      electronRpc.fs.getFilesInDir(originalOutputDir + '/old_files')
+    const restored = await runFrontendEffect(
+      electronRpc.setup.revertOldFiles(originalOutputDir).pipe(
+        Effect.tapError((error) =>
+          logger.error('Failed to revert old_files:', error)
+        ),
+        Effect.orElseSucceed(() => false)
+      )
     );
-    if (oldFiles.length === 0) {
-      window.electronAPI.fs.delete(originalOutputDir + '/old_files');
-      return;
-    }
-    let allMoved = true;
-    for (const file of oldFiles) {
-      const result = await runFrontendEffect(
-        electronRpc.fs.move({
-          source: originalOutputDir + '/old_files/' + file,
-          destination: originalOutputDir + '/' + file,
-        })
-      );
-      if (result !== 'success') {
-        logger.sync.error('Failed to move file: ', file);
-        allMoved = false;
-      }
-    }
     createNotification({
       id: Math.random().toString(36).substring(2, 9),
       type: 'error',
-      message: 'Moved files back to original directory',
+      message: restored
+        ? 'Moved files back to original directory'
+        : 'Some files could not be moved back from old_files',
     });
-    // Delete the backup directory after applying it back
-    if (allMoved) {
-      window.electronAPI.fs.delete(originalOutputDir + '/old_files');
-    }
   }
 
-  // Handle torrent-specific logic
+  // Torrents land in a wrapper folder; descend to the real content root.
   if (isTorrent) {
-    let filesInDir = await runFrontendEffect(
-      electronRpc.fs.getFilesInDir(outputDir)
-    );
-    // keep going down the directory tree until we have something with more than one file/folder
-    while (filesInDir.length === 1) {
-      outputDir = outputDir + '/' + filesInDir[0];
-      filesInDir = await runFrontendEffect(
-        electronRpc.fs.getFilesInDir(outputDir)
-      );
-    }
-    outputDir = outputDir + '/';
+    outputDir = `${await runFrontendEffect(drillDownSingleDirectories(outputDir))}/`;
     logger.sync.info('Newly calculated outputDir: ', outputDir);
-    // write to the downloadItem
     downloadedItem.downloadPath = outputDir;
     updateDownloadStatus(downloadID, {
       downloadPath: outputDir,
@@ -373,7 +331,7 @@ async function processDownloadComplete(
       // add a failed setup
       saveFailedSetup({
         downloadInfo: downloadedItem,
-        setupData: buildSetupData(downloadedItem),
+        setupData: buildSetupData(downloadedItem, currentLibraryInfo),
         error: 'Failed to extract RAR file',
         should: 'call-unrar',
       });
@@ -451,7 +409,7 @@ async function processDownloadComplete(
       });
       saveFailedSetup({
         downloadInfo: downloadedItem,
-        setupData: buildSetupData(downloadedItem),
+        setupData: buildSetupData(downloadedItem, currentLibraryInfo),
         error: 'Failed to process ZIP file',
         should: 'call-unzip',
       });
@@ -498,21 +456,21 @@ async function processDownloadComplete(
     }
     removeFailedSetup(downloadID);
 
-    // delete the old_files directory
-    try {
-      if (!stagedOldFiles) return;
-      if (!window.electronAPI.fs.exists(originalOutputDir + '/old_files'))
-        return;
-
+    if (stagedOldFiles) {
       createNotification({
         id: Math.random().toString(36).substring(2, 9),
         type: 'info',
         message: 'Deleting previous update files...',
       });
-      window.electronAPI.fs.delete(originalOutputDir + '/old_files');
+      await runFrontendEffect(
+        electronRpc.setup.discardOldFiles(originalOutputDir).pipe(
+          Effect.tapError((error) =>
+            logger.error('Failed to delete old_files directory: ', error)
+          ),
+          Effect.ignore
+        )
+      );
       logger.sync.info('Deleted old_files directory');
-    } catch (error) {
-      logger.sync.error('Failed to delete old_files directory: ', error);
     }
   } catch (error) {
     logger.sync.error('Error setting up app: ', error);

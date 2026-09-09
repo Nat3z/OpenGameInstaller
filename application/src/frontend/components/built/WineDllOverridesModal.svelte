@@ -109,8 +109,7 @@ function scanDlls() {
 
   void runDetached(
     Effect.gen(function* () {
-      const files = yield* electronRpc.fs.getFilesInDir(cwd);
-      const dlls = files.filter((file) => /\.dll$/i.test(file));
+      const dlls = yield* electronRpc.setup.listDlls(cwd);
 
       yield* logger.info(`Found ${dlls.length} DLLs`);
 

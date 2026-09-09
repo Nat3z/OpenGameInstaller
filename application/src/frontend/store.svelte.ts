@@ -1,8 +1,4 @@
-import type {
-  BasicLibraryInfo,
-  SearchResult,
-  SetupCommandData,
-} from '@ogi-sdk/connect';
+import type { BasicLibraryInfo } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Either, Schema } from 'effect';
 import { type Writable, writable } from 'svelte/store';
@@ -13,73 +9,25 @@ import {
   communityAddonArraySchema,
 } from '@/electron/lib/marketplace-schema';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { settings, updateSettings } from '@/frontend/lib/core/state.svelte';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+import type {
+  DownloadStatusAndInfo,
+  FailedSetup,
+  RedistributableInstall,
+} from '@/lib/download-state';
 import type { GameRemovalProgress } from '@/lib/electron-rpc.js';
+import { DEFAULT_MARKETPLACE_SOURCES } from '@/lib/state';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
+export type {
+  DownloadProcessingPhase,
+  DownloadStatusAndInfo,
+  FailedSetup,
+  RedistributableInstall,
+} from '@/lib/download-state';
 export type { CommunityAddon };
-
-export type DownloadProcessingPhase =
-  | 'Merging chunks'
-  | 'Moving files'
-  | 'Extracting archive';
-
-export type DownloadStatusAndInfo = SearchResult & {
-  appID: number;
-  id: string;
-  status:
-    | 'downloading'
-    | 'merging'
-    | 'paused'
-    | 'completed'
-    | 'error'
-    | 'setup-complete'
-    | 'rd-downloading'
-    | 'seeding'
-    | 'redistr-downloading'
-    | 'requesting'
-    | 'installing-redistributables';
-  progress: number;
-  processingPhase?: DownloadProcessingPhase;
-  error?: string;
-  usedDebridService?:
-    | 'realdebrid'
-    | 'alldebrid'
-    | 'torbox'
-    | 'premiumize'
-    | 'none';
-  downloadPath: string;
-  files: {
-    name: string;
-    /** Exact resolved target path used by the download backend. */
-    path?: string;
-    downloadURL: string;
-    headers?: Record<string, string>;
-  }[];
-  downloadSpeed: number;
-  downloadSize: number;
-  addonSource: string;
-  capsuleImage: string;
-  coverImage: string;
-  ratio?: number;
-  storefront: string;
-  part?: number;
-  totalParts?: number;
-  queuePosition?: number;
-  // Additional properties for resume functionality
-  originalDownloadURL?: string;
-  originalFiles?: DownloadStatusAndInfo['files'];
-  pausedAt?: number;
-  // Update-specific properties
-  isUpdate?: boolean;
-  updateVersion?: string;
-  clearOldFilesBeforeUpdate?: boolean;
-  // Manifest data from the search result, passed to the setup handler
-  manifest?: Record<string, unknown>;
-  // Raw file download enqueued by an addon via addon.download(); skips the setup phase
-  isAddonDownload?: boolean;
-};
 
 export type DeferredTask = {
   id: string;
@@ -104,16 +52,6 @@ export type DeferredTask = {
 
 /** Background game-file deletion started by a lazy library removal. */
 export type GameRemovalTask = GameRemovalProgress & { timestamp: number };
-
-export type FailedSetup = {
-  id: string;
-  timestamp: number;
-  retryCount: number;
-  downloadInfo: DownloadStatusAndInfo;
-  setupData: SetupCommandData;
-  error: string;
-  should: 'call-addon' | 'call-unrar' | 'call-unzip';
-};
 
 export interface Notification {
   message: string;
@@ -144,22 +82,6 @@ export type SetupLog = {
 };
 
 export const setupLogs: Writable<Record<string, SetupLog>> = writable({});
-
-// Redistributable installation progress tracking
-export type RedistributableInstall = {
-  downloadId: string;
-  appID: number;
-  gameName: string;
-  addonSource: string;
-  redistributables: Array<{
-    name: string;
-    path: string;
-    status: 'pending' | 'installing' | 'completed' | 'failed';
-  }>;
-  overallProgress: number;
-  isComplete: boolean;
-  error?: string;
-};
 
 export const redistributableInstalls: Writable<
   Record<string, RedistributableInstall>
@@ -270,9 +192,7 @@ export const priorityToNumber: Record<QueuedModal['priority'], number> = {
 export const modalQueue: Writable<QueuedModal[]> = writable([]);
 
 export let communityAddons: { [key: string]: CommunityAddon[] } = $state({});
-export const DEFAULT_MARKETPLACE_SOURCES = [
-  'https://ogi-marketplace.nat3z.com',
-];
+export { DEFAULT_MARKETPLACE_SOURCES };
 export const marketplaceSources: string[] = $state([
   ...DEFAULT_MARKETPLACE_SOURCES,
 ]);
@@ -281,56 +201,30 @@ function normalizeMarketplaceSource(source: string) {
   return source.trim().replace(/\/+$/, '');
 }
 
+/** Mirrors the persisted sources; an empty list means the default. */
 export function loadMarketplaceSources() {
-  try {
-    const config = JSON.parse(
-      window.electronAPI.fs.read('./config/option/general.json')
-    ) as { marketplaceSources?: unknown };
-    const configuredSources = Array.isArray(config.marketplaceSources)
-      ? config.marketplaceSources
-          .filter((source): source is string => typeof source === 'string')
-          .map((source) => normalizeMarketplaceSource(source))
-          .filter(Boolean)
-      : [];
-
-    marketplaceSources.splice(
-      0,
-      marketplaceSources.length,
-      ...(configuredSources.length
-        ? [...new Set(configuredSources)]
-        : DEFAULT_MARKETPLACE_SOURCES)
-    );
-  } catch (error) {
-    logger.sync.error('Failed to load marketplace sources:', error);
-    marketplaceSources.splice(
-      0,
-      marketplaceSources.length,
-      ...DEFAULT_MARKETPLACE_SOURCES
-    );
-  }
-
+  const configured = settings.marketplaceSources
+    .map((source) => normalizeMarketplaceSource(source))
+    .filter(Boolean);
+  marketplaceSources.splice(
+    0,
+    marketplaceSources.length,
+    ...(configured.length
+      ? [...new Set(configured)]
+      : DEFAULT_MARKETPLACE_SOURCES)
+  );
   return marketplaceSources;
 }
 
-export function saveMarketplaceSources(sources: string[]) {
+export async function saveMarketplaceSources(sources: string[]) {
   const normalizedSources = [
     ...new Set(sources.map((source) => normalizeMarketplaceSource(source))),
   ].filter(Boolean);
-
   const nextSources = normalizedSources.length
     ? normalizedSources
     : [...DEFAULT_MARKETPLACE_SOURCES];
-
-  const config = JSON.parse(
-    window.electronAPI.fs.read('./config/option/general.json')
-  ) as Record<string, unknown>;
-  config.marketplaceSources = nextSources;
-  window.electronAPI.fs.write(
-    './config/option/general.json',
-    JSON.stringify(config, null, 2)
-  );
-  marketplaceSources.splice(0, marketplaceSources.length, ...nextSources);
-  return marketplaceSources;
+  await updateSettings({ marketplaceSources: nextSources });
+  return loadMarketplaceSources();
 }
 
 export async function fetchCommunityAddons() {

@@ -1,15 +1,30 @@
 import { realpathSync } from 'fs';
 import { homedir } from 'os';
-import { join, parse, resolve, sep } from 'path';
+import { basename, dirname, join, parse, resolve, sep } from 'path';
+
+/**
+ * Canonical absolute path. When the target does not exist yet, its deepest
+ * existing ancestor is resolved so a symlinked parent cannot smuggle a
+ * not-yet-created path outside a guarded root.
+ */
+const canonicalize = (value: string): string => {
+  const trailing: string[] = [];
+  let current = resolve(value);
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...trailing);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return join(current, ...trailing);
+      trailing.unshift(basename(current));
+      current = parent;
+    }
+  }
+};
 
 /** Realpath + case-normalize (win32) so symlinks and drive casing can't bypass guards. */
 export const normalizeDeletePath = (value: string): string => {
-  let normalized: string;
-  try {
-    normalized = realpathSync(value);
-  } catch {
-    normalized = resolve(value);
-  }
+  const normalized = canonicalize(value);
   // win32 and macOS default to case-insensitive filesystems
   return process.platform !== 'linux' ? normalized.toLowerCase() : normalized;
 };

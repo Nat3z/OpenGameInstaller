@@ -456,12 +456,8 @@ export const ElectronRpc = {
       Void
     ),
     deleteFailedSetup: rpc('state.deleteFailedSetup', [Schema.String], Void),
-    /** Returns a cached data URL for `key`, fetching and caching `url` on a miss. */
-    loadImage: rpc(
-      'state.loadImage',
-      [Schema.Struct({ key: Schema.String, url: Schema.String })],
-      Schema.String
-    ),
+    /** Returns the image at `url` as a data URL, cached after the first fetch. */
+    loadImage: rpc('state.loadImage', [Schema.String], Schema.String),
   },
   realdebrid: {
     setKey: rpc('realdebrid.setKey', [Schema.String], Schema.String),

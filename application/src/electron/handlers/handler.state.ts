@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import * as net from 'node:net';
 import { extname } from 'node:path';
 import { ConfigError, formatError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
@@ -52,7 +54,7 @@ const validateSettingsPatch = (
       return yield* invalid('Settings patch must be an object', 'settings');
     }
     for (const [key, value] of Object.entries(patch)) {
-      if (!(key in DEFAULT_SETTINGS)) {
+      if (!Object.hasOwn(DEFAULT_SETTINGS, key)) {
         return yield* invalid(`Unknown setting "${key}"`, key);
       }
       const expected = DEFAULT_SETTINGS[key as keyof Settings];
@@ -234,7 +236,32 @@ const validateUpdateState = (
     return candidate;
   });
 
-const IMAGE_KEY = /^[A-Za-z0-9_.:-]{1,256}$/;
+const isPrivateHost = (hostname: string): boolean => {
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (net.isIPv4(host)) {
+    const [a, b] = host.split('.').map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    );
+  }
+  if (net.isIPv6(host)) {
+    return (
+      host === '::' ||
+      host === '::1' ||
+      host.startsWith('fc') ||
+      host.startsWith('fd') ||
+      host.startsWith('fe80') ||
+      host.startsWith('::ffff:')
+    );
+  }
+  return false;
+};
 
 const EXTENSION_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -256,44 +283,46 @@ const mimeTypeFor = (contentType: string | undefined, url: string): string => {
 const toDataUrl = (mimeType: string, bytes: Uint8Array): string =>
   `data:${mimeType};base64,${Buffer.from(bytes).toString('base64')}`;
 
-/** Returns the cached image for `key`, fetching and caching `url` on a miss. */
-const loadImage = (arg: { key: string; url: string }) =>
+/**
+ * Returns the image at `url` as a data URL, served from the cache when it has
+ * been fetched before. The cache key is derived from the URL so a renderer
+ * cannot poison one entry with another resource.
+ */
+const loadImage = (url: string) =>
   Effect.gen(function* () {
-    if (!IMAGE_KEY.test(arg.key)) {
-      return yield* invalid(`Invalid image cache key "${arg.key}"`, 'key');
-    }
-    const cached = yield* Effect.sync(() =>
-      getDatabase().getCachedImage(arg.key)
-    );
-    if (cached) return toDataUrl(cached.mimeType, cached.bytes);
-
     const parsed = yield* Effect.try({
-      try: () => new URL(arg.url),
+      try: () => new URL(url),
       catch: () =>
         new ValidationError({ message: 'Invalid image URL', field: 'url' }),
     });
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return yield* invalid('Image URL must be http(s)', 'url');
     }
+    if (isPrivateHost(parsed.hostname)) {
+      return yield* invalid('Image URL must not target a local host', 'url');
+    }
+    const key = createHash('sha256').update(parsed.href).digest('hex');
+    const cached = yield* Effect.sync(() => getDatabase().getCachedImage(key));
+    if (cached) return toDataUrl(cached.mimeType, cached.bytes);
 
     const response = yield* Effect.tryPromise({
       try: () =>
-        axios.get<ArrayBuffer>(arg.url, { responseType: 'arraybuffer' }),
+        axios.get<ArrayBuffer>(parsed.href, { responseType: 'arraybuffer' }),
       catch: (cause) =>
         new ConfigError({
           message: `Failed to fetch image: ${formatError(cause)}`,
-          key: arg.key,
+          key,
         }),
     });
     const bytes = new Uint8Array(Buffer.from(response.data));
     const mimeType = mimeTypeFor(
       response.headers['content-type'] as string | undefined,
-      arg.url
+      parsed.href
     );
 
     // A cache write failure costs a re-fetch next time, nothing more.
     yield* Effect.try({
-      try: () => getDatabase().putCachedImage(arg.key, mimeType, bytes),
+      try: () => getDatabase().putCachedImage(key, mimeType, bytes),
       catch: (cause) => cause,
     }).pipe(
       Effect.catchAll((cause) =>
@@ -381,9 +410,8 @@ export default function stateHandler() {
     procedure(ElectronRpc.state.deleteFailedSetup, (id: string) =>
       runBoundary(Effect.sync(() => getDatabase().deleteFailedSetup(id)))
     ),
-    procedure(
-      ElectronRpc.state.loadImage,
-      (arg: { key: string; url: string }) => runBoundary(loadImage(arg))
+    procedure(ElectronRpc.state.loadImage, (url: string) =>
+      runBoundary(loadImage(url))
     )
   );
 }

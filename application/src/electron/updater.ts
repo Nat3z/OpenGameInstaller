@@ -29,6 +29,7 @@ import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import * as zlib from 'zlib';
 import { DATABASE_FILENAME, getDatabase } from '@/electron/database/index.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { runElectronEffect } from '@/electron/runtime.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -161,7 +162,9 @@ async function backupFilesAsync(
   updateStatus: (text: string, subtext?: string) => void,
   updateProgress: (current: number, total: number, speed: string) => void
 ): Promise<{ success: boolean; needsAddonReinstall: boolean }> {
-  const sourceRoot = __dirname;
+  // Backed up from the data directory (where the database and addons live),
+  // which `restoreBackup` also writes back into.
+  const sourceRoot = dataDirectory;
 
   // Fold the write-ahead log into the main file so a plain copy is complete.
   try {

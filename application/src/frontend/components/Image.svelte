@@ -6,7 +6,6 @@ import GameImage from './GameImage.svelte';
 interface Props {
   src: string;
   alt: string;
-  classifier: string;
   fallbackTitle?: boolean;
   class?: string;
 }
@@ -14,7 +13,6 @@ interface Props {
 let {
   src,
   alt,
-  classifier,
   fallbackTitle = false,
   class: className = '',
 }: Props = $props();
@@ -24,7 +22,7 @@ let loading = $state(true);
 let error = $state<string | null>(null);
 let requestVersion = 0;
 
-async function loadImage(currentSrc: string, currentClassifier: string) {
+async function loadImage(currentSrc: string) {
   const version = ++requestVersion;
   loading = true;
   error = null;
@@ -36,7 +34,7 @@ async function loadImage(currentSrc: string, currentClassifier: string) {
   }
   try {
     const resolved = await runFrontendEffect(
-      electronRpc.state.loadImage({ key: currentClassifier, url: currentSrc })
+      electronRpc.state.loadImage(currentSrc)
     );
     if (version !== requestVersion) return;
     imageData = resolved;
@@ -48,7 +46,7 @@ async function loadImage(currentSrc: string, currentClassifier: string) {
 }
 
 $effect(() => {
-  void loadImage(src, classifier);
+  void loadImage(src);
 });
 </script>
 

@@ -133,9 +133,19 @@ onMount(async () => {
   logger.sync.info('App mounted, initializing stores');
   showNotificationSideView.set(false);
   loading = true;
-  // Settings and install state gate everything else, so load them first.
-  await runFrontendEffect(loadPersistedState().pipe(Effect.ignore));
-  if (!appState.installed) {
+  // Settings and install state gate everything else, so load them first. If
+  // they cannot be read, stay on the main view rather than re-running setup
+  // over an existing installation.
+  const stateLoaded = await runFrontendEffect(
+    loadPersistedState().pipe(Effect.isSuccess)
+  );
+  if (!stateLoaded) {
+    createNotification({
+      id: 'state-load-failed',
+      message: 'Could not load your settings. Restart OpenGameInstaller.',
+      type: 'error',
+    });
+  } else if (!appState.installed) {
     logger.sync.info('OOBE not finished');
     finishedOOBE = false;
   }

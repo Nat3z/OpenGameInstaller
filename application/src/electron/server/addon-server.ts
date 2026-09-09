@@ -15,10 +15,13 @@ let securityCheckEnabled = true;
 /** Whether addons must present the shared secret. Defaults to on. */
 export const isSecurityCheckEnabled = (): boolean => securityCheckEnabled;
 
-const createAddonServer = (): AddonServer => {
+// The secret is minted once and carried across restarts so the URL the
+// window was loaded with keeps matching the listening server.
+const createAddonServer = (secret?: string): AddonServer => {
   const instance = new AddonServer({
     port,
     securityCheck: securityCheckEnabled,
+    secret,
   });
   instance.on('disconnect', (reason) => {
     instance.emit('notification', {
@@ -63,7 +66,7 @@ export const startAddonServer = (): Effect.Effect<void, unknown> => {
       );
     }
   }
-  server = createAddonServer();
+  server = createAddonServer(server?.getSecret());
   starting = server.start().pipe(
     Effect.tap(() =>
       Effect.sync(() => {

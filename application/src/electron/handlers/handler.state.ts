@@ -6,6 +6,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
 import { getDatabase } from '@/electron/database/index.js';
+import { isProtectedDeletePath } from '@/electron/lib/delete-guards.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import type { FailedSetup, PersistedDownload } from '@/lib/download-state.js';
@@ -146,8 +147,27 @@ const validateAddonConfig = (
     return values as AddonConfigValues;
   });
 
+/**
+ * Persisted download paths later serve as roots for file deletion and setup
+ * writes, so they must sit inside the configured download location when saved.
+ */
+const validateDownloadPath = (
+  downloadPath: unknown
+): Effect.Effect<string, ValidationError> => {
+  if (typeof downloadPath !== 'string' || downloadPath === '') {
+    return invalid('downloadInfo.downloadPath is required', 'downloadPath');
+  }
+  const root = getDatabase().getSettings().fileDownloadLocation;
+  return isProtectedDeletePath(downloadPath, { exact: [], subtrees: [root] })
+    ? Effect.succeed(downloadPath)
+    : invalid(
+        'downloadInfo.downloadPath must be inside the download location',
+        'downloadPath'
+      );
+};
+
 // Download and failed-setup blobs are renderer-owned shapes; only the fields
-// the database keys on are checked.
+// the database keys on or later trusts as paths are checked.
 const validateDownload = (
   record: unknown
 ): Effect.Effect<PersistedDownload, ValidationError> =>
@@ -180,6 +200,7 @@ const validateDownload = (
         'downloadInfo.appID'
       );
     }
+    yield* validateDownloadPath(candidate.downloadInfo.downloadPath);
     return candidate;
   });
 
@@ -200,6 +221,7 @@ const validateFailedSetup = (
         'should'
       );
     }
+    yield* validateDownloadPath(candidate.downloadInfo?.downloadPath);
     return candidate;
   });
 

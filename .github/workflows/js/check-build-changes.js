@@ -15,6 +15,8 @@ function hasReleaseBuildChanges(changedFiles) {
     (file) =>
       file.startsWith('application/') ||
       file.startsWith('updater/') ||
+      file.startsWith('packages/') ||
+      ['package.json', 'bun.lock', 'bunfig.toml'].includes(file) ||
       file.startsWith('.github/workflows/')
   );
 }

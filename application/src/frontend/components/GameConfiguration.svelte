@@ -457,6 +457,7 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
     <Modal
       open={true}
       size="small"
+      priority="urgent"
       closeOnOverlayClick={false}
       onClose={() => {
         if (!removeBusy) showRemoveConfirm = false;

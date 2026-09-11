@@ -1,6 +1,17 @@
 import http from 'node:http';
 import https from 'node:https';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import {
+  acceptsRelease,
+  channelStatePath,
+  NIGHTLY_API,
+  nightlyRelease,
+  parseNightlyManifest,
+  resolveChannel,
+  saveChannel,
+  shouldUpdateApplication,
+  type UpdateChannel,
+} from '@ogi/update-channel';
 import axios from 'axios';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
@@ -110,17 +121,14 @@ function correctParsingSize(size: number) {
 }
 
 let localVersion = '0.0.0';
-let usingBleedingEdge = false;
-let updateChannel = 'stable';
+const channelPath = channelStatePath(app.getPath('appData'), __dirname);
+let updateChannel: UpdateChannel = resolveChannel(
+  channelPath,
+  __dirname,
+  SETUP_VERSION
+);
 if (fs.existsSync(`./version.txt`)) {
   localVersion = fs.readFileSync(`./version.txt`, 'utf8');
-}
-if (fs.existsSync(`./bleeding-edge.txt`)) {
-  updateChannel = 'unstable';
-  usingBleedingEdge = true;
-}
-if (fs.existsSync(`./COMMIT_EDGE.txt`)) {
-  updateChannel = 'bleeding-edge';
 }
 
 const PATCH_PROGRESS_INTERVAL = 128;
@@ -1006,16 +1014,20 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
           yield* tryFileSystem('select-stable-channel', undefined, () => {
             fs.rmSync('./bleeding-edge.txt', { force: true });
             fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+            saveChannel(channelPath, 'stable');
           });
-          usingBleedingEdge = false;
+          updateChannel = 'stable';
           break;
         }
-        if (channel === 'unstable') {
+        if (channel === 'unstable' || channel === 'nightly') {
           yield* tryFileSystem('select-unstable-channel', undefined, () => {
-            fs.writeFileSync('./bleeding-edge.txt', 'true');
+            if (channel === 'unstable')
+              fs.writeFileSync('./bleeding-edge.txt', 'true');
+            else fs.rmSync('./bleeding-edge.txt', { force: true });
             fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+            saveChannel(channelPath, channel);
           });
-          usingBleedingEdge = true;
+          updateChannel = channel;
           break;
         }
         if (channel === 'bleeding-edge') {
@@ -1038,6 +1050,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
                       ? stored.built
                       : ''
                   );
+                  saveChannel(channelPath, 'bleeding-edge');
                 }),
               (target) => ensureBleedingEdgeBuild(target.commit, target.branch)
             )
@@ -1070,12 +1083,29 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
 
     const gitRepo = 'Nat3z/OpenGameInstaller';
     const releaseResult = yield* Effect.either(
-      tryUpdatePromise('check-for-updates', (signal) =>
-        axios.get(`https://api.github.com/repos/${gitRepo}/releases`, {
-          signal,
-          timeout: 10000,
-        })
-      )
+      tryUpdatePromise('check-for-updates', async (signal) => {
+        if (updateChannel === 'nightly') {
+          const response = await axios.get(NIGHTLY_API, {
+            signal,
+            timeout: 10000,
+          });
+          return {
+            data: [
+              nightlyRelease(
+                parseNightlyManifest(JSON.parse(response.data.body)),
+                'application'
+              ),
+            ],
+          };
+        }
+        return axios.get(
+          `https://api.github.com/repos/${gitRepo}/releases?per_page=100`,
+          {
+            signal,
+            timeout: 10000,
+          }
+        );
+      })
     );
     if (releaseResult._tag === 'Left') {
       yield* logger.error(releaseResult.left);
@@ -1093,13 +1123,16 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
 
     mainWindow.webContents.send('text', 'Checking for Updates');
     const releases = releaseResult.right.data
-      .filter((rel) => usingBleedingEdge || !rel.prerelease)
+      .filter(
+        (rel) =>
+          updateChannel === 'nightly' || acceptsRelease(updateChannel, rel)
+      )
       .sort(compareReleaseOrder);
     const localIndex = releases.findIndex(
       (rel) => rel.tag_name === localVersion
     );
     const targetRelease = releases[0];
-    const updating = Boolean(targetRelease) && localIndex !== 0;
+    const updating = Boolean(targetRelease) && shouldUpdateApplication(localVersion, targetRelease.tag_name, updateChannel);
     if (targetRelease && updating) {
       const releasePath =
         localIndex > 0
@@ -1566,7 +1599,7 @@ function downloadFullRelease(release: any) {
     const downloadPath =
       process.platform === 'win32'
         ? path.join(__dirname, 'update.zip')
-        : './update/OpenGameInstaller.AppImage';
+        : './update/OpenGameInstaller.AppImage.download';
     if (process.platform === 'linux') {
       yield* tryUpdate('prepare-update-directory', () =>
         fs.mkdirSync('./update', { recursive: true })
@@ -1582,7 +1615,9 @@ function downloadFullRelease(release: any) {
       downloadPath,
       {
         size: assetWithPortable.size,
-        digest: assetWithPortable.digest,
+        digest: assetWithPortable.sha256
+          ? `sha256:${assetWithPortable.sha256}`
+          : assetWithPortable.digest,
       },
       'downloaded release artifact'
     );
@@ -1609,6 +1644,7 @@ function downloadFullRelease(release: any) {
     } else {
       const item = path.join(__dirname, 'update', 'OpenGameInstaller.AppImage');
       yield* tryUpdate('copy-release', () => {
+        fs.renameSync(downloadPath, item);
         fs.copyFileSync(
           item,
           path.join(localCache, 'OpenGameInstaller.AppImage')

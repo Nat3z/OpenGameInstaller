@@ -103,6 +103,15 @@ test('normal feeds cannot downgrade installed versions or reinstall equivalent t
   ).toBe(false);
   expect(shouldUpdateApplication('4.3.1', 'v4.3.1', 'stable')).toBe(false);
   expect(shouldUpdateApplication('v4.3.1', 'v4.3.2', 'stable')).toBe(true);
+  expect(
+    shouldUpdateApplication('v4.4.0', 'v4.3.1', 'unstable', 'stable')
+  ).toBe(false);
+  expect(
+    shouldUpdateApplication('v4.3.1', 'v4.3.1', 'unstable', 'stable')
+  ).toBe(false);
+  expect(
+    shouldUpdateApplication('v4.3.1', 'v4.3.1', 'stable', 'bleeding-edge')
+  ).toBe(true);
 });
 
 test('incomplete or foreign nightly manifests are rejected', () => {

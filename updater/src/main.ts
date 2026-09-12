@@ -1008,7 +1008,10 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
         return;
       }
     }
-    let channelChanged = recoverChannel;
+    const installedChannel =
+      recoverChannel && fs.existsSync('./COMMIT_EDGE.txt')
+        ? 'bleeding-edge'
+        : updateChannel;
     const initialOnlineState = getEffectiveOnlineState();
     if (!initialOnlineState.effectiveOnline && !recoverChannel) {
       yield* logger.info(
@@ -1035,7 +1038,6 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
             fs.rmSync('./COMMIT_EDGE.txt', { force: true });
             saveChannel(channelPath, 'stable');
           });
-          channelChanged ||= updateChannel !== 'stable';
           updateChannel = 'stable';
           break;
         }
@@ -1047,7 +1049,6 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
             fs.rmSync('./COMMIT_EDGE.txt', { force: true });
             saveChannel(channelPath, channel);
           });
-          channelChanged ||= updateChannel !== channel;
           updateChannel = channel;
           break;
         }
@@ -1167,12 +1168,12 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
     const targetRelease = releases[0];
     const updating =
       Boolean(targetRelease) &&
-      (channelChanged ||
-        shouldUpdateApplication(
-          localVersion,
-          targetRelease.tag_name,
-          updateChannel
-        ));
+      shouldUpdateApplication(
+        localVersion,
+        targetRelease.tag_name,
+        updateChannel,
+        installedChannel
+      );
     if (targetRelease && updating) {
       const releasePath =
         localIndex > 0

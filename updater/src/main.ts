@@ -122,11 +122,7 @@ function correctParsingSize(size: number) {
 
 let localVersion = '0.0.0';
 const channelPath = channelStatePath(app.getPath('appData'), __dirname);
-let updateChannel: UpdateChannel = resolveChannel(
-  channelPath,
-  __dirname,
-  SETUP_VERSION
-);
+let updateChannel: UpdateChannel = 'stable';
 if (fs.existsSync(`./version.txt`)) {
   localVersion = fs.readFileSync(`./version.txt`, 'utf8');
 }
@@ -990,8 +986,31 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       mainWindow.webContents.closeDevTools();
     });
 
+    const channelResult = yield* Effect.either(
+      tryFileSystem('read-update-channel', channelPath, () =>
+        resolveChannel(channelPath, __dirname, SETUP_VERSION)
+      )
+    );
+    const recoverChannel = channelResult._tag === 'Left';
+    if (channelResult._tag === 'Right') updateChannel = channelResult.right;
+    else {
+      yield* logger.error(channelResult.left);
+      const recovery = yield* tryUpdatePromise('recover-update-channel', () =>
+        dialog.showMessageBox(mainWindow, {
+          type: 'warning',
+          message: 'Update channel settings could not be read.',
+          buttons: ['Choose Channel', 'Exit'],
+          cancelId: 1,
+        })
+      );
+      if (recovery.response === 1) {
+        app.quit();
+        return;
+      }
+    }
+    let channelChanged = recoverChannel;
     const initialOnlineState = getEffectiveOnlineState();
-    if (!initialOnlineState.effectiveOnline) {
+    if (!initialOnlineState.effectiveOnline && !recoverChannel) {
       yield* logger.info(
         initialOnlineState.reason === 'cli-offline'
           ? 'Updater requested offline mode, skipping update check'
@@ -1006,16 +1025,17 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       return;
     }
 
-    if (hasArg('--gui')) {
+    if (hasArg('--gui') || recoverChannel) {
       while (true) {
         const choice = yield* waitForUpdateChannelChoice();
-        const channel = choice.channel || 'stable';
+        const channel = choice.channel;
         if (channel === 'stable') {
           yield* tryFileSystem('select-stable-channel', undefined, () => {
             fs.rmSync('./bleeding-edge.txt', { force: true });
             fs.rmSync('./COMMIT_EDGE.txt', { force: true });
             saveChannel(channelPath, 'stable');
           });
+          channelChanged ||= updateChannel !== 'stable';
           updateChannel = 'stable';
           break;
         }
@@ -1027,10 +1047,19 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
             fs.rmSync('./COMMIT_EDGE.txt', { force: true });
             saveChannel(channelPath, channel);
           });
+          channelChanged ||= updateChannel !== channel;
           updateChannel = channel;
           break;
         }
         if (channel === 'bleeding-edge') {
+          if (!initialOnlineState.effectiveOnline) {
+            showBleedingEdgeSetupError(
+              new UpdateError({
+                message: 'A source build requires an internet connection.',
+              })
+            );
+            continue;
+          }
           const selection = normalizeBleedingEdgeSelection(
             choice.branch,
             choice.commit,
@@ -1081,6 +1110,10 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       return;
     }
 
+    if (!initialOnlineState.effectiveOnline) {
+      launchApp(false);
+      return;
+    }
     const gitRepo = 'Nat3z/OpenGameInstaller';
     const releaseResult = yield* Effect.either(
       tryUpdatePromise('check-for-updates', async (signal) => {
@@ -1132,7 +1165,14 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       (rel) => rel.tag_name === localVersion
     );
     const targetRelease = releases[0];
-    const updating = Boolean(targetRelease) && shouldUpdateApplication(localVersion, targetRelease.tag_name, updateChannel);
+    const updating =
+      Boolean(targetRelease) &&
+      (channelChanged ||
+        shouldUpdateApplication(
+          localVersion,
+          targetRelease.tag_name,
+          updateChannel
+        ));
     if (targetRelease && updating) {
       const releasePath =
         localIndex > 0

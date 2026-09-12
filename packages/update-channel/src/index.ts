@@ -131,7 +131,10 @@ export function parseNightlyManifest(value: unknown): NightlyManifest {
     ) {
       throw new Error(`Invalid nightly ${kind} build`);
     }
-    for (const name of names.flatMap((name) => [name, `${name}.blockmap`])) {
+    const expectedNames = names.flatMap((name) => [name, `${name}.blockmap`]);
+    if (build.assets.length !== expectedNames.length)
+      throw new Error(`Unexpected nightly ${kind} assets`);
+    for (const name of expectedNames) {
       const assets = build.assets.filter((asset) => asset.name === name);
       const asset = assets[0];
       if (
@@ -203,10 +206,19 @@ export function shouldUpdateSetup(
   );
 }
 
-export function shouldUpdateApplication(localTag: string, targetTag: string, channel: UpdateChannel): boolean {
+export function shouldUpdateApplication(
+  localTag: string,
+  targetTag: string,
+  channel: UpdateChannel
+): boolean {
   if (localTag === targetTag) return false;
   const local = /^nightly-(\d+)$/.exec(localTag);
   const target = /^nightly-(\d+)$/.exec(targetTag);
-  if (channel === 'nightly' && local && target) return BigInt(target[1]!) > BigInt(local[1]!);
+  if (channel === 'nightly' && local && target)
+    return BigInt(target[1]!) > BigInt(local[1]!);
+  const localVersion = semver.valid(localTag.trim());
+  const targetVersion = semver.valid(targetTag.trim());
+  if (localVersion && targetVersion)
+    return semver.gt(targetVersion, localVersion);
   return true;
 }

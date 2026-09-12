@@ -209,8 +209,12 @@ export function shouldUpdateSetup(
 export function shouldUpdateApplication(
   localTag: string,
   targetTag: string,
-  channel: UpdateChannel
+  channel: UpdateChannel,
+  installedChannel: UpdateChannel = channel
 ): boolean {
+  // Source builds replace the payload without updating its last release tag.
+  if (installedChannel === 'bleeding-edge' && channel !== 'bleeding-edge')
+    return true;
   if (localTag === targetTag) return false;
   const local = /^nightly-(\d+)$/.exec(localTag);
   const target = /^nightly-(\d+)$/.exec(targetTag);

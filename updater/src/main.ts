@@ -1008,8 +1008,10 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
         return;
       }
     }
+    // COMMIT_EDGE.txt only records built= once a source build has been installed,
+    // so a marker left behind by a failed build does not force a reinstall.
     const installedChannel =
-      recoverChannel && fs.existsSync('./COMMIT_EDGE.txt')
+      recoverChannel && readStoredCommitEdgeTarget()?.built
         ? 'bleeding-edge'
         : updateChannel;
     const initialOnlineState = getEffectiveOnlineState();

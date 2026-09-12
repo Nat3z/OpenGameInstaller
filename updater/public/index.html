@@ -21,6 +21,7 @@
             <div class="chips">
               <button type="button" data-channel="stable">Stable</button>
               <button type="button" data-channel="unstable">Unstable</button>
+              <button type="button" data-channel="nightly">Nightly</button>
               <button type="button" data-channel="bleeding-edge">
                 Bleeding Edge
               </button>
@@ -287,7 +288,7 @@
   }
   .chips {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
     width: 100%;
   }

@@ -46,6 +46,7 @@
     "electron-pack:linux": "electron-builder -l"
   },
   "dependencies": {
+    "@ogi/update-channel": "workspace:*",
     "@ctrl/qbittorrent": "^9.11.0",
     "@effect/platform": "0.97.0",
     "@effect/rpc": "0.76.0",

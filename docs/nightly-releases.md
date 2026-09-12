@@ -11,7 +11,7 @@ Nightlies use the existing Bun, Electron Builder, GitHub Releases, npm and block
 
 Run the setup executable with `--gui` to select a channel. Nightly application and setup packages embed a `-nightly.<run-id>` version, which initializes nightly membership on first launch. Existing explicit selection takes precedence. Selecting stable permits a downgrade from a nightly application/setup to the current stable release.
 
-Selection is stored under the OS application-data directory at `OpenGameInstaller/channels/<installation-root-hash>.json`. Both executables use the same installation root. This survives application and setup replacement without depending on the backup directory. Existing `bleeding-edge.txt` and `COMMIT_EDGE.txt` markers migrate to unstable and source-build channels respectively. Invalid saved state fails closed instead of silently opting into another channel.
+Selection is stored under the OS application-data directory at `OpenGameInstaller/channels/<installation-root-hash>.json`. Both executables use the same installation root. This survives application and setup replacement without depending on the backup directory. Existing `bleeding-edge.txt` and `COMMIT_EDGE.txt` markers migrate to unstable and source-build channels respectively. Invalid saved state opens a recovery prompt and requires an explicit channel choice instead of silently opting into another channel.
 
 Portable copies retain their channel identity but do not install an updater. Download another portable build to update them, or use the nightly setup for automatic application updates. Offline launches do not require the manifest.
 

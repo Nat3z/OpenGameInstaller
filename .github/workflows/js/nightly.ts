@@ -379,6 +379,7 @@ function packAndValidate(): Map<string, string> {
   }
   const installDirectory = resolve(`${stateDirectory}/verify`);
   mkdirSync(installDirectory, { recursive: true });
+  // Match stable npm publishing: validate consumer tarballs outside Bun's workspace linker.
   command('npm', [
     'install',
     '--ignore-scripts',

@@ -87,9 +87,22 @@ test('same-base nightly setup updates and unchanged setup does not', () => {
 });
 
 test('a stale channel response cannot downgrade a newer nightly application', () => {
-  expect(shouldUpdateApplication('nightly-101', 'nightly-100', 'nightly')).toBe(false);
-  expect(shouldUpdateApplication('nightly-100', 'nightly-101', 'nightly')).toBe(true);
+  expect(shouldUpdateApplication('nightly-101', 'nightly-100', 'nightly')).toBe(
+    false
+  );
+  expect(shouldUpdateApplication('nightly-100', 'nightly-101', 'nightly')).toBe(
+    true
+  );
   expect(shouldUpdateApplication('nightly-100', 'v4.3.1', 'stable')).toBe(true);
+});
+
+test('normal feeds cannot downgrade installed versions or reinstall equivalent tags', () => {
+  expect(shouldUpdateApplication('v4.4.0', 'v4.3.1', 'stable')).toBe(false);
+  expect(
+    shouldUpdateApplication('v4.4.0-beta.2', 'v4.4.0-beta.1', 'unstable')
+  ).toBe(false);
+  expect(shouldUpdateApplication('4.3.1', 'v4.3.1', 'stable')).toBe(false);
+  expect(shouldUpdateApplication('v4.3.1', 'v4.3.2', 'stable')).toBe(true);
 });
 
 test('incomplete or foreign nightly manifests are rejected', () => {
@@ -123,6 +136,14 @@ test('incomplete or foreign nightly manifests are rejected', () => {
     ]),
   };
   expect(parseNightlyManifest(manifest).build).toBe('100');
+  manifest.application.assets.unshift({
+    name: 'extra-Portable.zip',
+    size: 100,
+    sha256: 'a'.repeat(64),
+    browser_download_url: 'https://example.com/extra.zip',
+  });
+  expect(() => parseNightlyManifest(manifest)).toThrow();
+  manifest.application.assets.shift();
   manifest.updater.assets[0]!.browser_download_url =
     'https://example.com/installer.exe';
   expect(() => parseNightlyManifest(manifest)).toThrow();

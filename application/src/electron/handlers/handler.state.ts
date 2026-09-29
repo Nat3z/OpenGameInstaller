@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import * as net from 'node:net';
-import { extname } from 'node:path';
+import { extname, isAbsolute } from 'node:path';
 import { ConfigError, formatError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
@@ -76,6 +76,16 @@ const validateSettingsPatch = (
       }
     }
     const typed = patch as Partial<Settings>;
+    // Setup and deletion guards require absolute roots.
+    if (
+      typed.fileDownloadLocation !== undefined &&
+      !isAbsolute(typed.fileDownloadLocation)
+    ) {
+      return yield* invalid(
+        'fileDownloadLocation must be an absolute path',
+        'fileDownloadLocation'
+      );
+    }
     if (typed.theme !== undefined && !THEMES.includes(typed.theme)) {
       return yield* invalid(`Unknown theme "${typed.theme}"`, 'theme');
     }
@@ -147,18 +157,31 @@ const validateAddonConfig = (
     return values as AddonConfigValues;
   });
 
+/** Every download location configured while this process has been running. */
+const sessionDownloadLocations = new Set<string>();
+
 /**
  * Persisted download paths later serve as roots for file deletion and setup
- * writes, so they must sit inside the configured download location when saved.
+ * writes, so they must sit inside a download location. A download keeps the
+ * root it started under: changing the location mid-download (or across a
+ * restart, via its own earlier record) must not strand its later saves.
  */
 const validateDownloadPath = (
+  id: string,
   downloadPath: unknown
 ): Effect.Effect<string, ValidationError> => {
   if (typeof downloadPath !== 'string' || downloadPath === '') {
     return invalid('downloadInfo.downloadPath is required', 'downloadPath');
   }
-  const root = getDatabase().getSettings().fileDownloadLocation;
-  return isProtectedDeletePath(downloadPath, { exact: [], subtrees: [root] })
+  const database = getDatabase();
+  const location = database.getSettings().fileDownloadLocation;
+  sessionDownloadLocations.add(location);
+  const roots = [
+    ...sessionDownloadLocations,
+    database.getDownload(id)?.downloadInfo.downloadPath,
+    database.getFailedSetup(id)?.downloadInfo.downloadPath,
+  ].filter((root): root is string => root !== undefined && root !== '');
+  return isProtectedDeletePath(downloadPath, { exact: [], subtrees: roots })
     ? Effect.succeed(downloadPath)
     : invalid(
         'downloadInfo.downloadPath must be inside the download location',
@@ -200,7 +223,10 @@ const validateDownload = (
         'downloadInfo.appID'
       );
     }
-    yield* validateDownloadPath(candidate.downloadInfo.downloadPath);
+    yield* validateDownloadPath(
+      candidate.id,
+      candidate.downloadInfo.downloadPath
+    );
     return candidate;
   });
 
@@ -221,7 +247,10 @@ const validateFailedSetup = (
         'should'
       );
     }
-    yield* validateDownloadPath(candidate.downloadInfo?.downloadPath);
+    yield* validateDownloadPath(
+      candidate.id,
+      candidate.downloadInfo?.downloadPath
+    );
     return candidate;
   });
 
@@ -364,7 +393,14 @@ export default function stateHandler() {
     procedure(ElectronRpc.state.updateSettings, (patch: unknown) =>
       runBoundary(
         validateSettingsPatch(patch).pipe(
-          Effect.map((validated) => getDatabase().updateSettings(validated))
+          Effect.map((validated) => {
+            const database = getDatabase();
+            // Downloads already started under the old location stay valid.
+            sessionDownloadLocations.add(
+              database.getSettings().fileDownloadLocation
+            );
+            return database.updateSettings(validated);
+          })
         )
       )
     ),

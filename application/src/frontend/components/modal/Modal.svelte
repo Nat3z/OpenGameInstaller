@@ -65,28 +65,25 @@ setContext('closeModal', () => {
 setContext('boundsClose', boundsClose);
 
 $effect(() => {
+  const preparedToOpen = open;
   modalQueue.update((queue) =>
-    queue.map((modal) => ({ ...modal, preparedToOpen: open }))
+    queue.map((modal) =>
+      modal.id === modalId ? { ...modal, preparedToOpen } : modal
+    )
   );
 });
 onMount(() => {
   logger.sync.info('mounted', modalId, priority);
   // subscribe to the queue
   const unsub = modalQueue.subscribe((queue) => {
-    logger.sync.info('queue', queue);
-    const selfIdx = queue.findIndex((modal) => modal.id === modalId);
-    if (selfIdx === -1) {
+    if (!queue.some((modal) => modal.id === modalId)) {
       return;
-    }
-    if (selfIdx === 0) {
-      modalShouldOpenQueued = true;
     }
 
     modalShouldOpenQueued = (() => {
       for (const modal of queue) {
         // if the modal is me, set the state to true
         if (modal.id === modalId) {
-          logger.sync.info('rendering', modal.id);
           return true;
         }
         // if the modal has a higher priority and is before me, break
@@ -121,9 +118,10 @@ onDestroy(() => {
 </script>
 
 {#if open && modalShouldOpenQueued}
+  <!-- no backdrop blur: hardware acceleration is disabled, so blurring the whole app runs on the cpu -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="w-full h-full fixed bg-slate-900/40 backdrop-blur-sm flex top-0 left-0 justify-center items-center z-40 transition-all duration-200"
+    class="w-full h-full fixed bg-slate-900/50 flex top-0 left-0 justify-center items-center z-40"
     onclick={handleOverlayClick}
     onkeydown={handleKeydown}
     tabindex="-1"

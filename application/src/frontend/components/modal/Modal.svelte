@@ -118,7 +118,7 @@ onDestroy(() => {
 </script>
 
 {#if open && modalShouldOpenQueued}
-  <!-- no backdrop blur: hardware acceleration is disabled, so blurring the whole app runs on the cpu -->
+  <!-- no backdrop blur: hardware acceleration is disabled on windows, so blurring the whole app runs on the cpu -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="w-full h-full fixed bg-slate-900/50 flex top-0 left-0 justify-center items-center z-40"

@@ -270,7 +270,7 @@ async function removeFromList() {
   }
 }
 
-function showInFolder() {
+async function showInFolder() {
   if (!gameInfo.cwd) {
     createNotification({
       id: Math.random().toString(36).substring(7),
@@ -279,7 +279,11 @@ function showInFolder() {
     });
     return;
   }
-  const shown = window.electronAPI.fs.showFileLoc(gameInfo.cwd);
+  const shown = await runFrontendEffect(
+    electronRpc.fs
+      .showItemInFolder(gameInfo.cwd)
+      .pipe(Effect.orElseSucceed(() => false))
+  );
   if (!shown) {
     createNotification({
       id: Math.random().toString(36).substring(7),

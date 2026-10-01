@@ -20,6 +20,7 @@ import * as fsp from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, join } from 'path';
 import { parse as shellQuoteParse } from 'shell-quote';
+import { getDatabase } from '@/electron/database/index.js';
 import {
   addDeckGameToSteam,
   addUmuGameToSteam,
@@ -40,10 +41,7 @@ import {
   resolveLaunchCommand,
 } from '@/electron/handlers/handler.umu.js';
 import {
-  addToInternalsApps,
-  ensureInternalsDir,
-  ensureLibraryDir,
-  getAllLibraryFiles,
+  getAllLibraryEntries,
   loadLibraryInfo,
   saveLibraryInfo,
   stageLibraryRemoval,
@@ -346,8 +344,6 @@ export function launchGameFromLibrary(
 ): Effect.Effect<LaunchGameResult, LibraryError> {
   return Effect.gen(function* () {
     logger.sync.info('[launch] Launching game', appid);
-    ensureLibraryDir();
-    ensureInternalsDir();
 
     const parsedAppId =
       typeof appid === 'number' ? appid : parseInt(String(appid), 10);
@@ -466,6 +462,7 @@ export function launchGameFromLibrary(
 
       // Already tracked by the pre-await add above; do not re-add here or a
       // fast crash's onExit delete would be resurrected.
+      yield* Effect.sync(() => getDatabase().markGameLaunched(appInfo.appID));
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
       return { success: true };
     }
@@ -542,6 +539,7 @@ export function launchGameFromLibrary(
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
     });
 
+    yield* Effect.sync(() => getDatabase().markGameLaunched(appInfo.appID));
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
     return { success: true };
   });
@@ -568,8 +566,6 @@ function executeWrapperCommandForAppSteam(
   launchEnv?: Record<string, string>
 ): Effect.Effect<ExecuteWrapperResult> {
   return Effect.gen(function* () {
-    ensureLibraryDir();
-
     const appInfo = loadLibraryInfo(appid);
     if (!appInfo) {
       return { success: false, error: 'Game not found' };
@@ -800,17 +796,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     ElectronRpc.app.removeApp,
     ipcBoundary((_, appid: number) =>
       Effect.gen(function* () {
-        yield* Effect.try({
-          try: () => {
-            ensureLibraryDir();
-            ensureInternalsDir();
-          },
-          catch: (cause) =>
-            new FileSystemError({
-              message: 'Could not update the library filesystem',
-              cause,
-            }),
-        });
         const appInfo = yield* Effect.sync(() => loadLibraryInfo(appid));
         if (!appInfo) return { status: 'success' as const };
 
@@ -874,7 +859,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 cwd: appInfo.cwd,
                 appID: appid,
                 running: runningGames.has(appid),
-                otherGames: getAllLibraryFiles(),
+                otherGames: getAllLibraryEntries(),
                 roots: deleteGuardRoots(),
                 pathExists: (path) => fs.existsSync(path),
               });
@@ -936,18 +921,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         }
       ) =>
         Effect.gen(function* () {
-          yield* Effect.try({
-            try: () => {
-              ensureLibraryDir();
-              ensureInternalsDir();
-            },
-            catch: (cause) =>
-              new FileSystemError({
-                message: 'Could not update the library filesystem',
-                cause,
-              }),
-          });
-
           // Check if UMU is available and should be used (Linux only; macOS uses legacy)
           const umuAvailable = isLinux();
 
@@ -1000,7 +973,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 });
                 data.umu = undefined;
                 saveLibraryInfo(data.appID, data);
-                addToInternalsApps(data.appID);
                 return 'setup-failed';
               }
             }
@@ -1018,7 +990,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
               // Save the library info with UMU config
               saveLibraryInfo(data.appID, data);
-              addToInternalsApps(data.appID);
 
               if (data.redistributables && data.redistributables.length > 0) {
                 logger.sync.info(
@@ -1037,7 +1008,6 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
           // Native applications do not need a Wine prefix.
           saveLibraryInfo(data.appID, data);
-          addToInternalsApps(data.appID);
 
           if (process.platform === 'win32') {
             // if there are redistributables, we need to install them
@@ -1101,7 +1071,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
   const getAllApps = ipcProcedure(
     ElectronRpc.app.getAllApps,
-    ipcBoundary(() => Effect.succeed(getAllLibraryFiles()))
+    ipcBoundary(() => Effect.succeed(getAllLibraryEntries()))
   );
 
   const updateAppVersion = ipcProcedure(
@@ -1203,6 +1173,58 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     ipcBoundary((_, appID: number) => Effect.succeed(loadLibraryInfo(appID)))
   );
 
+  const configureGame = ipcProcedure(
+    ElectronRpc.app.configureGame,
+    ipcBoundary(
+      (
+        _,
+        appID: number,
+        settings: {
+          cwd: string;
+          launchExecutable: string;
+          launchArguments?: string;
+          dllOverrides?: string[];
+          protonVersion?: string;
+        }
+      ) =>
+        Effect.gen(function* () {
+          const appInfo = yield* Effect.sync(() => loadLibraryInfo(appID));
+          if (!appInfo) return 'app-not-found';
+
+          appInfo.cwd = settings.cwd;
+          appInfo.launchExecutable = settings.launchExecutable;
+          if (settings.launchArguments === undefined) {
+            delete appInfo.launchArguments;
+          } else {
+            appInfo.launchArguments = settings.launchArguments;
+          }
+
+          if (appInfo.umu) {
+            if (
+              settings.dllOverrides === undefined ||
+              settings.dllOverrides.length === 0
+            ) {
+              delete appInfo.umu.dllOverrides;
+            } else {
+              appInfo.umu.dllOverrides = settings.dllOverrides;
+            }
+            // 'umu-proton' is umu's own default, so it is stored as "unset".
+            if (
+              settings.protonVersion === undefined ||
+              settings.protonVersion === 'umu-proton'
+            ) {
+              delete appInfo.umu.protonVersion;
+            } else {
+              appInfo.umu.protonVersion = settings.protonVersion;
+            }
+          }
+
+          yield* Effect.sync(() => saveLibraryInfo(appID, appInfo));
+          return 'success';
+        })
+    )
+  );
+
   return router(
     launchGame,
     executeWrapperCommand,
@@ -1212,6 +1234,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     insertApp,
     getAllApps,
     updateAppVersion,
-    getLibraryInfo
+    getLibraryInfo,
+    configureGame
   );
 }

@@ -1,7 +1,7 @@
 import { DebridError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
-import { getConfigClientOption } from '@/frontend/lib/config/client';
 import { getDownloadPath } from '@/frontend/lib/core/fs';
+import { settings } from '@/frontend/lib/core/state.svelte';
 import { finalizeDownloadCard } from '@/frontend/lib/downloads/events';
 import { safeDownloadPath } from '@/frontend/lib/downloads/paths';
 import { BaseService } from '@/frontend/lib/downloads/services/BaseService';
@@ -55,10 +55,7 @@ export class TorboxService extends BaseService {
         htmlButton.disabled = true;
       }
 
-      const options = getConfigClientOption<{ torboxApiKey?: string }>(
-        'realdebrid'
-      );
-      if (!options?.torboxApiKey) {
+      if (!settings.torboxApiKey) {
         return yield* Effect.fail(
           new DebridError({
             message: 'Please set your TorBox API key in the settings.',
@@ -66,7 +63,7 @@ export class TorboxService extends BaseService {
           })
         );
       }
-      const { torboxApiKey } = options;
+      const torboxApiKey = settings.torboxApiKey;
       const formData = new FormData();
       let torrentHash = '';
       if (result.downloadType === 'torrent') {

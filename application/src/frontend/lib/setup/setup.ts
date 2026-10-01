@@ -13,7 +13,6 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { get } from 'svelte/store';
 import { getAddonServer } from '@/frontend/lib/core/ipc';
-import { getApp } from '@/frontend/lib/core/library';
 import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { saveFailedSetup } from '@/frontend/lib/recovery/failedSetups';
@@ -488,16 +487,20 @@ export function runSetupAppUpdate(
   isTorrent: boolean,
   additionalData: AdditionalSetupData = {}
 ) {
-  const currentLibraryInfo = getApp(downloadedItem.appID);
-  if (!currentLibraryInfo) {
-    updateDownloadStatus(downloadedItem.id, {
-      status: 'error',
-      error: `App not found in library (appID: ${downloadedItem.appID})`,
-    });
-    return Effect.fail(new GameNotFound({ gameId: downloadedItem.appID }));
-  }
-
   return Effect.gen(function* () {
+    const currentLibraryInfo = yield* electronRpc.app
+      .getLibraryInfo(downloadedItem.appID)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (!currentLibraryInfo) {
+      updateDownloadStatus(downloadedItem.id, {
+        status: 'error',
+        error: `App not found in library (appID: ${downloadedItem.appID})`,
+      });
+      return yield* Effect.fail(
+        new GameNotFound({ gameId: downloadedItem.appID })
+      );
+    }
+
     const data = yield* runAddonSetup(
       createSetupPayload(
         downloadedItem,

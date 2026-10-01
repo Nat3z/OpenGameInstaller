@@ -30,10 +30,7 @@ import { dirname } from 'path';
 import { Readable, Transform, type TransformCallback } from 'stream';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { sendNotification } from '@/electron/main.js';
-import {
-  getStoredValue,
-  refreshCached,
-} from '@/electron/manager/manager.config.js';
+import { getSettings } from '@/electron/manager/manager.config.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import {
   registerQueueCancel,
@@ -2798,8 +2795,8 @@ function checkParallelChunkCount(
   activeDownloads: Iterable<Download>
 ): Effect.Effect<void, ConfigError> {
   return Effect.gen(function* () {
-    yield* refreshCached('general');
-    const val = Number(yield* getStoredValue('general', 'parallelChunkCount'));
+    const settings = yield* getSettings();
+    const val = settings.parallelChunkCount;
     // Ensure minimum of 1, default to 8 if invalid
     const chunkCount = Math.max(1, Number.isFinite(val) ? val : 8);
     logger.sync.info('[direct] parallel chunk count:', chunkCount);
@@ -2818,7 +2815,7 @@ function checkParallelChunkCount(
       });
     }
 
-    const bwVal = Number(yield* getStoredValue('general', 'bandwidthLimit'));
+    const bwVal = settings.bandwidthLimit;
     BANDWIDTH_LIMIT_BYTES_PER_SEC =
       Number.isFinite(bwVal) && bwVal > 0 ? Math.round(bwVal * 1024 * 1024) : 0;
     globalTokenBucket.update(BANDWIDTH_LIMIT_BYTES_PER_SEC);

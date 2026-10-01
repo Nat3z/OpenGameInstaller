@@ -17,10 +17,7 @@ import type {
   DownloadStatus,
 } from '@/electron/handlers/handler.ddl.js';
 import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
-import {
-  getStoredValue,
-  refreshCached,
-} from '@/electron/manager/manager.config.js';
+import { getSettings } from '@/electron/manager/manager.config.js';
 import { cancelQueuedDownload } from '@/electron/rpc/queue-cancel.js';
 import { consumeDownloadReplayEvents } from '@/lib/download-handshake.js';
 
@@ -219,15 +216,9 @@ function handleDownloadRequest(
   };
 
   const operation = Effect.gen(function* () {
-    yield* refreshCached('general');
-    const configuredLocation: unknown = yield* getStoredValue(
-      'general',
-      'fileDownloadLocation'
-    );
+    const { fileDownloadLocation } = yield* getSettings();
     const configuredDir =
-      typeof configuredLocation === 'string' && configuredLocation.length > 0
-        ? configuredLocation
-        : './downloads';
+      fileDownloadLocation.length > 0 ? fileDownloadLocation : './downloads';
     const baseDir = resolve(process.cwd(), configuredDir);
     const prepared = yield* Effect.try({
       try: () => ({

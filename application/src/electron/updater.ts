@@ -27,7 +27,9 @@ import { basename, dirname, join } from 'path';
 import semver from 'semver';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import * as zlib from 'zlib';
+import { DATABASE_FILENAME, getDatabase } from '@/electron/database/index.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { runElectronEffect } from '@/electron/runtime.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -47,7 +49,14 @@ export type InstallerUpdateResult = {
   error?: string;
 };
 
-const filesToBackup = ['config', 'addons', 'library', 'internals'];
+// The database holds every piece of app state; its WAL and shared-memory
+// sidecars are copied too in case a checkpoint could not fold them in.
+const filesToBackup = [
+  'addons',
+  DATABASE_FILENAME,
+  `${DATABASE_FILENAME}-wal`,
+  `${DATABASE_FILENAME}-shm`,
+];
 // Directories to skip during backup (addon dependencies will be reinstalled)
 const dirsToSkip = ['node_modules'];
 let __dirname = isDev()
@@ -153,7 +162,16 @@ async function backupFilesAsync(
   updateStatus: (text: string, subtext?: string) => void,
   updateProgress: (current: number, total: number, speed: string) => void
 ): Promise<{ success: boolean; needsAddonReinstall: boolean }> {
-  const sourceRoot = __dirname;
+  // Backed up from the data directory (where the database and addons live),
+  // which `restoreBackup` also writes back into.
+  const sourceRoot = dataDirectory;
+
+  // Fold the write-ahead log into the main file so a plain copy is complete.
+  try {
+    getDatabase().checkpoint();
+  } catch (cause) {
+    logger.sync.warn('[updater] Could not checkpoint the database', cause);
+  }
 
   // First, count total files to backup
   let totalFiles = 0;

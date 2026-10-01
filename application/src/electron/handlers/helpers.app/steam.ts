@@ -12,7 +12,6 @@ import {
 } from '@ogi-sdk/errors';
 import { Context, Effect, Layer } from 'effect';
 import {
-  getLibraryPath,
   loadLibraryInfo,
   saveLibraryInfo,
 } from '@/electron/handlers/helpers.app/library.js';
@@ -101,7 +100,7 @@ const loadGame = (appID: number) =>
         ? cause
         : new SteamVdfParseError({
             message: `Could not read library metadata for game ${appID}`,
-            path: getLibraryPath(appID),
+            path: 'library',
             cause,
           }),
   });
@@ -115,7 +114,7 @@ const saveGame = (
     catch: (cause) =>
       new SteamVdfWriteError({
         message: `Could not save Steam shortcut metadata for game ${appID}`,
-        path: getLibraryPath(appID),
+        path: 'library',
         cause,
       }),
   });

@@ -19,6 +19,13 @@ import type {
   $UserInfo,
 } from 'real-debrid-js';
 import type { DownloadHandshakeResult } from '@/lib/download-handshake.js';
+import type { FailedSetup, PersistedDownload } from '@/lib/download-state.js';
+import type {
+  AddonConfigValues,
+  AppState,
+  Settings,
+  UpdateState,
+} from '@/lib/state.js';
 
 export const ELECTRON_RPC_CHANNEL = 'effect-rpc';
 
@@ -220,6 +227,21 @@ export const ElectronRpc = {
       [Schema.Number],
       Schema.NullOr(opaque<LibraryInfo>())
     ),
+    /** Saves the user-editable launch settings of an owned game. */
+    configureGame: rpc(
+      'app.configureGame',
+      [
+        Schema.Number,
+        Schema.Struct({
+          cwd: Schema.String,
+          launchExecutable: Schema.String,
+          launchArguments: Schema.optional(Schema.String),
+          dllOverrides: Schema.optional(StringArray),
+          protonVersion: Schema.optional(Schema.String),
+        }),
+      ],
+      Schema.Literal('success', 'app-not-found')
+    ),
     installRedistributables: rpc(
       'app.installRedistributables',
       [Schema.Number, OptionalString],
@@ -326,39 +348,116 @@ export const ElectronRpc = {
         Schema.UndefinedOr(Schema.String)
       ),
     },
-    getFilesInDir: rpc('fs.getFilesInDir', [Schema.String], StringArray),
-    deleteAsync: rpc(
-      'fs.deleteAsync',
+    /** Read-only probe for user-entered paths (download folder, local addons). */
+    pathExists: rpc('fs.pathExists', [Schema.String], Schema.Boolean),
+    /** Reveals the path in the OS file manager; false when it no longer exists. */
+    showItemInFolder: rpc(
+      'fs.showItemInFolder',
       [Schema.String],
-      Schema.Literal('success')
+      Schema.Boolean
     ),
-    move: rpc(
-      'fs.move',
-      [Schema.Struct({ source: Schema.String, destination: Schema.String })],
-      Schema.Literal('success')
+  },
+  /** Post-download processing. Every path is a game download directory. */
+  setup: {
+    /** Moves everything in `directory` except `keep` into `old_files`. */
+    stageOldFiles: rpc(
+      'setup.stageOldFiles',
+      [Schema.Struct({ directory: Schema.String, keep: StringArray })],
+      Schema.Struct({
+        staged: Schema.Boolean,
+        moved: Schema.Number,
+        failed: Schema.Number,
+      })
     ),
-    unrar: rpc(
-      'fs.unrar',
-      [
-        opaque<{
-          outputDir: string;
-          rarFilePath: string;
-          downloadId?: string;
-        }>(),
-      ],
+    /** Moves `old_files` back into `directory`; true when everything was restored. */
+    revertOldFiles: rpc(
+      'setup.revertOldFiles',
+      [Schema.String],
+      Schema.Boolean
+    ),
+    discardOldFiles: rpc('setup.discardOldFiles', [Schema.String], Void),
+    /** Descends through single-child directories to the real content root. */
+    resolveContentRoot: rpc(
+      'setup.resolveContentRoot',
+      [Schema.String],
+      Schema.String
+    ),
+    /** Finds the first archive of the given kind directly inside `directory`. */
+    findArchive: rpc(
+      'setup.findArchive',
+      [Schema.String, Schema.Literal('rar', 'zip')],
       Schema.NullOr(Schema.String)
     ),
-    unzip: rpc(
-      'fs.unzip',
+    /** Extracts an archive into `outputDir` and deletes it afterwards. */
+    extractArchive: rpc(
+      'setup.extractArchive',
       [
-        opaque<{
-          zipFilePath: string;
-          outputDir: string;
-          downloadId?: string;
-        }>(),
+        Schema.Struct({
+          archivePath: Schema.String,
+          outputDir: Schema.String,
+          downloadId: Schema.optional(Schema.String),
+        }),
       ],
-      Schema.NullOr(Schema.String)
+      Schema.String
     ),
+    /** Deletes the files a persisted download wrote to disk. */
+    deleteDownloadFiles: rpc(
+      'setup.deleteDownloadFiles',
+      [Schema.String],
+      Void
+    ),
+    listDlls: rpc('setup.listDlls', [Schema.String], StringArray),
+  },
+  /** Persistent application state; the renderer mirrors it in memory. */
+  state: {
+    getSettings: rpc('state.getSettings', [], opaque<Settings>()),
+    updateSettings: rpc(
+      'state.updateSettings',
+      [opaque<Partial<Settings>>()],
+      opaque<Settings>()
+    ),
+    getAppState: rpc('state.getAppState', [], opaque<AppState>()),
+    updateAppState: rpc(
+      'state.updateAppState',
+      [opaque<Partial<AppState>>()],
+      opaque<AppState>()
+    ),
+    getAddonConfig: rpc(
+      'state.getAddonConfig',
+      [Schema.String],
+      Schema.NullOr(opaque<AddonConfigValues>())
+    ),
+    setAddonConfig: rpc(
+      'state.setAddonConfig',
+      [Schema.String, opaque<AddonConfigValues>()],
+      Void
+    ),
+    getUpdateState: rpc('state.getUpdateState', [], opaque<UpdateState>()),
+    setUpdateState: rpc('state.setUpdateState', [opaque<UpdateState>()], Void),
+    listDownloads: rpc(
+      'state.listDownloads',
+      [],
+      opaque<PersistedDownload[]>()
+    ),
+    saveDownload: rpc(
+      'state.saveDownload',
+      [opaque<PersistedDownload>()],
+      Void
+    ),
+    deleteDownload: rpc('state.deleteDownload', [Schema.String], Void),
+    listFailedSetups: rpc(
+      'state.listFailedSetups',
+      [],
+      opaque<FailedSetup[]>()
+    ),
+    saveFailedSetup: rpc(
+      'state.saveFailedSetup',
+      [opaque<FailedSetup>()],
+      Void
+    ),
+    deleteFailedSetup: rpc('state.deleteFailedSetup', [Schema.String], Void),
+    /** Returns the image at `url` as a data URL, cached after the first fetch. */
+    loadImage: rpc('state.loadImage', [Schema.String], Schema.String),
   },
   realdebrid: {
     setKey: rpc('realdebrid.setKey', [Schema.String], Schema.String),

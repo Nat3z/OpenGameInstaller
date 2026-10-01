@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { LibraryInfo, SearchResult, StoreData } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import { fly, slide } from 'svelte/transition';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
@@ -67,60 +68,10 @@ function processingStatus(phase: string | undefined, progress: number): string {
 let loadingAddons: Map<string, string> = $state(new Map());
 let emptyAddons: Set<string> = $state(new Set());
 let collapsedAddons: Set<string> = $state(new Set());
-let originalFilePath: string | undefined = $derived.by(() => {
-  try {
-    if (alreadyOwns) {
-      const libraryEntryUnSerialized = window.electronAPI.fs.read(
-        './library/' + appID + '.json'
-      );
-      if (libraryEntryUnSerialized) {
-        const libraryEntry = JSON.parse(libraryEntryUnSerialized);
-        return libraryEntry.cwd;
-      }
-    }
-    return undefined;
-  } catch (ex) {
-    logger.sync.error(ex);
-    return undefined;
-  }
-});
-
-let originalExecutable: string | undefined = $derived.by(() => {
-  try {
-    if (alreadyOwns) {
-      const libraryEntryUnSerialized = window.electronAPI.fs.read(
-        './library/' + appID + '.json'
-      );
-      if (libraryEntryUnSerialized) {
-        const libraryEntry = JSON.parse(libraryEntryUnSerialized);
-        return libraryEntry.launchExecutable;
-      }
-    }
-    return undefined;
-  } catch (ex) {
-    logger.sync.error(ex);
-    return undefined;
-  }
-});
-
-let libraryInfo: LibraryInfo | undefined = $derived.by(() => {
-  try {
-    if (alreadyOwns) {
-      const libraryEntryUnSerialized = window.electronAPI.fs.read(
-        './library/' + appID + '.json'
-      );
-      if (libraryEntryUnSerialized) {
-        return JSON.parse(libraryEntryUnSerialized) as LibraryInfo;
-      }
-    }
-    return undefined;
-  } catch (ex) {
-    logger.sync.error(ex);
-    return undefined;
-  }
-});
-
-let alreadyOwns = $state(false);
+// The owned library entry, if any; drives the "already owns" state below.
+let libraryInfo: LibraryInfo | undefined = $state();
+let originalFilePath = $derived(libraryInfo?.cwd);
+let alreadyOwns = $derived(libraryInfo !== undefined);
 
 // Check for active downloads for this game
 let activeDownload = $derived(
@@ -202,17 +153,18 @@ let resultsByAddon = $derived.by(() => {
   return grouped;
 });
 
+async function refreshOwnership() {
+  libraryInfo =
+    (await runFrontendEffect(
+      electronRpc.app
+        .getLibraryInfo(appID)
+        .pipe(Effect.orElseSucceed(() => null))
+    )) ?? undefined;
+}
+
 async function loadCustomStoreData() {
   results = [];
-  alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
-  originalExecutable = window.electronAPI.fs.read(
-    './library/' + appID + '.json'
-  );
-  if (alreadyOwns && originalExecutable) {
-    originalExecutable = JSON.parse(originalExecutable).launchExecutable;
-  } else {
-    originalExecutable = undefined;
-  }
+  await refreshOwnership();
   const detailAddons = await runFrontendEffect(
     findAddonsSupportingStorefront(storefront, 'game-details')
   );
@@ -405,20 +357,17 @@ $effect(() => {
     !alreadyOwns &&
     !matchedDownload
   ) {
-    // Refresh the alreadyOwns status
-    alreadyOwns = window.electronAPI.fs.exists('./library/' + appID + '.json');
     matchedDownload = true;
     // Reload store data to reflect the new ownership status
-    loadCustomStoreData();
-
-    if (alreadyOwns) {
-      // Notify user that the game is now available
-      createNotification({
-        id: Math.random().toString(36).substring(7),
-        message: `${gameData?.name || 'Game'} is now ready to play!`,
-        type: 'success',
-      });
-    }
+    void loadCustomStoreData().then(() => {
+      if (alreadyOwns) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: `${gameData?.name || 'Game'} is now ready to play!`,
+          type: 'success',
+        });
+      }
+    });
   }
 });
 </script>

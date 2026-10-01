@@ -246,7 +246,6 @@ onDestroy(() => {
                     <Image
                       src={app.capsuleImage}
                       alt={app.name}
-                      classifier={app.appID.toString() + '-capsule'}
                       fallbackTitle
                       class="w-full aspect-2/3 object-cover"
                     />
@@ -354,7 +353,6 @@ onDestroy(() => {
                     <Image
                       src={app.capsuleImage}
                       alt={app.name}
-                      classifier={app.appID.toString() + '-capsule'}
                       fallbackTitle
                       class="w-full aspect-2/3 object-cover"
                     />

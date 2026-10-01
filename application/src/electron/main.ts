@@ -167,8 +167,10 @@ if (IS_NIXOS) {
 }
 logger.sync.info('Running in directory: ' + __dirname);
 
-// disable hardware acceleration
-app.disableHardwareAcceleration();
+// disable hardware acceleration on windows to prevent rendering glitches
+if (process.platform === 'win32') {
+  app.disableHardwareAcceleration();
+}
 
 /* Sync IPC for initial theme: must be registered before renderer loads to avoid flash */
 ipcMain.on('get-initial-theme', (event) => {

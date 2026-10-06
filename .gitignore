@@ -105,6 +105,8 @@ web_modules/
 .env.test.local
 .env.production.local
 .env.local
+.nightly/
+packages/update-channel/build/
 
 # parcel-bundler cache (https://parceljs.org/)
 

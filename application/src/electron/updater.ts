@@ -1,5 +1,15 @@
 import { formatError, NetworkError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import {
+  acceptsRelease,
+  channelStatePath,
+  NIGHTLY_API,
+  nightlyRelease,
+  parseNightlyManifest,
+  resolveChannel,
+  shouldUpdateSetup,
+  type UpdateChannel,
+} from '@ogi/update-channel';
 import axios from 'axios';
 import { exec, spawn } from 'child_process';
 import { createHash } from 'crypto';
@@ -857,7 +867,8 @@ function killUpdaterProcesses(): Promise<void> {
 /**
  * Checks GitHub for a newer installer release and, if one is available, downloads it and performs the platform-appropriate update workflow.
  *
- * This performs gated checks for offline mode, network connectivity, and portable runs; reads the local updater version and bleeding-edge flag; queries repository releases with a 10s timeout; chooses a suitable release (respecting prerelease when bleeding-edge is enabled); and, when a newer setup is found, streams the installer download with progress updates via callbacks, backs up configured local files, and then launches (Windows) or replaces and makes executable (Linux) the downloaded setup. Any errors are logged and the function resolves without throwing.
+ * Resolves the persisted update channel, then checks its release feed unless offline or portable.
+ * Downloads a newer setup, backs up Windows state, and launches or replaces the installer.
  *
  * @param callbacks - Optional callbacks for status and progress updates (used by splash screen)
  * @returns Resolves when the update check and any initiated update workflow complete (no return value).
@@ -877,6 +888,29 @@ export function checkIfInstallerUpdateAvailable(
         callbacks.onProgress(current, total, speed);
       }
     };
+
+    const installRoot = join(__dirname, '..');
+    let channel: UpdateChannel;
+    try {
+      const portable =
+        process.platform === 'linux'
+          ? !existsSync('../OpenGameInstaller-Setup.AppImage')
+          : basename(__dirname) !== 'update';
+      const root = portable ? __dirname : installRoot;
+      channel = resolveChannel(
+        channelStatePath(app.getPath('appData'), root),
+        root,
+        app.getVersion()
+      );
+    } catch (error) {
+      logger.sync.error('[updater] Cannot resolve update channel:', error);
+      resolve({
+        success: false,
+        updated: false,
+        error: 'Invalid update channel state',
+      });
+      return;
+    }
 
     const onlineState = getEffectiveOnlineState();
     if (!onlineState.effectiveOnline) {
@@ -920,24 +954,41 @@ export function checkIfInstallerUpdateAvailable(
       ? readFileSync(`${__dirname}/../updater-version.txt`, 'utf8') || '0.0.0'
       : '0.0.0';
     logger.sync.info(`[updater] Local version: ${localVersion}`);
-    const bleedingEdge = existsSync(`${__dirname}/../bleeding-edge.txt`);
+    if (channel === 'bleeding-edge') {
+      resolve({ success: true, updated: false });
+      return;
+    }
     // check for updates
     try {
-      const local = semver.coerce(localVersion.trim())?.version ?? '0.0.0';
       const gitRepo = 'nat3z/OpenGameInstaller';
-      const releases = await axios.get(
-        `https://api.github.com/repos/${gitRepo}/releases`,
-        { timeout: 10000 } // 10 second timeout for update check
-      );
+      const releases =
+        channel === 'nightly'
+          ? {
+              data: [
+                nightlyRelease(
+                  parseNightlyManifest(
+                    JSON.parse(
+                      (await axios.get(NIGHTLY_API, { timeout: 10000 })).data
+                        .body
+                    )
+                  ),
+                  'updater'
+                ),
+              ],
+            }
+          : await axios.get(
+              `https://api.github.com/repos/${gitRepo}/releases?per_page=100`,
+              { timeout: 10000 }
+            );
       const candidates = (releases.data as GithubRelease[])
         .flatMap((release) => {
           const setupVersion = getSetupVersionFromRelease(release);
           const version = setupVersion
-            ? semver.coerce(setupVersion)?.version
+            ? semver.valid(setupVersion.trim())
             : undefined;
           if (
             !version ||
-            (!bleedingEdge && release.prerelease) ||
+            (channel !== 'nightly' && !acceptsRelease(channel, release)) ||
             (setupVersion &&
               semver.eq(setupVersion.trim(), localVersion.trim()))
           ) {
@@ -952,9 +1003,9 @@ export function checkIfInstallerUpdateAvailable(
       if (latestRelease) {
         const wantedVersion = getSetupVersionFromRelease(latestRelease);
         const version = wantedVersion
-          ? semver.coerce(wantedVersion)?.version
+          ? semver.valid(wantedVersion.trim())
           : undefined;
-        if (!version || !semver.gt(version, local)) {
+        if (!version || !shouldUpdateSetup(localVersion, version, channel)) {
           latestRelease = undefined;
         }
       }
@@ -1014,6 +1065,9 @@ export function checkIfInstallerUpdateAvailable(
             updateStatus,
             updateProgress
           );
+          await runElectronEffect(
+            verifyReleaseArtifact(directory, latestSetupAsset)
+          );
           logger.sync.info(`[updater] Setup downloaded successfully.`);
           logger.sync.info(`[updater] Backing up files in update.`);
           await backupStateForSetupReplacement(updateStatus, updateProgress);
@@ -1051,6 +1105,12 @@ export function checkIfInstallerUpdateAvailable(
             updateStatus,
             updateProgress,
           });
+          await runElectronEffect(
+            verifyReleaseArtifact(
+              '../temp-setup-OGI.AppImage',
+              latestSetupAsset
+            )
+          );
           logger.sync.info(`[updater] Setup downloaded successfully.`);
 
           updateStatus('Starting Setup');

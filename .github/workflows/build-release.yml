@@ -13,101 +13,9 @@ permissions:
 
 jobs:
   build:
-    permissions:
-      contents: read
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-
-    steps:
-      - name: Check out Git repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetch full history for consistency
-          persist-credentials: false
-
-      - name: Check for release build changes
-        id: check_changes
-        env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: node .github/workflows/js/check-build-changes.js
-
-      - name: Setup Bun
-        if: steps.check_changes.outputs.has_build_changes == 'true'
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
-      - name: Cache Bun dependencies
-        if: steps.check_changes.outputs.has_build_changes == 'true'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-          key: bun-deps-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-deps-${{ runner.os }}-
-
-      - name: Install Dependencies
-        if: steps.check_changes.outputs.has_build_changes == 'true'
-        shell: bash
-        run: |
-          bun install --frozen-lockfile --linker=hoisted --concurrent-scripts 1 && cp -r ./node_modules/electron ./application/node_modules/electron && mkdir -p ./updater/node_modules && cp -r ./node_modules/electron ./updater/node_modules/electron
-
-      - name: Build Release Client
-        if: steps.check_changes.outputs.has_build_changes == 'true'
-        run: cd application && bun run electron-pack
-
-      - name: Build Release Updater
-        if: steps.check_changes.outputs.has_build_changes == 'true'
-        run: cd updater && bun run electron-pack
-
-      - name: Zip for Windows Portable
-        if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_build_changes == 'true'
-        run: |
-          Compress-Archive -Path application/dist/win-unpacked/* -Destination application/dist/OpenGameInstaller-Portable.zip
-
-      - name: Generate Windows blockmaps
-        if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_build_changes == 'true'
-        run: |
-          bun run .github/workflows/js/generate-blockmaps.mjs application/dist/OpenGameInstaller-Portable.zip updater/dist/OpenGameInstaller-Setup.exe
-
-      - name: Generate Linux blockmaps
-        if: matrix.os == 'ubuntu-latest' && steps.check_changes.outputs.has_build_changes == 'true'
-        run: |
-          bun run .github/workflows/js/generate-blockmaps.mjs updater/dist/OpenGameInstaller-Setup.AppImage application/dist/OpenGameInstaller-linux-pt.AppImage
-
-      - name: What's in the folders? (Windows)
-        if: steps.check_changes.outputs.has_build_changes == 'true'
-        shell: bash
-        run: |
-          ls -la application/dist/
-          ls -la updater/dist/
-
-      - name: Upload Windows Assets as Artifacts
-        if: matrix.os == 'windows-latest' && steps.check_changes.outputs.has_build_changes == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-assets
-          path: |
-            application/dist/OpenGameInstaller-Portable.zip
-            application/dist/OpenGameInstaller-Portable.zip.blockmap
-            updater/dist/OpenGameInstaller-Setup.exe
-            updater/dist/OpenGameInstaller-Setup.exe.blockmap
-
-      - name: Upload Linux Assets as Artifacts
-        if: matrix.os == 'ubuntu-latest' && steps.check_changes.outputs.has_build_changes == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-assets
-          path: |
-            updater/dist/OpenGameInstaller-Setup.AppImage
-            updater/dist/OpenGameInstaller-Setup.AppImage.blockmap
-            application/dist/OpenGameInstaller-linux-pt.AppImage
-            application/dist/OpenGameInstaller-linux-pt.AppImage.blockmap
+    uses: ./.github/workflows/desktop-build.yml
+    with:
+      source: ${{ github.sha }}
   release:
     permissions:
       contents: write
@@ -117,7 +25,7 @@ jobs:
     needs: [build]
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # Fetch full history to access tag annotations
           persist-credentials: false
@@ -175,14 +83,14 @@ jobs:
           echo "Updater version: $UPDATER_VERSION"
 
       - name: Download Windows Assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-assets
           path: assets
           merge-multiple: true
 
       - name: Download Linux Assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: linux-assets
           path: assets

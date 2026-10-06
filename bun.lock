@@ -15,7 +15,7 @@
     },
     "application": {
       "name": "opengameinstaller-gui",
-      "version": "4.3.0",
+      "version": "4.3.1",
       "dependencies": {
         "@ctrl/qbittorrent": "^9.11.0",
         "@effect/platform": "0.97.0",
@@ -26,6 +26,7 @@
         "@ogi-sdk/errors": "workspace:*",
         "@ogi-sdk/executor": "workspace:*",
         "@ogi-sdk/logger": "workspace:*",
+        "@ogi/update-channel": "workspace:*",
         "all-debrid-js": "workspace:*",
         "axios": "^1.13.4",
         "d3": "^7.9.0",
@@ -225,6 +226,18 @@
         "typescript": "^5.0.0",
       },
     },
+    "packages/update-channel": {
+      "name": "@ogi/update-channel",
+      "version": "1.0.0",
+      "dependencies": {
+        "semver": "^7.7.3",
+      },
+      "devDependencies": {
+        "@types/semver": "^7.7.1",
+        "tsdown": "^0.21.10",
+        "typescript": "^5.9.3",
+      },
+    },
     "test-addon": {
       "name": "test-addon",
       "dependencies": {
@@ -243,6 +256,7 @@
       "version": "2.2.0",
       "dependencies": {
         "@ogi-sdk/logger": "workspace:*",
+        "@ogi/update-channel": "workspace:*",
         "axios": "^1.13.4",
         "effect": "^3.22.0",
         "yauzl": "^3.2.0",
@@ -609,6 +623,8 @@
     "@ogi-sdk/executor": ["@ogi-sdk/executor@workspace:packages/executor"],
 
     "@ogi-sdk/logger": ["@ogi-sdk/logger@workspace:packages/logger"],
+
+    "@ogi/update-channel": ["@ogi/update-channel@workspace:packages/update-channel"],
 
     "@oslojs/encoding": ["@oslojs/encoding@1.1.0", "", {}, "sha512-70wQhgYmndg4GCPxPPxPGevRKqTIJ2Nh4OkiMWmDAVYsTQ+Ta7Sq+rPevXyXGdzr30/qZBnyOalCszoMxlyldQ=="],
 

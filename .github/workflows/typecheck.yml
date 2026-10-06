@@ -104,3 +104,6 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
       - run: bun run --cwd updater build
       - run: bun run --cwd updater test
+      - run: bun test packages/update-channel/test
+      - run: bun test ./.github/workflows/js/nightly.test.ts
+      - run: node --test .github/workflows/js/check-build-changes.test.js

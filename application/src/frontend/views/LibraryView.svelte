@@ -3,14 +3,17 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onDestroy, onMount, tick } from 'svelte';
 import { type Writable, writable } from 'svelte/store';
+import MissingGamesModal from '@/frontend/components/built/MissingGamesModal.svelte';
 import Image from '@/frontend/components/Image.svelte';
 import PlayPage from '@/frontend/components/PlayPage.svelte';
 import MigrateIcon from '@/frontend/Icons/MigrateIcon.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
 import {
   filterLibrary,
+  findMissingGames,
   getAllApps,
   getRecentlyPlayed,
+  keepMissingGames,
   sortLibraryAlphabetically,
 } from '@/frontend/lib/core/library';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
@@ -33,6 +36,9 @@ let osLoading = $state(true);
 let revealLibraryEntries = $state(false);
 let revealLibraryDelayActive = $state(false);
 let revealLibraryTimer: ReturnType<typeof setTimeout> | undefined;
+let missingGames: LibraryInfo[] = $state([]);
+// Bumped per check and on close so a stale result never reopens the modal.
+let missingGamesCheck = 0;
 
 let { exitPlayPage = $bindable() } = $props();
 
@@ -47,6 +53,7 @@ onMount(() => {
           err
         );
       });
+      void checkMissingGames();
     };
   }
 });
@@ -64,6 +71,24 @@ async function reloadLibrary() {
   filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
 
   loading = false;
+}
+
+// Runs apart from reloadLibrary so the folder checks never delay the grid.
+async function checkMissingGames() {
+  const check = ++missingGamesCheck;
+  try {
+    const games = await findMissingGames();
+    if (check === missingGamesCheck) missingGames = games;
+  } catch (err) {
+    logger.sync.error('Failed to check for missing games:', err);
+  }
+}
+
+function closeMissingGames(kept: number[], removedAny: boolean) {
+  keepMissingGames(kept);
+  missingGamesCheck++;
+  missingGames = [];
+  if (removedAny) void reloadLibrary();
 }
 
 async function runInitialLibraryReveal() {
@@ -143,6 +168,7 @@ $effect(() => {
 });
 
 onMount(async () => {
+  void checkMissingGames();
   const [resolvedOs] = await Promise.all([
     runFrontendEffect(electronRpc.app.getOS()),
     reloadLibrary(),
@@ -392,6 +418,10 @@ onDestroy(() => {
     {/if}
   </div>
 {/key}
+
+{#if missingGames.length > 0 && !$selectedApp}
+  <MissingGamesModal games={missingGames} onClose={closeMissingGames} />
+{/if}
 
 <style>
   .library-entry-shell {

@@ -139,3 +139,22 @@ export function chunkArray<T>(array: T[], size: number): T[][] {
   }
   return chunks;
 }
+
+// Missing games the user chose to keep; not prompted again this session.
+const keptMissingGames = new Set<number>();
+
+/**
+ * Finds library entries whose install folder no longer exists on disk, e.g.
+ * deleted outside the app or on a drive that isn't connected. Games kept via
+ * `keepMissingGames` are skipped.
+ *
+ * @returns The games whose `cwd` is set but missing
+ */
+export async function findMissingGames(): Promise<LibraryInfo[]> {
+  const missing = await runFrontendEffect(electronRpc.app.getMissingApps());
+  return missing.filter((app) => !keptMissingGames.has(app.appID));
+}
+
+export function keepMissingGames(appIDs: number[]): void {
+  for (const appID of appIDs) keptMissingGames.add(appID);
+}

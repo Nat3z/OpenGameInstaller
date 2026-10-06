@@ -162,9 +162,14 @@ export const ElectronRpc = {
         error?: string;
       }>()
     ),
+    // onlyIfMissing removes just the library entry, and only while the install
+    // folder is still missing; files are never deleted.
     removeApp: rpc(
       'app.removeApp',
-      [Schema.Number],
+      [
+        Schema.Number,
+        Schema.optionalElement(Schema.UndefinedOr(Schema.Boolean)),
+      ],
       opaque<
         | {
             status: 'success';
@@ -197,6 +202,7 @@ export const ElectronRpc = {
       )
     ),
     getAllApps: rpc('app.getAllApps', [], opaque<LibraryInfo[]>()),
+    getMissingApps: rpc('app.getMissingApps', [], opaque<LibraryInfo[]>()),
     updateAppVersion: rpc(
       'app.updateAppVersion',
       [

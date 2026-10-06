@@ -772,6 +772,16 @@ function executeWrapperCommandForAppSteam(
   });
 }
 
+// Only a definitely absent path counts as missing; permission or transient
+// errors leave the game alone.
+function isMissingPath(path: string): Promise<boolean> {
+  return fsp.access(path).then(
+    () => false,
+    (error: NodeJS.ErrnoException) =>
+      error.code === 'ENOENT' || error.code === 'ENOTDIR'
+  );
+}
+
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   const launchGame = ipcProcedure(
     ElectronRpc.app.launchGame,
@@ -798,7 +808,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
   const removeApp = ipcProcedure(
     ElectronRpc.app.removeApp,
-    ipcBoundary((_, appid: number) =>
+    ipcBoundary((_, appid: number, onlyIfMissing?: boolean) =>
       Effect.gen(function* () {
         yield* Effect.try({
           try: () => {
@@ -813,6 +823,19 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         });
         const appInfo = yield* Effect.sync(() => loadLibraryInfo(appid));
         if (!appInfo) return { status: 'success' as const };
+        // Re-checked here since the folder may have come back (e.g. a drive
+        // reconnected) after the renderer reported it missing. A game with no
+        // path is never "missing", so it's kept too.
+        const { cwd } = appInfo;
+        if (
+          onlyIfMissing &&
+          (!cwd || !(yield* Effect.promise(() => isMissingPath(cwd))))
+        ) {
+          return {
+            status: 'cancelled' as const,
+            message: 'Its install folder was found again, so it was kept.',
+          };
+        }
 
         let detectedSteamAppId =
           appInfo.umu?.steamShortcutId ?? appInfo.umu?.steamShortcutReaddId;
@@ -862,6 +885,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               }
 
               yield* Effect.sync(removal.commit);
+
+              // Missing-game cleanup drops only the entry so a folder that
+              // reappears mid-removal is never deleted.
+              if (onlyIfMissing) {
+                return { status: 'success' as const, warning };
+              }
 
               // Delete the game folder lazily in the background; a skipped
               // deletion is a warning, not a failed removal (the library entry
@@ -1104,6 +1133,21 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     ipcBoundary(() => Effect.succeed(getAllLibraryFiles()))
   );
 
+  // Async checks so a slow or unmounted drive never blocks the renderer.
+  const getMissingApps = ipcProcedure(
+    ElectronRpc.app.getMissingApps,
+    ipcBoundary(() =>
+      Effect.filter(
+        getAllLibraryFiles(),
+        ({ cwd }) =>
+          cwd
+            ? Effect.promise(() => isMissingPath(cwd))
+            : Effect.succeed(false),
+        { concurrency: 'unbounded' }
+      )
+    )
+  );
+
   const updateAppVersion = ipcProcedure(
     ElectronRpc.app.updateAppVersion,
     ipcBoundary(
@@ -1211,6 +1255,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     clearRemovalTasks,
     insertApp,
     getAllApps,
+    getMissingApps,
     updateAppVersion,
     getLibraryInfo
   );

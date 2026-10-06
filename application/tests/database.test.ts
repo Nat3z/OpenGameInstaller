@@ -277,7 +277,12 @@ describe('download path containment', () => {
     const root = path.join(base, 'root');
     fs.mkdirSync(root);
     fs.mkdirSync(path.join(base, 'outside'));
-    fs.symlinkSync(path.join(base, 'outside'), path.join(root, 'link'), 'dir');
+    // Junctions need no symlink privilege on Windows and behave the same here.
+    fs.symlinkSync(
+      path.join(base, 'outside'),
+      path.join(root, 'link'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
     expect(
       getPersistedFilePaths({
         downloadPath: root,

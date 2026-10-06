@@ -541,7 +541,8 @@ async function publish(plan: Plan): Promise<void> {
       tag_name: plan.tag,
       target_commitish: plan.source,
       name: `Nightly ${plan.build}`,
-      body: `Setup Version: ${manifest.updater.version}\nApplication Version: ${manifest.application.version}`,
+      // No "Setup Version:" line: pre-channel unstable clients would install it as a setup update.
+      body: `Nightly build ${plan.build} from ${plan.source}. Install through the Nightly channel.`,
       draft: true,
       prerelease: true,
       make_latest: 'false',

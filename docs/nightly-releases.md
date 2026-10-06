@@ -20,6 +20,7 @@ Portable copies retain their channel identity but do not install an updater. Dow
 The schedule is `17 */2 * * *` UTC, but scheduled publication is disabled unless the repository variable `NIGHTLY_ENABLED` equals `true`. GitHub scheduling is best-effort, not an exact two-hour guarantee.
 
 1. Merge nightly support after the PR's Windows/Linux nightly dry run and tarball validation pass.
+   Ship it in a stable release before the first live nightly. Pre-channel setups opted into unstable only filter by `prerelease`, so they would pick up `nightly-<run-id>` application builds until they receive the channel-aware setup.
 2. Dispatch **Nightly** on `main` with `dry_run=true` to verify the current main revision.
 3. Dispatch with `dry_run=false`. This requires the existing `NPM_TOKEN` to have publication rights for all SDK packages. Publication is rejected outside this repository's `main` branch.
 4. Install the Windows/Linux nightly setup, then validate a second nightly update, an application-only update reusing its installer, offline launch, setup replacement and an explicit switch back to stable.

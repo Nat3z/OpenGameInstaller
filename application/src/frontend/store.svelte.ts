@@ -245,14 +245,15 @@ export function clearHeaderBackButton() {
   });
 }
 
-/** Whether a download or install for the game is still in progress. */
+/**
+ * Whether a download or install for the game is still in progress. A
+ * `completed` download is still running setup, so it counts as active.
+ */
 export function hasActiveDownload(appID: number): boolean {
   return get(currentDownloads).some(
     (download) =>
       download.appID === appID &&
-      !['error', 'completed', 'seeding', 'setup-complete'].includes(
-        download.status
-      )
+      !['error', 'seeding', 'setup-complete'].includes(download.status)
   );
 }
 

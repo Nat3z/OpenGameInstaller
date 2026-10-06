@@ -5,7 +5,7 @@ import type {
 } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Either, Schema } from 'effect';
-import { type Writable, writable } from 'svelte/store';
+import { get, type Writable, writable } from 'svelte/store';
 import {
   assertMarketplaceUrlProtocol,
   assertNoShellInjection,
@@ -243,6 +243,17 @@ export function clearHeaderBackButton() {
     onClick: null,
     ariaLabel: 'Go back',
   });
+}
+
+/** Whether a download or install for the game is still in progress. */
+export function hasActiveDownload(appID: number): boolean {
+  return get(currentDownloads).some(
+    (download) =>
+      download.appID === appID &&
+      !['error', 'completed', 'seeding', 'setup-complete'].includes(
+        download.status
+      )
+  );
 }
 
 export function createNotification(notification: Notification) {

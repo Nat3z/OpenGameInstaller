@@ -824,12 +824,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         const appInfo = yield* Effect.sync(() => loadLibraryInfo(appid));
         if (!appInfo) return { status: 'success' as const };
         // Re-checked here since the folder may have come back (e.g. a drive
-        // reconnected) after the renderer reported it missing.
+        // reconnected) after the renderer reported it missing. A game with no
+        // path is never "missing", so it's kept too.
         const { cwd } = appInfo;
         if (
           onlyIfMissing &&
-          cwd &&
-          !(yield* Effect.promise(() => isMissingPath(cwd)))
+          (!cwd || !(yield* Effect.promise(() => isMissingPath(cwd))))
         ) {
           return {
             status: 'cancelled' as const,

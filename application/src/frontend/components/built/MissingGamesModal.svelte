@@ -8,7 +8,11 @@ import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { completeRequiredReadd } from '@/frontend/states.svelte';
-import { createNotification, currentDownloads } from '@/frontend/store.svelte';
+import {
+  createNotification,
+  currentDownloads,
+  hasActiveDownload,
+} from '@/frontend/store.svelte';
 
 interface Props {
   games: LibraryInfo[];
@@ -48,6 +52,15 @@ async function removeSelected() {
   busy = true;
   let removed = 0;
   for (const game of selected) {
+    // An install in progress recreates the folder; removing now would orphan it.
+    if (hasActiveDownload(game.appID)) {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `${game.name}: Cannot remove a game while a download or install is in progress.`,
+        type: 'error',
+      });
+      continue;
+    }
     try {
       const result = await runFrontendEffect(
         electronRpc.app.removeApp(game.appID, true)
@@ -61,6 +74,13 @@ async function removeSelected() {
           type: result.status === 'cancelled' ? 'info' : 'error',
         });
         continue;
+      }
+      if (result.warning) {
+        createNotification({
+          id: Math.random().toString(36).substring(7),
+          message: `${game.name}: ${result.warning}`,
+          type: 'info',
+        });
       }
       completeRequiredReadd(game.appID);
       currentDownloads.update((downloads) =>

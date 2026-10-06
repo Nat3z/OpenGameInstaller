@@ -30,6 +30,7 @@ import {
   currentDownloads,
   gameRemovalTasks,
   gamesLaunched,
+  hasActiveDownload,
 } from '@/frontend/store.svelte';
 
 interface Props {
@@ -201,14 +202,7 @@ async function removeFromList() {
     });
     return;
   }
-  const activeDownload = $currentDownloads.find(
-    (download) =>
-      download.appID === gameInfo.appID &&
-      !['error', 'completed', 'seeding', 'setup-complete'].includes(
-        download.status
-      )
-  );
-  if (activeDownload) {
+  if (hasActiveDownload(gameInfo.appID)) {
     createNotification({
       id: Math.random().toString(36).substring(7),
       message:

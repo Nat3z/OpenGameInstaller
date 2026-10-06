@@ -456,7 +456,7 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
   {#if showRemoveConfirm}
     <Modal
       open={true}
-      size="small"
+      size="medium"
       priority="urgent"
       closeOnOverlayClick={false}
       onClose={() => {
@@ -464,7 +464,7 @@ function getInputOptions(option: ConfigurationOptionWire): string[] {
       }}
     >
       <TitleModal title={`Remove ${gameInfo.name}?`} />
-      <p class="mb-4 text-sm text-accent-dark">
+      <p class="mb-4 text-sm text-accent-dark break-words">
         This removes the game from your library and permanently deletes its
         files{gameInfo.cwd ? ` in ${gameInfo.cwd}` : ''}. If the folder is
         already gone, only the library entry is removed. This cannot be undone.

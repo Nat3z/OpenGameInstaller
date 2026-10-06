@@ -5,8 +5,7 @@ export default defineConfig({
   dialect: 'sqlite',
   schema: './src/electron/database/schema.ts',
   out: './drizzle',
-  // Studio reads the dev database (or OGI_DIRECTORY's) through @libsql/client,
-  // since better-sqlite3 is built for Electron and won't load under Node.
+  // Studio opens the dev database, or OGI_DIRECTORY's when set.
   dbCredentials: {
     url: join(process.env.OGI_DIRECTORY ?? './development', 'ogi.sqlite'),
   },

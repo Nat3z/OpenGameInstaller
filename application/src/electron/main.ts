@@ -81,7 +81,7 @@ async function handleLaunchHooks(
     registerMainHandlers(mainWindow);
     const startupResult = await runElectronEffect(runStartupTasks(mainWindow));
     if (startupResult.shutdownPending) {
-      shutdownForInstallerUpdate(mainWindow);
+      shutdownAfterStartup(mainWindow);
       return;
     }
     await startAddonRuntime();
@@ -120,7 +120,7 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
     // Run startup tasks first
     const startupResult = await runElectronEffect(runStartupTasks(mainWindow));
     if (startupResult.shutdownPending) {
-      shutdownForInstallerUpdate(mainWindow);
+      shutdownAfterStartup(mainWindow);
       return;
     }
     await startAddonRuntime();
@@ -462,7 +462,7 @@ async function startAppFlow(win: BrowserWindow) {
   }
 
   if (shutdownPending) {
-    shutdownForInstallerUpdate(win);
+    shutdownAfterStartup(win);
     return;
   }
 
@@ -485,7 +485,7 @@ async function startAppFlow(win: BrowserWindow) {
   }
 }
 
-function shutdownForInstallerUpdate(win: BrowserWindow): void {
+function shutdownAfterStartup(win: BrowserWindow): void {
   if (!win.isDestroyed()) {
     win.close();
     return;

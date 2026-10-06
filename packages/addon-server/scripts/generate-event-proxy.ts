@@ -101,10 +101,13 @@ export const buildEventMessage = <Event extends AddonServerToClientEventName>(
 `;
 
 await Bun.write(outputPath, generated);
-const format = Bun.spawn(['bunx', 'biome', 'check', '--write', outputPath], {
-  stdout: 'inherit',
-  stderr: 'inherit',
-});
+const format = Bun.spawn(
+  ['bun', 'x', 'biome', 'check', '--write', outputPath],
+  {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  }
+);
 if ((await format.exited) !== 0) {
   throw new Error(`Failed to format ${outputPath}`);
 }

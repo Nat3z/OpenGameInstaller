@@ -1,8 +1,10 @@
 import { formatError, UpdateError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import { join } from 'path';
+import { getDatabase } from '@/electron/database/index.js';
+import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { execute as executeMigrations } from '@/electron/migrations.js';
 import {
   reinstallAddonDependencies,
@@ -100,7 +102,7 @@ export function closeSplashWindow() {
 }
 
 export type StartupTasksResult = {
-  /** When true, an installer update is shutting the app down; do not load the main UI. */
+  /** When true, the app is shutting down (installer update or fatal startup error); do not load the main UI. */
   shutdownPending: boolean;
 };
 
@@ -116,7 +118,7 @@ export type StartupTasksResult = {
  */
 export function runStartupTasks(
   mainWindow?: BrowserWindow | null
-): Effect.Effect<StartupTasksResult, UpdateError> {
+): Effect.Effect<StartupTasksResult> {
   let shutdownPending = false;
 
   return Effect.scoped(
@@ -154,6 +156,18 @@ export function runStartupTasks(
         catch: (cause) =>
           new UpdateError({
             message: `Failed to restore startup backup: ${formatError(cause)}`,
+            cause,
+          }),
+      });
+
+      // Opened explicitly so a broken native module, unwritable data dir, or
+      // corrupt file fails startup with a reason instead of a fiber defect.
+      updateSplashStatus('Opening database...');
+      yield* Effect.try({
+        try: () => getDatabase(),
+        catch: (cause) =>
+          new UpdateError({
+            message: `Failed to open the database in ${dataDirectory}: ${formatError(cause)}`,
             cause,
           }),
       });
@@ -221,5 +235,23 @@ export function runStartupTasks(
 
       return { shutdownPending };
     })
-  );
+  ).pipe(Effect.catchTag('UpdateError', reportFatalStartupError));
+}
+
+/**
+ * A failed startup step leaves the app unusable, so tell the user why and quit
+ * rather than leaving them on the splash screen.
+ */
+function reportFatalStartupError(
+  error: UpdateError
+): Effect.Effect<StartupTasksResult> {
+  return Effect.gen(function* () {
+    yield* logger.error('[startup] Fatal startup error', error);
+    dialog.showErrorBox(
+      'OpenGameInstaller failed to start',
+      `${error.message}\n\nThe app will now close. Check the logs for details.`
+    );
+    app.quit();
+    return { shutdownPending: true };
+  });
 }

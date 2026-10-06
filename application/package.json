@@ -18,6 +18,9 @@
       "drizzle/**/*",
       "node_modules/**/*"
     ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "win": {},
     "linux": {
       "icon": "public/favicon-256x256.png",

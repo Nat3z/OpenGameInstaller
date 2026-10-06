@@ -28,7 +28,6 @@
     "yargs": "17.7.3"
   },
   "trustedDependencies": [
-    "better-sqlite3",
     "electron",
     "node-datachannel",
     "sharp"

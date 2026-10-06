@@ -293,7 +293,6 @@
   "trustedDependencies": [
     "electron",
     "sharp",
-    "better-sqlite3",
     "node-datachannel",
   ],
   "overrides": {

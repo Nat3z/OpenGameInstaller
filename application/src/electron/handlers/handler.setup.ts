@@ -37,8 +37,9 @@ const MAX_CONTENT_ROOT_DEPTH = 10;
  * Where downloads land: the configured location, every location configured
  * earlier this session, the location each persisted record was validated
  * under (so a resumed file download's folder survives a restart with a new
- * location), plus the recorded path of every in-flight or failed download. Setup only ever rewrites these, so a
- * game's install folder is deliberately not a valid target for mutation.
+ * location), plus the recorded path of every in-flight or failed download.
+ * Games install into their download folder, so updates may rewrite an
+ * installed game here (via old_files); folders outside these roots may not.
  * Roots broad enough to cover home or app data are dropped regardless of how
  * they were written (RPC, legacy import, or an older database).
  */

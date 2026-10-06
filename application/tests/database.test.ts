@@ -142,6 +142,8 @@ describe('legacy import', () => {
     write('library/11.json', game(11));
     write('library/12.json.ogi-removing-1-2', game(12));
     write('library/broken.json', 'nope');
+    // Parses but SQLite rejects it; must be skipped, not abort the import.
+    write('library/13.json', { ...game(13), titleImage: {} });
     write('internals/apps.json', [11, 10, 99]);
     write('internals/update-state.json', {
       requiredReadds: [{ appID: 10, steamAppId: 5 }, 3],

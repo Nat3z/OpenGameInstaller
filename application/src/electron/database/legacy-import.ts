@@ -1,12 +1,27 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import type { FailedSetup, PersistedDownload } from '@/lib/download-state.js';
 import type { Settings, UpdateState } from '@/lib/state.js';
 import type { AppDatabase } from './database.js';
 
 // One-shot import of the pre-4.4 JSON state directory. The source files are
 // left untouched so a downgrade still finds its data.
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
+
+/**
+ * Writes one legacy record, skipping it if SQLite rejects it. A single bad
+ * file must not roll back the import, or every launch would fail the same way.
+ */
+const importRecord = (source: string, write: () => void): void => {
+  try {
+    write();
+  } catch (cause) {
+    logger.sync.warn(`[database] Skipped legacy record ${source}`, cause);
+  }
+};
 
 const readJson = (path: string): unknown => {
   if (!existsSync(path)) return undefined;
@@ -129,14 +144,16 @@ const importLibrary = (directory: string, database: AppDatabase): void => {
     }
     const info = upgradeSteamEntry(readJson(join(libraryDirectory, file)));
     if (!isLibraryInfo(info)) continue;
-    database.saveGame({
-      ...info,
-      version: isString(info.version) ? info.version : '',
-      capsuleImage: isString(info.capsuleImage) ? info.capsuleImage : '',
-      coverImage: isString(info.coverImage) ? info.coverImage : '',
-      storefront: isString(info.storefront) ? info.storefront : '',
-      addonsource: isString(info.addonsource) ? info.addonsource : '',
-    });
+    importRecord(`library/${file}`, () =>
+      database.saveGame({
+        ...info,
+        version: isString(info.version) ? info.version : '',
+        capsuleImage: isString(info.capsuleImage) ? info.capsuleImage : '',
+        coverImage: isString(info.coverImage) ? info.coverImage : '',
+        storefront: isString(info.storefront) ? info.storefront : '',
+        addonsource: isString(info.addonsource) ? info.addonsource : '',
+      })
+    );
   }
   const recent = readJson(join(directory, 'internals/apps.json'));
   if (Array.isArray(recent)) {
@@ -208,12 +225,16 @@ export function importLegacyState(
         const addonId = file.match(/^([A-Za-z0-9_-]+)\.json$/)?.[1];
         const values = addonId && readJson(join(configDirectory, file));
         if (!addonId || !isRecord(values)) continue;
-        database.setAddonConfig(
-          addonId,
-          Object.fromEntries(
-            Object.entries(values).filter(
-              (entry): entry is [string, string | number | boolean] =>
-                isString(entry[1]) || isNumber(entry[1]) || isBoolean(entry[1])
+        importRecord(`config/${file}`, () =>
+          database.setAddonConfig(
+            addonId,
+            Object.fromEntries(
+              Object.entries(values).filter(
+                (entry): entry is [string, string | number | boolean] =>
+                  isString(entry[1]) ||
+                  isNumber(entry[1]) ||
+                  isBoolean(entry[1])
+              )
             )
           )
         );
@@ -229,20 +250,28 @@ export function importLegacyState(
       join(directory, 'in-progress-downloads')
     )) {
       if (isPersistedDownload(record)) {
-        database.saveDownload({
-          ...record,
-          updatedAt: isNumber(record.updatedAt) ? record.updatedAt : Date.now(),
-        });
+        importRecord(`in-progress-downloads/${record.id}`, () =>
+          database.saveDownload({
+            ...record,
+            updatedAt: isNumber(record.updatedAt)
+              ? record.updatedAt
+              : Date.now(),
+          })
+        );
       }
     }
     for (const record of readJsonDirectory(join(directory, 'failed-setups'))) {
       if (isFailedSetup(record)) {
-        database.saveFailedSetup({
-          ...record,
-          timestamp: isNumber(record.timestamp) ? record.timestamp : Date.now(),
-          retryCount: isNumber(record.retryCount) ? record.retryCount : 0,
-          error: isString(record.error) ? record.error : '',
-        });
+        importRecord(`failed-setups/${record.id}`, () =>
+          database.saveFailedSetup({
+            ...record,
+            timestamp: isNumber(record.timestamp)
+              ? record.timestamp
+              : Date.now(),
+            retryCount: isNumber(record.retryCount) ? record.retryCount : 0,
+            error: isString(record.error) ? record.error : '',
+          })
+        );
       }
     }
 

@@ -91,12 +91,8 @@ const validateSettingsPatch = (
       );
     }
     // Setup may rewrite anything under this root, so it must stay narrow.
-    // Only checked on change so an existing broad location doesn't block
-    // saving the rest of the general settings.
     if (
       typed.fileDownloadLocation !== undefined &&
-      typed.fileDownloadLocation !==
-        getDatabase().getSettings().fileDownloadLocation &&
       isUnsafeDownloadLocation(typed.fileDownloadLocation, dataDirectory)
     ) {
       return yield* invalid(

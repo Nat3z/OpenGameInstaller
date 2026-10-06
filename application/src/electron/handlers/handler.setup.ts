@@ -11,9 +11,13 @@ import {
   fsTryPromise,
   requireAbsolute,
 } from '@/electron/handlers/handler.fs.js';
-import { isProtectedDeletePath } from '@/electron/lib/delete-guards.js';
+import {
+  isProtectedDeletePath,
+  isUnsafeDownloadLocation,
+} from '@/electron/lib/delete-guards.js';
 import { getPersistedFilePaths } from '@/electron/lib/download-paths.js';
 import { sendIPCMessage } from '@/electron/main.js';
+import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
@@ -31,6 +35,8 @@ const MAX_CONTENT_ROOT_DEPTH = 10;
  * every in-flight or failed download (validated against the location that was
  * configured when they were saved). Setup only ever rewrites these, so a
  * game's install folder is deliberately not a valid target for mutation.
+ * Roots broad enough to cover home or app data are dropped regardless of how
+ * they were written (RPC, legacy import, or an older database).
  */
 const downloadRoots = (): string[] => {
   const database = getDatabase();
@@ -42,7 +48,10 @@ const downloadRoots = (): string[] => {
     ...database
       .listFailedSetups()
       .map((setup) => setup.downloadInfo.downloadPath),
-  ].filter((root) => root.trim() !== '');
+  ].filter(
+    (root) =>
+      root.trim() !== '' && !isUnsafeDownloadLocation(root, dataDirectory)
+  );
 };
 
 const requireWithin = (
@@ -234,6 +243,15 @@ const deleteDownloadFiles = (downloadId: string) =>
       getDatabase().getDownload(downloadId)
     );
     if (!record) return;
+    if (
+      isUnsafeDownloadLocation(record.downloadInfo.downloadPath, dataDirectory)
+    ) {
+      logger.sync.warn(
+        '[setup] Refusing to delete files under an unsafe download path',
+        record.downloadInfo.downloadPath
+      );
+      return;
+    }
     const paths = getPersistedFilePaths(record.downloadInfo);
     for (const target of paths) {
       yield* fsTryPromise(target, () =>

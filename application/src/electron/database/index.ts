@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { isAbsolute, join, resolve } from 'node:path';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import type BetterSqlite3 from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { app } from 'electron';
+import { isUnsafeDownloadLocation } from '@/electron/lib/delete-guards.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { AppDatabase } from './database.js';
 import { importLegacyState } from './legacy-import.js';
@@ -11,6 +13,8 @@ import { importLegacyState } from './legacy-import.js';
 export { AppDatabase } from './database.js';
 
 export const DATABASE_FILENAME = 'ogi.sqlite';
+
+const logger = createLogger(LOGGER_PREFIXES.electron);
 
 /** Bundled with the app so a packaged build can migrate on first launch. */
 export const migrationsFolder = (): string => join(app.getAppPath(), 'drizzle');
@@ -36,12 +40,20 @@ export function openDatabase(
   const opened = new AppDatabase(drizzle(client), migrations);
   importLegacyState(directory, opened);
   // The renderer used to resolve `./downloads` against the data dir; pin it so
-  // every process agrees and path guards can require absolute paths.
+  // every process agrees and path guards can require absolute paths. A
+  // location broad enough to cover home or app data (only reachable through
+  // older versions) falls back to the default folder.
   const { fileDownloadLocation } = opened.getSettings();
-  if (!isAbsolute(fileDownloadLocation)) {
+  const pinned = resolve(directory, fileDownloadLocation);
+  if (isUnsafeDownloadLocation(pinned, directory)) {
+    logger.sync.warn(
+      `[database] Download location ${pinned} is too broad; using the default`
+    );
     opened.updateSettings({
-      fileDownloadLocation: resolve(directory, fileDownloadLocation),
+      fileDownloadLocation: resolve(directory, 'downloads'),
     });
+  } else if (!isAbsolute(fileDownloadLocation)) {
+    opened.updateSettings({ fileDownloadLocation: pinned });
   }
   return opened;
 }

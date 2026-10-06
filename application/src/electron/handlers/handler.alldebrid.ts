@@ -98,9 +98,9 @@ export default function handler(_mainWindow: Electron.BrowserWindow) {
       run(
         readKey().pipe(
           Effect.map((key) => {
-            if (!key) return false;
-            allDebridClient = new AllDebrid({ apiKey: key });
-            return true;
+            // A cleared key must drop the old client, not keep using it.
+            allDebridClient = new AllDebrid({ apiKey: key ?? 'UNSET' });
+            return key !== null;
           })
         ),
         'Failed to update AllDebrid key'

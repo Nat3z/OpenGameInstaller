@@ -64,6 +64,14 @@ export function getDatabase(): AppDatabase {
   return database;
 }
 
+/**
+ * The database only if startup has already opened it. For callers that may run
+ * before `restoreBackup`, which must not be the ones to open (and cache) it.
+ */
+export function getOpenDatabase(): AppDatabase | undefined {
+  return database;
+}
+
 /** Test seam: replaces the process-wide database. */
 export function setDatabase(next: AppDatabase | undefined): void {
   database = next;

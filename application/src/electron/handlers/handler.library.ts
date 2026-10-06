@@ -332,6 +332,20 @@ export type ExecuteWrapperResult = {
   error?: string;
 };
 
+/**
+ * Records launch recency once the game has started. The game is already
+ * running by then, so a failed write is logged rather than reported as a
+ * failed launch.
+ */
+const markLaunched = (appID: number) =>
+  Effect.flatMap(Library, (library) => library.markLaunched(appID)).pipe(
+    Effect.catchAll((cause) =>
+      Effect.sync(() =>
+        logger.sync.warn('[launch] Could not record launch recency', cause)
+      )
+    )
+  );
+
 export function launchGameFromLibrary(
   appid: number | string,
   mainWindow?: Electron.BrowserWindow | null,
@@ -453,7 +467,7 @@ export function launchGameFromLibrary(
 
       // Already tracked by the pre-await add above; do not re-add here or a
       // fast crash's onExit delete would be resurrected.
-      yield* library.markLaunched(appInfo.appID);
+      yield* markLaunched(appInfo.appID);
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
       return { success: true };
     }
@@ -530,7 +544,7 @@ export function launchGameFromLibrary(
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
     });
 
-    yield* library.markLaunched(appInfo.appID);
+    yield* markLaunched(appInfo.appID);
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
     return { success: true };
   }).pipe(

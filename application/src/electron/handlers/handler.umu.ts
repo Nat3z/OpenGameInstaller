@@ -621,7 +621,16 @@ export function launchWithUmu(
       // Resolve immediately after successful spawn so caller can return; onExit runs when process exits
       resolve({ success: true, pid: child.pid });
     });
-  });
+  }).pipe(
+    // Prefix helpers throw synchronously (no home dir, EACCES); keep that a
+    // failed launch result instead of a defect.
+    Effect.catchAllDefect((defect) =>
+      Effect.succeed({
+        success: false,
+        error: defect instanceof Error ? defect.message : String(defect),
+      })
+    )
+  );
 }
 
 /**
@@ -839,7 +848,19 @@ export function installRedistributablesWithUmu(
             logger.sync.error('[umu] Redistributable error:', error);
             finalize(false);
           });
-        });
+        }).pipe(
+          // A synchronous throw (e.g. invalid spawn options) is a defect that
+          // the surrounding try/catch cannot see; count it as this item failing.
+          Effect.catchAllDefect((defect) =>
+            Effect.sync(() => {
+              logger.sync.error(
+                `[umu] Error installing ${redistributable.name}:`,
+                defect
+              );
+              return false;
+            })
+          )
+        );
 
         if (success) {
           completedCount++;
@@ -955,7 +976,26 @@ export function installRedistributablesWithUmu(
     // treating the whole setup as broken.
     if (!anyFailed) return 'success';
     return completedCount > 0 ? 'partial' : 'failed';
-  });
+  }).pipe(
+    // Prefix setup throws synchronously; report it as a finished, failed
+    // install so the renderer's progress does not hang on "installing".
+    Effect.catchAllDefect((defect) =>
+      Effect.sync(() => {
+        const error = defect instanceof Error ? defect.message : String(defect);
+        logger.sync.error('[umu] Redistributable install failed:', defect);
+        reportProgress?.({
+          kind: 'done',
+          total: 0,
+          completedCount: 0,
+          failedCount: 0,
+          overallProgress: 100,
+          result: 'failed',
+          error,
+        });
+        return 'failed' as const;
+      })
+    )
+  );
 }
 function initializePrefixWithUmuRun(
   libraryInfo: LibraryInfo,
@@ -1201,7 +1241,14 @@ export function migrateToUmu(
     }
     logger.sync.info('[umu] Migration completed successfully');
     return { success: true, libraryInfo: result.right };
-  });
+  }).pipe(
+    Effect.catchAllDefect((defect) =>
+      Effect.succeed({
+        success: false,
+        error: defect instanceof Error ? defect.message : String(defect),
+      })
+    )
+  );
 }
 
 const withUmuBoundary = <A>(

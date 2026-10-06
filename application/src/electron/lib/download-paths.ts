@@ -60,8 +60,11 @@ export function getPersistedFilePaths(
     const paths: string[] = [];
     for (const file of downloadInfo.files) {
       if (file.path) {
-        if (isPathContained(file.path, downloadRoot)) {
-          paths.push(file.path);
+        // Resolve against the root (not the process cwd) so the path that was
+        // checked is the one later handed to `fs.rm`.
+        const resolved = path.resolve(downloadRoot, file.path);
+        if (isPathContained(resolved, downloadRoot)) {
+          paths.push(resolved);
         } else {
           logger.sync.warn(
             'Rejected persisted file path outside download root:',

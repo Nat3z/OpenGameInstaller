@@ -5,7 +5,7 @@ import { formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import { join } from 'path';
-import { closeDatabase, getDatabase } from '@/electron/database/index.js';
+import { closeDatabase, getOpenDatabase } from '@/electron/database/index.js';
 import { startAddons } from '@/electron/handlers/handler.addon.js';
 import {
   awaitPendingFileDeletions,
@@ -174,10 +174,11 @@ if (process.platform === 'win32') {
 
 /* Sync IPC for initial theme: must be registered before renderer loads to avoid
    flash. Reads the database directly because it runs before the window exists
-   and Electron requires a synchronous return value. */
+   and Electron requires a synchronous return value. Never opens it: before
+   startup has (backup restore must run first) this falls back to light. */
 ipcMain.on('get-initial-theme', (event) => {
   try {
-    event.returnValue = getDatabase().getSettings().theme;
+    event.returnValue = getOpenDatabase()?.getSettings().theme ?? 'light';
   } catch {
     event.returnValue = 'light';
   }

@@ -50,23 +50,28 @@ export function deleteInstalledAddon(
       };
     }
 
-    yield* Effect.gen(function* () {
-      const settings = yield* Settings;
-      const database = yield* Database;
-      const addons = yield* settings.addons;
-      yield* settings.setAddons(
-        addons.filter((addon) => addon !== client.addonLink)
+    // Unlink and forget the addon in one transaction, keeping what was removed
+    // so a failed folder removal below can put it back.
+    const database = yield* Database;
+    const previous = yield* database
+      .transaction((db) => {
+        const { addons } = db.getSettings();
+        const config = db.getAddonConfig(addonID);
+        db.updateSettings({
+          addons: addons.filter((addon) => addon !== client.addonLink),
+        });
+        db.deleteAddonConfig(addonID);
+        return { addons, config };
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new FileSystemError({
+              message: `Failed to update addon configuration: ${String(cause)}`,
+              cause,
+            })
+        )
       );
-      yield* database.addonConfig.delete(addonID);
-    }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new FileSystemError({
-            message: `Failed to update addon configuration: ${String(cause)}`,
-            cause,
-          })
-      )
-    );
 
     yield* restartAddonServer();
     yield* Effect.sleep('1 second');
@@ -88,10 +93,23 @@ export function deleteInstalledAddon(
       )
     );
 
-    if (removed) yield* logger.info('Addon removed from addons folder');
-    return removed
-      ? { success: true }
-      : { success: false, message: 'Failed to remove addon' };
+    if (removed) {
+      yield* logger.info('Addon removed from addons folder');
+      return { success: true };
+    }
+    // The folder is still there, so keep it linked and configured.
+    yield* database
+      .transaction((db) => {
+        db.updateSettings({ addons: previous.addons });
+        if (previous.config) db.setAddonConfig(addonID, previous.config);
+      })
+      .pipe(
+        Effect.catchAll((error) =>
+          logger.error('Failed to restore addon after removal failed', error)
+        )
+      );
+    yield* restartAddonServer();
+    return { success: false, message: 'Failed to remove addon' };
   });
 }
 

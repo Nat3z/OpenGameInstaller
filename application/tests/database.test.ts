@@ -152,13 +152,23 @@ describe('legacy import', () => {
     write('in-progress-downloads/d1.json', {
       id: 'd1',
       updatedAt: 5,
-      downloadInfo: { id: 'd1', appID: 10, status: 'paused' },
+      downloadInfo: {
+        id: 'd1',
+        appID: 10,
+        status: 'paused',
+        downloadPath: '/dl/d1',
+      },
+    });
+    // No downloadPath: setup would treat it as a root, so it is skipped.
+    write('in-progress-downloads/d2.json', {
+      id: 'd2',
+      downloadInfo: { id: 'd2', appID: 10, status: 'paused' },
     });
     write('failed-setups/f1.json', {
       id: 'f1',
       timestamp: 6,
       retryCount: 1,
-      downloadInfo: { id: 'f1', appID: 10 },
+      downloadInfo: { id: 'f1', appID: 10, downloadPath: '/dl/f1' },
       setupData: {},
       error: 'boom',
       should: 'call-addon',
@@ -192,6 +202,7 @@ describe('legacy import', () => {
       requiredReadds: [{ appID: 10, steamAppId: 5 }],
       dismissedUpdates: [{ appID: 11, updateVersion: '9' }],
     });
+    expect(db.listDownloads()).toHaveLength(1);
     expect(db.listDownloads()[0]).toMatchObject({ id: 'd1', updatedAt: 5 });
     expect(db.listFailedSetups()[0]).toMatchObject({ id: 'f1', error: 'boom' });
     expect(fs.existsSync(path.join(directory, 'library/10.json'))).toBe(true);
@@ -217,5 +228,13 @@ describe('download path containment', () => {
         files: [{ name: 'evil', path: `${root}/../../etc/passwd` }],
       })
     ).toEqual([`${root}/evil`]);
+    // A name that merely starts with '..' is still inside the root.
+    const dotted = `${root}${process.platform === 'win32' ? '\\' : '/'}..cache`;
+    expect(
+      getPersistedFilePaths({
+        downloadPath: root,
+        files: [{ name: '..cache', path: dotted }],
+      })
+    ).toEqual([dotted]);
   });
 });

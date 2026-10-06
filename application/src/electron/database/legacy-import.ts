@@ -183,17 +183,23 @@ const importUpdateState = (directory: string): UpdateState | undefined => {
   return { requiredReadds, dismissedUpdates };
 };
 
+// Setup treats every stored downloadPath as a root, so it must be usable.
+const hasDownloadPath = (downloadInfo: Record<string, unknown>): boolean =>
+  isString(downloadInfo.downloadPath) && downloadInfo.downloadPath !== '';
+
 const isPersistedDownload = (value: unknown): value is PersistedDownload =>
   isRecord(value) &&
   isString(value.id) &&
   isRecord(value.downloadInfo) &&
   isString(value.downloadInfo.id) &&
-  isNumber(value.downloadInfo.appID);
+  isNumber(value.downloadInfo.appID) &&
+  hasDownloadPath(value.downloadInfo);
 
 const isFailedSetup = (value: unknown): value is FailedSetup =>
   isRecord(value) &&
   isString(value.id) &&
   isRecord(value.downloadInfo) &&
+  hasDownloadPath(value.downloadInfo) &&
   isRecord(value.setupData) &&
   (value.should === 'call-addon' ||
     value.should === 'call-unrar' ||

@@ -10,6 +10,7 @@ import {
   isProtectedDeletePath,
   isUnsafeDownloadLocation,
 } from '@/electron/lib/delete-guards.js';
+import { sessionDownloadLocations } from '@/electron/lib/download-paths.js';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
@@ -171,9 +172,6 @@ const validateAddonConfig = (
     return values as AddonConfigValues;
   });
 
-/** Every download location configured while this process has been running. */
-const sessionDownloadLocations = new Set<string>();
-
 /**
  * Persisted download paths later serve as roots for file deletion and setup
  * writes, so they must sit inside a download location. A download keeps the
@@ -328,6 +326,9 @@ const isPrivateHost = (hostname: string): boolean => {
   return false;
 };
 
+const IMAGE_TIMEOUT_MS = 15_000;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
 const EXTENSION_MIME: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -372,7 +373,19 @@ const loadImage = (url: string) =>
 
     const response = yield* Effect.tryPromise({
       try: () =>
-        axios.get<ArrayBuffer>(parsed.href, { responseType: 'arraybuffer' }),
+        axios.get<ArrayBuffer>(parsed.href, {
+          responseType: 'arraybuffer',
+          timeout: IMAGE_TIMEOUT_MS,
+          maxContentLength: MAX_IMAGE_BYTES,
+          maxRedirects: 5,
+          // Redirects are followed internally; re-check each hop so a public
+          // URL cannot bounce the main process onto a local service.
+          beforeRedirect: (options: { hostname?: string }) => {
+            if (isPrivateHost(options.hostname ?? '')) {
+              throw new Error('Image redirect targets a local host');
+            }
+          },
+        }),
       catch: (cause) =>
         new ConfigError({
           message: `Failed to fetch image: ${formatError(cause)}`,

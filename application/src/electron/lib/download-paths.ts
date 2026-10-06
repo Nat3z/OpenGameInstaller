@@ -102,6 +102,15 @@ function isPathContained(candidatePath: string, baseDir: string): boolean {
   const relative = path.relative(base, target);
   return (
     relative === '' ||
-    (!relative.startsWith('..') && !path.isAbsolute(relative))
+    (relative !== '..' &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
   );
 }
+
+/**
+ * Every download location configured while this process has been running.
+ * A download keeps the root it started under, so state validation and setup
+ * both accept these after the user changes the location mid-download.
+ */
+export const sessionDownloadLocations = new Set<string>();

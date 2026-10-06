@@ -6,7 +6,11 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
 import { getDatabase } from '@/electron/database/index.js';
-import { isProtectedDeletePath } from '@/electron/lib/delete-guards.js';
+import {
+  isProtectedDeletePath,
+  isUnsafeDownloadLocation,
+} from '@/electron/lib/delete-guards.js';
+import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import type { FailedSetup, PersistedDownload } from '@/lib/download-state.js';
@@ -83,6 +87,20 @@ const validateSettingsPatch = (
     ) {
       return yield* invalid(
         'fileDownloadLocation must be an absolute path',
+        'fileDownloadLocation'
+      );
+    }
+    // Setup may rewrite anything under this root, so it must stay narrow.
+    // Only checked on change so an existing broad location doesn't block
+    // saving the rest of the general settings.
+    if (
+      typed.fileDownloadLocation !== undefined &&
+      typed.fileDownloadLocation !==
+        getDatabase().getSettings().fileDownloadLocation &&
+      isUnsafeDownloadLocation(typed.fileDownloadLocation, dataDirectory)
+    ) {
+      return yield* invalid(
+        'fileDownloadLocation cannot contain the home or OpenGameInstaller data directory',
         'fileDownloadLocation'
       );
     }

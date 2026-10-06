@@ -9,6 +9,7 @@ import {
   type DeleteGuardRoots,
   filesystemRoot,
   isProtectedDeletePath,
+  isUnsafeDownloadLocation,
   normalizeDeletePath,
   planGameFileDeletion,
   sharesDirectoryWithOtherGames,
@@ -172,6 +173,28 @@ describe('normalizeDeletePath', () => {
       ).toBe(true);
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('isUnsafeDownloadLocation', () => {
+  test('rejects roots that contain home or app state, allows narrow folders', () => {
+    const data = join(homedir(), '.local', 'share', 'OpenGameInstaller');
+    for (const unsafe of [
+      filesystemRoot(),
+      homedir(),
+      join(homedir(), '.local'),
+      data,
+      join(data, 'addons', 'x'),
+    ]) {
+      expect(isUnsafeDownloadLocation(unsafe, data)).toBe(true);
+    }
+    for (const safe of [
+      join(data, 'downloads'),
+      join(homedir(), 'Games'),
+      join(filesystemRoot(), 'mnt', 'games'),
+    ]) {
+      expect(isUnsafeDownloadLocation(safe, data)).toBe(false);
     }
   });
 });

@@ -330,15 +330,21 @@ async function sendDownloadLocation(event: MouseEvent) {
     'input[data-dwloc]'
   )!! as HTMLInputElement;
   downloadLocation = htmlElement.value;
-  if (
-    downloadLocation === '' ||
-    !(await runFrontendEffect(
+  // Saved now so the main process can reject a location that is too broad
+  // (e.g. the home folder) here, rather than failing at the end of setup.
+  const accepted =
+    downloadLocation !== '' &&
+    (await runFrontendEffect(
       electronRpc.fs
         .pathExists(downloadLocation)
         .pipe(Effect.orElseSucceed(() => false))
-    ))
-  ) {
-    logger.sync.error('No download location selected');
+    )) &&
+    (await updateSettings({ fileDownloadLocation: downloadLocation }).then(
+      () => true,
+      () => false
+    ));
+  if (!accepted) {
+    logger.sync.error('Invalid download location selected');
     const button = event.target as HTMLButtonElement;
     button.textContent = 'Invalid location';
     button.style.backgroundColor = '#f55045';

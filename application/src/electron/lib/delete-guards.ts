@@ -158,6 +158,29 @@ export const appMetadataSubtrees = (dataDir: string): string[] => [
 ];
 
 /**
+ * Whether `location` is too broad to be a download root. Setup may move,
+ * extract into, and delete anything beneath it, so it must not contain the
+ * home or data directory, nor sit inside the app's metadata. System
+ * directories are left to OS permissions so `/var/home` and `/Volumes`
+ * layouts stay usable.
+ */
+export const isUnsafeDownloadLocation = (
+  location: string,
+  dataDir: string
+): boolean => {
+  const resolved = normalizeDeletePath(location);
+  return (
+    [homedir(), dataDir].some((path) =>
+      containsOrEquals(resolved, normalizeDeletePath(path))
+    ) ||
+    isProtectedDeletePath(location, {
+      exact: [],
+      subtrees: appMetadataSubtrees(dataDir),
+    })
+  );
+};
+
+/**
  * System directories no game install should ever live in. Kept separate from
  * the filesystem root so legitimate install locations on the same drive stay
  * deletable.

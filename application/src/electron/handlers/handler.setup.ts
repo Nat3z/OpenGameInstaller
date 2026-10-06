@@ -35,9 +35,9 @@ const MAX_CONTENT_ROOT_DEPTH = 10;
 
 /**
  * Where downloads land: the configured location, every location configured
- * earlier this session, plus the recorded path of every in-flight or failed
- * download (validated against the location that was
- * configured when they were saved). Setup only ever rewrites these, so a
+ * earlier this session, the location each persisted record was validated
+ * under (so a resumed file download's folder survives a restart with a new
+ * location), plus the recorded path of every in-flight or failed download. Setup only ever rewrites these, so a
  * game's install folder is deliberately not a valid target for mutation.
  * Roots broad enough to cover home or app data are dropped regardless of how
  * they were written (RPC, legacy import, or an older database).
@@ -47,6 +47,7 @@ const downloadRoots = (): string[] => {
   return [
     database.getSettings().fileDownloadLocation,
     ...sessionDownloadLocations,
+    ...database.listDownloadRoots(),
     ...database
       .listDownloads()
       .map((record) => record.downloadInfo.downloadPath),

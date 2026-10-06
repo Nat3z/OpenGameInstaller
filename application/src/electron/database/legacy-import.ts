@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import type { FailedSetup, PersistedDownload } from '@/lib/download-state.js';
@@ -252,31 +252,43 @@ export function importLegacyState(
     const updateState = importUpdateState(directory);
     if (updateState) database.setUpdateState(updateState);
 
+    // Legacy records were all written under the configured location at the
+    // time (relative paths meant the data dir), so that is their setup root.
+    const legacyRoot = resolve(
+      directory,
+      database.getSettings().fileDownloadLocation
+    );
     for (const record of readJsonDirectory(
       join(directory, 'in-progress-downloads')
     )) {
       if (isPersistedDownload(record)) {
         importRecord(`in-progress-downloads/${record.id}`, () =>
-          database.saveDownload({
-            ...record,
-            updatedAt: isNumber(record.updatedAt)
-              ? record.updatedAt
-              : Date.now(),
-          })
+          database.saveDownload(
+            {
+              ...record,
+              updatedAt: isNumber(record.updatedAt)
+                ? record.updatedAt
+                : Date.now(),
+            },
+            legacyRoot
+          )
         );
       }
     }
     for (const record of readJsonDirectory(join(directory, 'failed-setups'))) {
       if (isFailedSetup(record)) {
         importRecord(`failed-setups/${record.id}`, () =>
-          database.saveFailedSetup({
-            ...record,
-            timestamp: isNumber(record.timestamp)
-              ? record.timestamp
-              : Date.now(),
-            retryCount: isNumber(record.retryCount) ? record.retryCount : 0,
-            error: isString(record.error) ? record.error : '',
-          })
+          database.saveFailedSetup(
+            {
+              ...record,
+              timestamp: isNumber(record.timestamp)
+                ? record.timestamp
+                : Date.now(),
+              retryCount: isNumber(record.retryCount) ? record.retryCount : 0,
+              error: isString(record.error) ? record.error : '',
+            },
+            legacyRoot
+          )
         );
       }
     }

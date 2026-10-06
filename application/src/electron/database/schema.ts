@@ -107,6 +107,8 @@ export const libraryRemovals = sqliteTable('library_removals', {
 export const downloads = sqliteTable('downloads', {
   id: text('id').primaryKey(),
   appId: integer('app_id').notNull(),
+  /** Download location the record was first validated under; a setup root. */
+  root: text('root'),
   status: text('status').notNull(),
   updatedAt: integer('updated_at').notNull(),
   downloadInfo: json<DownloadStatusAndInfo>('download_info').notNull(),
@@ -117,6 +119,8 @@ export const downloads = sqliteTable('downloads', {
 
 export const failedSetups = sqliteTable('failed_setups', {
   id: text('id').primaryKey(),
+  /** Download location the record was first validated under; a setup root. */
+  root: text('root'),
   timestamp: integer('timestamp').notNull(),
   retryCount: integer('retry_count').notNull().default(0),
   downloadInfo: json<FailedSetup['downloadInfo']>('download_info').notNull(),

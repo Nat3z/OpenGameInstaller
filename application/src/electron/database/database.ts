@@ -351,7 +351,8 @@ export class AppDatabase {
     };
   }
 
-  saveDownload(record: PersistedDownload): void {
+  /** `root` is only written on insert; a record keeps its original location. */
+  saveDownload(record: PersistedDownload, root: string | null = null): void {
     const row = {
       id: record.id,
       appId: record.downloadInfo.appID,
@@ -362,7 +363,7 @@ export class AppDatabase {
     };
     this.db
       .insert(schema.downloads)
-      .values(row)
+      .values({ ...row, root })
       .onConflictDoUpdate({ target: schema.downloads.id, set: row })
       .run();
   }
@@ -372,25 +373,65 @@ export class AppDatabase {
   }
 
   listFailedSetups(): FailedSetup[] {
-    return this.db.select().from(schema.failedSetups).all();
+    return this.db
+      .select()
+      .from(schema.failedSetups)
+      .all()
+      .map(({ root: _root, ...setup }) => setup);
   }
 
   getFailedSetup(id: string): FailedSetup | null {
-    return (
-      this.db
-        .select()
-        .from(schema.failedSetups)
-        .where(eq(schema.failedSetups.id, id))
-        .get() ?? null
-    );
+    const row = this.db
+      .select()
+      .from(schema.failedSetups)
+      .where(eq(schema.failedSetups.id, id))
+      .get();
+    if (!row) return null;
+    const { root: _root, ...setup } = row;
+    return setup;
   }
 
-  saveFailedSetup(setup: FailedSetup): void {
+  /** `root` is only written on insert; a record keeps its original location. */
+  saveFailedSetup(setup: FailedSetup, root: string | null = null): void {
     this.db
       .insert(schema.failedSetups)
-      .values(setup)
+      .values({ ...setup, root })
       .onConflictDoUpdate({ target: schema.failedSetups.id, set: setup })
       .run();
+  }
+
+  /** Download locations that persisted records were validated under. */
+  listDownloadRoots(): string[] {
+    const roots = [
+      ...this.db
+        .select({ root: schema.downloads.root })
+        .from(schema.downloads)
+        .all(),
+      ...this.db
+        .select({ root: schema.failedSetups.root })
+        .from(schema.failedSetups)
+        .all(),
+    ]
+      .map((row) => row.root)
+      .filter((root): root is string => root !== null && root !== '');
+    return [...new Set(roots)];
+  }
+
+  /** The download location a persisted record was first validated under. */
+  getDownloadRoot(id: string): string | null {
+    return (
+      this.db
+        .select({ root: schema.downloads.root })
+        .from(schema.downloads)
+        .where(eq(schema.downloads.id, id))
+        .get()?.root ??
+      this.db
+        .select({ root: schema.failedSetups.root })
+        .from(schema.failedSetups)
+        .where(eq(schema.failedSetups.id, id))
+        .get()?.root ??
+      null
+    );
   }
 
   deleteFailedSetup(id: string): void {

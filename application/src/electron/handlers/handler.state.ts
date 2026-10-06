@@ -176,7 +176,8 @@ const validateAddonConfig = (
  * Persisted download paths later serve as roots for file deletion and setup
  * writes, so they must sit inside a download location. A download keeps the
  * root it started under: changing the location mid-download (or across a
- * restart, via its own earlier record) must not strand its later saves.
+ * restart, via its stored root) must not strand its later saves. Resolves to
+ * the location the path was validated under, which is stored with the record.
  */
 const validateDownloadPath = (
   id: string,
@@ -188,13 +189,23 @@ const validateDownloadPath = (
   const database = getDatabase();
   const location = database.getSettings().fileDownloadLocation;
   sessionDownloadLocations.add(location);
-  const roots = [
+  const storedRoot = database.getDownloadRoot(id);
+  // The record's own root first, so a resave keeps the root it started under.
+  const root = [
+    storedRoot,
+    location,
     ...sessionDownloadLocations,
     database.getDownload(id)?.downloadInfo.downloadPath,
     database.getFailedSetup(id)?.downloadInfo.downloadPath,
-  ].filter((root): root is string => root !== undefined && root !== '');
-  return isProtectedDeletePath(downloadPath, { exact: [], subtrees: roots })
-    ? Effect.succeed(downloadPath)
+  ].find(
+    (candidate): candidate is string =>
+      candidate !== null &&
+      candidate !== undefined &&
+      candidate !== '' &&
+      isProtectedDeletePath(downloadPath, { exact: [], subtrees: [candidate] })
+  );
+  return root !== undefined
+    ? Effect.succeed(root)
     : invalid(
         'downloadInfo.downloadPath must be inside the download location',
         'downloadPath'
@@ -205,7 +216,10 @@ const validateDownloadPath = (
 // the database keys on or later trusts as paths are checked.
 const validateDownload = (
   record: unknown
-): Effect.Effect<PersistedDownload, ValidationError> =>
+): Effect.Effect<
+  { record: PersistedDownload; root: string },
+  ValidationError
+> =>
   Effect.gen(function* () {
     if (typeof record !== 'object' || record === null) {
       return yield* invalid('Download record must be an object', 'record');
@@ -235,16 +249,16 @@ const validateDownload = (
         'downloadInfo.appID'
       );
     }
-    yield* validateDownloadPath(
+    const root = yield* validateDownloadPath(
       candidate.id,
       candidate.downloadInfo.downloadPath
     );
-    return candidate;
+    return { record: candidate, root };
   });
 
 const validateFailedSetup = (
   setup: unknown
-): Effect.Effect<FailedSetup, ValidationError> =>
+): Effect.Effect<{ setup: FailedSetup; root: string }, ValidationError> =>
   Effect.gen(function* () {
     if (typeof setup !== 'object' || setup === null) {
       return yield* invalid('Failed setup must be an object', 'setup');
@@ -259,11 +273,11 @@ const validateFailedSetup = (
         'should'
       );
     }
-    yield* validateDownloadPath(
+    const root = yield* validateDownloadPath(
       candidate.id,
       candidate.downloadInfo?.downloadPath
     );
-    return candidate;
+    return { setup: candidate, root };
   });
 
 const validateUpdateState = (
@@ -475,7 +489,9 @@ export default function stateHandler() {
     procedure(ElectronRpc.state.saveDownload, (record: unknown) =>
       runBoundary(
         validateDownload(record).pipe(
-          Effect.map((validated) => getDatabase().saveDownload(validated))
+          Effect.map(({ record, root }) =>
+            getDatabase().saveDownload(record, root)
+          )
         )
       )
     ),
@@ -488,7 +504,9 @@ export default function stateHandler() {
     procedure(ElectronRpc.state.saveFailedSetup, (setup: unknown) =>
       runBoundary(
         validateFailedSetup(setup).pipe(
-          Effect.map((validated) => getDatabase().saveFailedSetup(validated))
+          Effect.map(({ setup, root }) =>
+            getDatabase().saveFailedSetup(setup, root)
+          )
         )
       )
     ),

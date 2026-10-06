@@ -105,6 +105,36 @@ describe('AppDatabase', () => {
   });
 });
 
+describe('download roots', () => {
+  test('keep the location a record was first saved under', () => {
+    const file = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'ogi-roots-')),
+      'ogi.sqlite'
+    );
+    temporary.push(path.dirname(file));
+    const record = {
+      id: 'd1',
+      updatedAt: 1,
+      downloadInfo: {
+        id: 'd1',
+        appID: 10,
+        status: 'downloading',
+        downloadPath: '/old/Game/part1.rar',
+      },
+    } as unknown as Parameters<AppDatabase['saveDownload']>[0];
+    const first = open(file);
+    first.saveDownload(record, '/old');
+    // A resave under a new location must not move the record's root.
+    first.saveDownload(record, '/new');
+    first.close();
+
+    const reopened = open(file);
+    expect(reopened.getDownloadRoot('d1')).toBe('/old');
+    expect(reopened.listDownloadRoots()).toEqual(['/old']);
+    expect(reopened.getDownload('d1')).not.toHaveProperty('root');
+  });
+});
+
 describe('legacy import', () => {
   test('imports the JSON layout once and leaves it in place', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ogi-legacy-'));

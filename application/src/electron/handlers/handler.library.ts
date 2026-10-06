@@ -1108,7 +1108,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     ElectronRpc.app.getMissingApps,
     ipcBoundary(() =>
       Effect.filter(
-        getAllLibraryFiles(),
+        getAllLibraryEntries(),
         ({ cwd }) =>
           cwd
             ? Effect.promise(() => isMissingPath(cwd))

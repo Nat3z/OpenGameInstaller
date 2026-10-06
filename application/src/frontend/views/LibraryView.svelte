@@ -3,14 +3,17 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onDestroy, onMount, tick } from 'svelte';
 import { type Writable, writable } from 'svelte/store';
+import MissingGamesModal from '@/frontend/components/built/MissingGamesModal.svelte';
 import Image from '@/frontend/components/Image.svelte';
 import PlayPage from '@/frontend/components/PlayPage.svelte';
 import MigrateIcon from '@/frontend/Icons/MigrateIcon.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
 import {
   filterLibrary,
+  findMissingGames,
   getAllApps,
   getRecentlyPlayed,
+  keepMissingGames,
   sortLibraryAlphabetically,
 } from '@/frontend/lib/core/library';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
@@ -33,6 +36,7 @@ let osLoading = $state(true);
 let revealLibraryEntries = $state(false);
 let revealLibraryDelayActive = $state(false);
 let revealLibraryTimer: ReturnType<typeof setTimeout> | undefined;
+let missingGames: LibraryInfo[] = $state([]);
 
 let { exitPlayPage = $bindable() } = $props();
 
@@ -63,7 +67,16 @@ async function reloadLibrary() {
   // Update filtered games
   filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
 
+  missingGames = findMissingGames(library);
+
   loading = false;
+}
+
+function closeMissingGames(removedAny: boolean) {
+  // Whatever wasn't removed stays in the library; don't nag about it again.
+  keepMissingGames(missingGames.map((app) => app.appID));
+  missingGames = [];
+  if (removedAny) void reloadLibrary();
 }
 
 async function runInitialLibraryReveal() {
@@ -392,6 +405,10 @@ onDestroy(() => {
     {/if}
   </div>
 {/key}
+
+{#if missingGames.length > 0 && !$selectedApp}
+  <MissingGamesModal games={missingGames} onClose={closeMissingGames} />
+{/if}
 
 <style>
   .library-entry-shell {

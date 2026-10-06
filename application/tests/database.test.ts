@@ -267,4 +267,22 @@ describe('download path containment', () => {
       })
     ).toEqual([dotted]);
   });
+
+  test('rejects stored paths that leave the root through a symlink', async () => {
+    const { getPersistedFilePaths } = await import(
+      '../src/electron/lib/download-paths.js'
+    );
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ogi-link-'));
+    temporary.push(base);
+    const root = path.join(base, 'root');
+    fs.mkdirSync(root);
+    fs.mkdirSync(path.join(base, 'outside'));
+    fs.symlinkSync(path.join(base, 'outside'), path.join(root, 'link'), 'dir');
+    expect(
+      getPersistedFilePaths({
+        downloadPath: root,
+        files: [{ name: 'victim', path: path.join(root, 'link', 'victim') }],
+      })
+    ).toEqual([`${root}/victim`]);
+  });
 });

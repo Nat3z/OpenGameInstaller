@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import { normalizeDeletePath } from '@/electron/lib/delete-guards.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -95,10 +96,16 @@ export function getPersistedFilePaths(
   return [];
 }
 
-/** Whether `candidatePath` resolves to `baseDir` or somewhere beneath it. */
+/**
+ * Whether `candidatePath` resolves to `baseDir` or somewhere beneath it.
+ * Compared after realpath so an interior symlink can't point a recursive
+ * delete outside the root (`fs.rm` follows symlinks in parent segments).
+ */
 function isPathContained(candidatePath: string, baseDir: string): boolean {
-  const base = path.resolve(baseDir);
-  const target = path.resolve(base, candidatePath);
+  const base = normalizeDeletePath(baseDir);
+  const target = normalizeDeletePath(
+    path.resolve(path.resolve(baseDir), candidatePath)
+  );
   const relative = path.relative(base, target);
   return (
     relative === '' ||

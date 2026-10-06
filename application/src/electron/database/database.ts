@@ -481,11 +481,6 @@ export class AppDatabase {
 
   // ---- lifecycle ------------------------------------------------------------
 
-  /** Folds the write-ahead log into the main file so a plain copy is complete. */
-  checkpoint(): void {
-    this.db.all(sql.raw('PRAGMA wal_checkpoint(TRUNCATE)'));
-  }
-
   /** Writes a consistent copy of the database to `destination`. */
   backup(destination: string): void {
     this.db.run(sql`VACUUM INTO ${destination}`);

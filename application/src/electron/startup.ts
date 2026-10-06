@@ -15,7 +15,7 @@ import {
 } from 'original-fs';
 import path, { dirname, isAbsolute, join, resolve } from 'path';
 import semver from 'semver';
-import { getDatabase } from '@/electron/database/index.js';
+import { DATABASE_FILENAME, getDatabase } from '@/electron/database/index.js';
 import { loadMarketplace } from '@/electron/handlers/handler.addon.js';
 import {
   normalizeAddonLink,
@@ -510,6 +510,13 @@ export async function restoreBackup(
       }
 
       logger.sync.info(`[backup] Restoring ${file}`);
+
+      // A leftover WAL would be replayed onto the restored snapshot.
+      if (file === DATABASE_FILENAME) {
+        for (const sidecar of ['-wal', '-shm']) {
+          rmSync(destination + sidecar, { force: true });
+        }
+      }
 
       // Copy files asynchronously with progress
       for await (const result of copyDirectoryAsyncRestore(

@@ -59,14 +59,8 @@ export type InstallerUpdateResult = {
   error?: string;
 };
 
-// The database holds every piece of app state; its WAL and shared-memory
-// sidecars are copied too in case a checkpoint could not fold them in.
-const filesToBackup = [
-  'addons',
-  DATABASE_FILENAME,
-  `${DATABASE_FILENAME}-wal`,
-  `${DATABASE_FILENAME}-shm`,
-];
+// App state lives in the database, which is snapshotted separately.
+const filesToBackup = ['addons'];
 // Directories to skip during backup (addon dependencies will be reinstalled)
 const dirsToSkip = ['node_modules'];
 let __dirname = isDev()
@@ -176,15 +170,8 @@ async function backupFilesAsync(
   // which `restoreBackup` also writes back into.
   const sourceRoot = dataDirectory;
 
-  // Fold the write-ahead log into the main file so a plain copy is complete.
-  try {
-    getDatabase().checkpoint();
-  } catch (cause) {
-    logger.sync.warn('[updater] Could not checkpoint the database', cause);
-  }
-
-  // First, count total files to backup
-  let totalFiles = 0;
+  // First, count total files to backup (plus the database snapshot)
+  let totalFiles = 1;
   for (const file of filesToBackup) {
     const source = join(sourceRoot, file);
     totalFiles += countFilesToBackup(source);
@@ -200,6 +187,16 @@ async function backupFilesAsync(
   let copiedFiles = 0;
   let failedFiles: string[] = [];
   let needsAddonReinstall = false;
+
+  // The database stays open and keeps taking writes during the backup, so a
+  // file copy could tear; VACUUM INTO writes a consistent snapshot instead.
+  try {
+    getDatabase().backup(join(tempFolder, DATABASE_FILENAME));
+    copiedFiles++;
+  } catch (cause) {
+    logger.sync.error('[updater] Could not snapshot the database', cause);
+    failedFiles.push(DATABASE_FILENAME);
+  }
 
   for (const file of filesToBackup) {
     const source = join(sourceRoot, file);

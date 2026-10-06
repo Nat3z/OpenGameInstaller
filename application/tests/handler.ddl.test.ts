@@ -68,6 +68,16 @@ mock.module('@/electron/lib/online.js', () => ({
 mock.module('@/electron/main.js', () => ({
   sendNotification: mock(() => {}),
 }));
+// better-sqlite3 is an Electron-side N-API addon that aborts the bun process
+// when loaded, so opening the real database here must fail like a missing
+// driver instead.
+mock.module('better-sqlite3', () => ({
+  default: class {
+    constructor() {
+      throw new Error('better-sqlite3 is not available under bun test');
+    }
+  },
+}));
 // `mock.module` is process-wide, so this stands in for manager.config in every
 // test file of the run. It reads the injected database when there is one so
 // suites that seed real settings still see them.

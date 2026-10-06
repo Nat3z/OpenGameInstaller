@@ -41,9 +41,9 @@ function keepAll() {
 }
 
 // Removes sequentially since each removal may ask to confirm Steam shortcut
-// cleanup. keepFiles guarantees a folder that reappeared (e.g. a drive
-// reconnected) is never deleted. Failed removals aren't reported as kept, so
-// they're offered again on the next check.
+// cleanup. onlyIfMissing makes the main process skip any game whose folder
+// came back (e.g. a drive reconnected) and never delete files. Failed removals
+// aren't reported as kept, so they're offered again on the next check.
 async function removeSelected() {
   busy = true;
   let removed = 0;

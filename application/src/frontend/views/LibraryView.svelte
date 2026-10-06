@@ -37,6 +37,8 @@ let revealLibraryEntries = $state(false);
 let revealLibraryDelayActive = $state(false);
 let revealLibraryTimer: ReturnType<typeof setTimeout> | undefined;
 let missingGames: LibraryInfo[] = $state([]);
+// Bumped per check and on close so a stale result never reopens the modal.
+let missingGamesCheck = 0;
 
 let { exitPlayPage = $bindable() } = $props();
 
@@ -73,8 +75,10 @@ async function reloadLibrary() {
 
 // Runs apart from reloadLibrary so the folder checks never delay the grid.
 async function checkMissingGames() {
+  const check = ++missingGamesCheck;
   try {
-    missingGames = await findMissingGames();
+    const games = await findMissingGames();
+    if (check === missingGamesCheck) missingGames = games;
   } catch (err) {
     logger.sync.error('Failed to check for missing games:', err);
   }
@@ -82,6 +86,7 @@ async function checkMissingGames() {
 
 function closeMissingGames(kept: number[], removedAny: boolean) {
   keepMissingGames(kept);
+  missingGamesCheck++;
   missingGames = [];
   if (removedAny) void reloadLibrary();
 }

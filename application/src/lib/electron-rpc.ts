@@ -162,7 +162,8 @@ export const ElectronRpc = {
         error?: string;
       }>()
     ),
-    // keepFiles drops only the library entry, never touching the install folder.
+    // onlyIfMissing removes just the library entry, and only while the install
+    // folder is still missing; files are never deleted.
     removeApp: rpc(
       'app.removeApp',
       [

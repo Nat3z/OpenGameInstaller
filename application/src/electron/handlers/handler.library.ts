@@ -798,7 +798,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
   const removeApp = ipcProcedure(
     ElectronRpc.app.removeApp,
-    ipcBoundary((_, appid: number) =>
+    ipcBoundary((_, appid: number, keepFiles?: boolean) =>
       Effect.gen(function* () {
         yield* Effect.try({
           try: () => {
@@ -862,6 +862,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               }
 
               yield* Effect.sync(removal.commit);
+
+              // Missing-game cleanup drops only the entry so a folder that
+              // reappeared (e.g. a drive reconnected) is never deleted.
+              if (keepFiles) {
+                return { status: 'success' as const, warning };
+              }
 
               // Delete the game folder lazily in the background; a skipped
               // deletion is a warning, not a failed removal (the library entry
@@ -1104,6 +1110,26 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     ipcBoundary(() => Effect.succeed(getAllLibraryFiles()))
   );
 
+  // Async checks so a slow or unmounted drive never blocks the renderer.
+  const getMissingApps = ipcProcedure(
+    ElectronRpc.app.getMissingApps,
+    ipcBoundary(() =>
+      Effect.filter(
+        getAllLibraryFiles(),
+        ({ cwd }) =>
+          cwd
+            ? Effect.promise(() =>
+                fsp.access(cwd).then(
+                  () => false,
+                  () => true
+                )
+              )
+            : Effect.succeed(false),
+        { concurrency: 'unbounded' }
+      )
+    )
+  );
+
   const updateAppVersion = ipcProcedure(
     ElectronRpc.app.updateAppVersion,
     ipcBoundary(
@@ -1211,6 +1237,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     clearRemovalTasks,
     insertApp,
     getAllApps,
+    getMissingApps,
     updateAppVersion,
     getLibraryInfo
   );

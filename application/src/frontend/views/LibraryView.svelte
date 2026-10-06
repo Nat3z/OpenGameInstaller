@@ -51,6 +51,7 @@ onMount(() => {
           err
         );
       });
+      void checkMissingGames();
     };
   }
 });
@@ -67,14 +68,20 @@ async function reloadLibrary() {
   // Update filtered games
   filteredGames = filterLibrary(allGamesAlphabetical, searchQuery);
 
-  missingGames = findMissingGames(library);
-
   loading = false;
 }
 
-function closeMissingGames(removedAny: boolean) {
-  // Whatever wasn't removed stays in the library; don't nag about it again.
-  keepMissingGames(missingGames.map((app) => app.appID));
+// Runs apart from reloadLibrary so the folder checks never delay the grid.
+async function checkMissingGames() {
+  try {
+    missingGames = await findMissingGames();
+  } catch (err) {
+    logger.sync.error('Failed to check for missing games:', err);
+  }
+}
+
+function closeMissingGames(kept: number[], removedAny: boolean) {
+  keepMissingGames(kept);
   missingGames = [];
   if (removedAny) void reloadLibrary();
 }
@@ -156,6 +163,7 @@ $effect(() => {
 });
 
 onMount(async () => {
+  void checkMissingGames();
   const [resolvedOs] = await Promise.all([
     runFrontendEffect(electronRpc.app.getOS()),
     reloadLibrary(),

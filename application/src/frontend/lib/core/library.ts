@@ -148,16 +148,11 @@ const keptMissingGames = new Set<number>();
  * deleted outside the app or on a drive that isn't connected. Games kept via
  * `keepMissingGames` are skipped.
  *
- * @param library - The library array to check
  * @returns The games whose `cwd` is set but missing
  */
-export function findMissingGames(library: LibraryInfo[]): LibraryInfo[] {
-  return library.filter(
-    (app) =>
-      !!app.cwd &&
-      !keptMissingGames.has(app.appID) &&
-      !window.electronAPI.fs.exists(app.cwd)
-  );
+export async function findMissingGames(): Promise<LibraryInfo[]> {
+  const missing = await runFrontendEffect(electronRpc.app.getMissingApps());
+  return missing.filter((app) => !keptMissingGames.has(app.appID));
 }
 
 export function keepMissingGames(appIDs: number[]): void {

@@ -12,7 +12,8 @@ import { createNotification, currentDownloads } from '@/frontend/store.svelte';
 
 interface Props {
   games: LibraryInfo[];
-  onClose: (removedAny: boolean) => void;
+  /** `kept` are the games the user chose to keep in the library. */
+  onClose: (kept: number[], removedAny: boolean) => void;
 }
 
 let { games, onClose }: Props = $props();
@@ -32,18 +33,24 @@ function toggle(appID: number, checked: boolean) {
   kept = next;
 }
 
+function keepAll() {
+  onClose(
+    games.map((game) => game.appID),
+    false
+  );
+}
+
 // Removes sequentially since each removal may ask to confirm Steam shortcut
-// cleanup. The folders are already gone, so this only drops library entries.
+// cleanup. keepFiles guarantees a folder that reappeared (e.g. a drive
+// reconnected) is never deleted. Failed removals aren't reported as kept, so
+// they're offered again on the next check.
 async function removeSelected() {
   busy = true;
   let removed = 0;
   for (const game of selected) {
-    // removeApp deletes files that exist, so skip a folder that came back
-    // (e.g. a drive reconnected) instead of wiping it.
-    if (game.cwd && window.electronAPI.fs.exists(game.cwd)) continue;
     try {
       const result = await runFrontendEffect(
-        electronRpc.app.removeApp(game.appID)
+        electronRpc.app.removeApp(game.appID, true)
       );
       if (result.status !== 'success') {
         createNotification({
@@ -76,7 +83,7 @@ async function removeSelected() {
     });
   }
   busy = false;
-  onClose(removed > 0);
+  onClose([...kept], removed > 0);
 }
 </script>
 
@@ -85,7 +92,7 @@ async function removeSelected() {
   size="medium"
   closeOnOverlayClick={false}
   onClose={() => {
-    if (!busy) onClose(false);
+    if (!busy) keepAll();
   }}
 >
   <TitleModal title="Missing Game Files" />
@@ -118,7 +125,7 @@ async function removeSelected() {
       text="Keep"
       variant="secondary"
       disabled={busy}
-      onclick={() => onClose(false)}
+      onclick={keepAll}
     />
   </div>
 </Modal>

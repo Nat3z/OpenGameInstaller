@@ -162,9 +162,13 @@ export const ElectronRpc = {
         error?: string;
       }>()
     ),
+    // keepFiles drops only the library entry, never touching the install folder.
     removeApp: rpc(
       'app.removeApp',
-      [Schema.Number],
+      [
+        Schema.Number,
+        Schema.optionalElement(Schema.UndefinedOr(Schema.Boolean)),
+      ],
       opaque<
         | {
             status: 'success';
@@ -197,6 +201,7 @@ export const ElectronRpc = {
       )
     ),
     getAllApps: rpc('app.getAllApps', [], opaque<LibraryInfo[]>()),
+    getMissingApps: rpc('app.getMissingApps', [], opaque<LibraryInfo[]>()),
     updateAppVersion: rpc(
       'app.updateAppVersion',
       [

@@ -18,7 +18,7 @@ import {
 
 const repo = 'Nat3z/OpenGameInstaller';
 const stateDirectory = '.nightly';
-// Trusted publishing only covers packages that already exist on npm, so all-debrid-js is excluded.
+// Only packages with a nightly.yml trusted publisher on npm; all-debrid-js and real-debrid-js have none.
 const packageDirectories = [
   'errors',
   'logger',
@@ -27,7 +27,6 @@ const packageDirectories = [
   'addon-server',
   'client-kit',
   'executor',
-  'real-debrid',
 ].map((name) => `packages/${name}`);
 interface PackageJson {
   name: string;

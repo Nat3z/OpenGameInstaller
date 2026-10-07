@@ -3,12 +3,14 @@ import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
+import { derived } from 'svelte/store';
 import AddonFailurePromptModal from '@/frontend/components/built/AddonFailurePromptModal.svelte';
 import { createLaunchPrompt } from '@/frontend/lib/core/launch-prompt.svelte';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   gameFocused,
+  gamesExiting,
   gamesLaunched,
   launchGameTrigger,
   launchOverlayPlayPageReady,
@@ -229,12 +231,16 @@ onMount(async () => {
       }
       launchGameTrigger.set(gameId);
 
-      // PlayPage clears the game from gamesLaunched once its flow ends:
-      // cancelled, failed, or exited with post-launch hooks done. Only then
-      // may a quit go ahead.
+      // The launch flow is over once PlayPage has cleared the game (cancelled,
+      // failed, or exited) and GameManager has no post-launch hooks left
+      // running for it. Only then may a quit go ahead.
+      const launchActive = derived(
+        [gamesLaunched, gamesExiting],
+        ([launched, exiting]) => !!launched[gameId] || exiting.has(gameId)
+      );
       let launchSeen = false;
-      unsubscribeLaunchState = gamesLaunched.subscribe((games) => {
-        if (games[gameId]) {
+      unsubscribeLaunchState = launchActive.subscribe((active) => {
+        if (active) {
           launchSeen = true;
         } else if (launchSeen) {
           setQuitHold(false);

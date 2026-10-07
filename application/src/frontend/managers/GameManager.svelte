@@ -108,7 +108,6 @@ document.addEventListener('game:exit', async (event: Event) => {
     });
 
     if (isShortcutLaunch) {
-      // Closing also releases the quit hold the launch overlay took.
       await runFrontendEffect(electronRpc.app.close());
     }
   }

@@ -9,6 +9,7 @@ import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   gameFocused,
+  gamesLaunched,
   launchGameTrigger,
   launchOverlayPlayPageReady,
   selectedView,
@@ -34,6 +35,7 @@ let wrapperCommand: string | null = $state(null);
 let isWrapperLaunch = $state(false);
 const timeouts: ReturnType<typeof setTimeout>[] = [];
 let isMounted = false;
+let unsubscribeLaunchState: (() => void) | null = null;
 
 // Prompt state: lets the user launch even when the addon pre-launch step failed
 const addonFailurePrompt = createLaunchPrompt();
@@ -227,9 +229,22 @@ onMount(async () => {
       }
       launchGameTrigger.set(gameId);
 
+      // PlayPage clears the game from gamesLaunched once its flow ends:
+      // cancelled, failed, or exited with post-launch hooks done. Only then
+      // may a quit go ahead.
+      let launchSeen = false;
+      unsubscribeLaunchState = gamesLaunched.subscribe((games) => {
+        if (games[gameId]) {
+          launchSeen = true;
+        } else if (launchSeen) {
+          setQuitHold(false);
+          unsubscribeLaunchState?.();
+          unsubscribeLaunchState = null;
+        }
+      });
+
       // Keep this overlay mounted for Steam shortcut launches.
-      // The window will be hidden on game:launch and shown again on game:exit,
-      // where GameManager runs post-launch hooks and releases the quit hold.
+      // The window will be hidden on game:launch and shown again on game:exit.
       status = 'running';
     } else {
       setQuitHold(false);
@@ -250,6 +265,7 @@ onMount(async () => {
 
 onDestroy(() => {
   isMounted = false;
+  unsubscribeLaunchState?.();
   for (const id of timeouts) clearTimeout(id);
   timeouts.length = 0;
   // Never leave the launch flow hanging if the overlay unmounts mid-prompt

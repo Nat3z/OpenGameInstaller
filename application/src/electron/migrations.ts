@@ -257,9 +257,9 @@ let migrations: {
   },
   'repair-desktop-shortcut-icon': {
     from: '2.5.0',
-    to: '4.3.0',
+    to: '4.3.2',
     description:
-      'Rewrites the desktop shortcut so its icon lives in the OGI data dir instead of the update dir the updater wipes.',
+      'Rewrites the desktop shortcut so its icon lives in the OGI data dir, and so its Exec no longer points at a game directory when a Steam launch rewrote it.',
     platform: 'linux',
     run: () =>
       Effect.gen(function* () {

@@ -5,7 +5,8 @@ import * as path from 'node:path';
 import { FileSystemError, formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { app } from 'electron';
-import { __dirname, isDev } from '@/electron/manager/manager.paths.js';
+import { __dirname } from '@/electron/manager/manager.paths.js';
+import { getOgiExecutablePath } from './platform.js';
 
 export const addToDesktop = (): Effect.Effect<
   { success: true; path: string } | { success: false; error: string },
@@ -18,15 +19,15 @@ export const addToDesktop = (): Effect.Effect<
     });
   }
   return Effect.gen(function* () {
-    let appDirPath = isDev()
-      ? `${app.getAppPath()}/../`
-      : path.dirname(process.execPath);
-    if (process.platform === 'linux') appDirPath = './';
-    let execPath = path.resolve(
-      appDirPath,
-      fs.readdirSync(appDirPath).find((file) => file.endsWith('.AppImage')) ??
-        './OpenGameInstaller.AppImage'
+    // Resolve from the running AppImage, not cwd: Steam shortcut launches run
+    // with cwd set to the game's directory.
+    const appImagePath = getOgiExecutablePath();
+    const setupPath = path.resolve(
+      path.dirname(appImagePath),
+      '..',
+      'OpenGameInstaller-Setup.AppImage'
     );
+    const execPath = fs.existsSync(setupPath) ? setupPath : appImagePath;
     const desktopDir = path.join(os.homedir(), 'Desktop');
     const desktopFilePath = path.join(desktopDir, 'OpenGameInstaller.desktop');
     yield* Effect.tryPromise({
@@ -38,11 +39,6 @@ export const addToDesktop = (): Effect.Effect<
           cause,
         }),
     });
-    const setupPath = path.resolve(
-      path.resolve(appDirPath, '..'),
-      'OpenGameInstaller-Setup.AppImage'
-    );
-    if (fs.existsSync(setupPath)) execPath = setupPath;
     const sourceIcon = app.isPackaged
       ? path.join(app.getPath('exe'), '..', 'opengameinstaller-gui.png')
       : path.join(__dirname, '..', '..', 'public', 'favicon.png');
@@ -59,7 +55,7 @@ export const addToDesktop = (): Effect.Effect<
         }),
     });
     const absoluteIcon = path.resolve(targetIcon);
-    const desktopContent = `[Desktop Entry]\nType=Application\nName=OpenGameInstaller\nExec=${execPath}\nPath=${execPath.endsWith('-Setup.AppImage') ? path.resolve(appDirPath, '..') : path.resolve(appDirPath)}\nIcon=${absoluteIcon}\nTerminal=false\nCategories=Game;\nStartupNotify=true\n`;
+    const desktopContent = `[Desktop Entry]\nType=Application\nName=OpenGameInstaller\nExec=${execPath}\nPath=${path.dirname(execPath)}\nIcon=${absoluteIcon}\nTerminal=false\nCategories=Game;\nStartupNotify=true\n`;
     yield* Effect.tryPromise({
       try: () =>
         fsAsync.writeFile(desktopFilePath, desktopContent, { mode: 0o755 }),

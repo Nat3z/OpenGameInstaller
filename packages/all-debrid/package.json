@@ -1,6 +1,11 @@
 {
   "name": "all-debrid-js",
   "version": "1.1.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/all-debrid"
+  },
   "license": "MIT",
   "module": "./build/main.mjs",
   "author": {

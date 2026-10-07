@@ -22,7 +22,7 @@ The schedule is `17 */2 * * *` UTC, but scheduled publication is disabled unless
 1. Merge nightly support after the PR's Windows/Linux nightly dry run and tarball validation pass.
    Ship it in a stable release before the first live nightly. Pre-channel setups opted into unstable only filter by `prerelease`, so they would pick up `nightly-<run-id>` application builds until they receive the channel-aware setup.
 2. Dispatch **Nightly** on `main` with `dry_run=true` to verify the current main revision.
-3. Dispatch with `dry_run=false`. This requires the existing `NPM_TOKEN` to have publication rights for all SDK packages. Publication is rejected outside this repository's `main` branch.
+3. Dispatch with `dry_run=false`. npm authenticates through trusted publishing (OIDC): every SDK package needs a GitHub Actions trusted publisher for `nightly.yml` with **npm publish** and **npm dist-tag** allowed. `all-debrid-js` is skipped until it exists on npm. Publication is rejected outside this repository's `main` branch.
 4. Install the Windows/Linux nightly setup, then validate a second nightly update, an application-only update reusing its installer, offline launch, setup replacement and an explicit switch back to stable.
 5. Confirm GitHub `releases/latest` and npm `latest` still point to stable, then set `NIGHTLY_ENABLED=true`.
 

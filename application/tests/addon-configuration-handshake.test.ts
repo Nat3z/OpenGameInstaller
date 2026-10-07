@@ -35,20 +35,18 @@ mock.module('@/frontend/lib/core/ipc', () => ({
     }),
 }));
 
+mock.module('@/frontend/lib/electron-rpc', () => ({
+  electronRpc: {
+    state: {
+      getAddonConfig: () => Effect.succeed({}),
+      setAddonConfig: () => Effect.void,
+    },
+  },
+}));
+
 let fetchAddonsWithConfigure: typeof import('../src/frontend/lib/config/client.js').fetchAddonsWithConfigure;
 
 beforeAll(async () => {
-  Object.assign(globalThis, {
-    window: {
-      electronAPI: {
-        fs: {
-          exists: () => true,
-          read: () => '{}',
-          write: () => {},
-        },
-      },
-    },
-  });
   ({ fetchAddonsWithConfigure } = await import(
     '../src/frontend/lib/config/client.js'
   ));

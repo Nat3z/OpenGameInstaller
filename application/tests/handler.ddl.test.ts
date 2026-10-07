@@ -1,3 +1,4 @@
+import { Database as Sqlite } from 'bun:sqlite';
 import {
   afterEach,
   beforeAll,
@@ -8,6 +9,7 @@ import {
   test,
 } from 'bun:test';
 import { DownloadAborted } from '@ogi-sdk/errors';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Effect } from 'effect';
 import {
   existsSync,
@@ -19,6 +21,7 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PassThrough, Readable } from 'stream';
+import { AppDatabase } from '../src/electron/database/database.js';
 import { ElectronRpc } from '../src/lib/electron-rpc.js';
 
 class MockAxiosError extends Error {
@@ -67,23 +70,15 @@ mock.module('@/electron/lib/online.js', () => ({
 mock.module('@/electron/main.js', () => ({
   sendNotification: mock(() => {}),
 }));
-mock.module('@/electron/manager/manager.config.js', () => ({
-  getSteamCompatibilityTool: () =>
-    Effect.sync(() => {
-      const configPath = join(
-        process.env.OGI_DIRECTORY ?? '',
-        'config/option/general.json'
-      );
-      if (!existsSync(configPath)) return 'proton_experimental';
-      const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
-        steamCompatibilityTool?: unknown;
-      };
-      return typeof config.steamCompatibilityTool === 'string'
-        ? config.steamCompatibilityTool.trim()
-        : 'proton_experimental';
-    }),
-  getStoredValue: () => Effect.succeed(8),
-  refreshCached: () => Effect.void,
+// better-sqlite3 is an Electron-side N-API addon that aborts the bun process
+// when loaded, so opening the real database here must fail like a missing
+// driver instead.
+mock.module('better-sqlite3', () => ({
+  default: class {
+    constructor() {
+      throw new Error('better-sqlite3 is not available under bun test');
+    }
+  },
 }));
 mock.module('@/electron/manager/manager.queue.js', () => ({
   DOWNLOAD_QUEUE: {
@@ -107,15 +102,21 @@ mock.module('@/lib/download-handshake.js', () => ({
 
 let Download: typeof import('../src/electron/handlers/handler.ddl.js').Download;
 let registerDdlHandler: typeof import('../src/electron/handlers/handler.ddl.js').default;
+let setDatabase: typeof import('../src/electron/database/index.js').setDatabase;
 const testDirectories: string[] = [];
+const migrations = join(import.meta.dir, '../drizzle');
 
 beforeAll(async () => {
+  ({ setDatabase } = await import('../src/electron/database/index.js'));
   ({ Download, default: registerDdlHandler } = await import(
     '../src/electron/handlers/handler.ddl.js'
   ));
 });
 
 beforeEach(() => {
+  // The handler reads settings through the live `Database` layer, which
+  // resolves the process-wide database on every call.
+  setDatabase(new AppDatabase(drizzle(new Sqlite(':memory:')), migrations));
   get.mockClear();
   head.mockClear();
   registerDownloadHandshake.mockClear();
@@ -133,6 +134,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setDatabase(undefined);
   for (const directory of testDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }

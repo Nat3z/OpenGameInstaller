@@ -7,7 +7,7 @@ import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
  */
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
-import { FileSystemError, ipcBoundary, LibraryError } from '@ogi-sdk/errors';
+import { FileSystemError, LibraryError } from '@ogi-sdk/errors';
 import {
   type ChildProcess,
   type SpawnOptions,
@@ -40,15 +40,6 @@ import {
   resolveLaunchCommand,
 } from '@/electron/handlers/handler.umu.js';
 import {
-  addToInternalsApps,
-  ensureInternalsDir,
-  ensureLibraryDir,
-  getAllLibraryFiles,
-  loadLibraryInfo,
-  saveLibraryInfo,
-  stageLibraryRemoval,
-} from '@/electron/handlers/helpers.app/library.js';
-import {
   generateNotificationId,
   notifyError,
   notifyInfo,
@@ -65,6 +56,8 @@ import {
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { ipcServiceBoundary } from '@/electron/runtime.js';
+import { type AppServices, Library } from '@/electron/services/index.js';
 import { ElectronRpc, type GameRemovalProgress } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -339,15 +332,27 @@ export type ExecuteWrapperResult = {
   error?: string;
 };
 
+/**
+ * Records launch recency once the game has started. The game is already
+ * running by then, so a failed write is logged rather than reported as a
+ * failed launch.
+ */
+const markLaunched = (appID: number) =>
+  Effect.flatMap(Library, (library) => library.markLaunched(appID)).pipe(
+    Effect.catchAll((cause) =>
+      Effect.sync(() =>
+        logger.sync.warn('[launch] Could not record launch recency', cause)
+      )
+    )
+  );
+
 export function launchGameFromLibrary(
   appid: number | string,
   mainWindow?: Electron.BrowserWindow | null,
   launchEnv?: Record<string, string>
-): Effect.Effect<LaunchGameResult, LibraryError> {
+): Effect.Effect<LaunchGameResult, LibraryError, AppServices> {
   return Effect.gen(function* () {
     logger.sync.info('[launch] Launching game', appid);
-    ensureLibraryDir();
-    ensureInternalsDir();
 
     const parsedAppId =
       typeof appid === 'number' ? appid : parseInt(String(appid), 10);
@@ -355,7 +360,8 @@ export function launchGameFromLibrary(
       return { success: false, error: 'Invalid app ID' };
     }
 
-    let appInfo = loadLibraryInfo(parsedAppId);
+    const library = yield* Library;
+    let appInfo = yield* library.get(parsedAppId);
     if (!appInfo) {
       logger.sync.info('[launch] Game not found');
       return { success: false, error: 'Game not found' };
@@ -384,16 +390,9 @@ export function launchGameFromLibrary(
             })
         )
       );
-      const migration = yield* Effect.tryPromise({
-        try: () => migrateToUmu(parsedAppId, oldSteamAppId),
-        catch: (cause) =>
-          new LibraryError({
-            message: `Failed to migrate legacy game to UMU: ${String(cause)}`,
-            gameId: parsedAppId,
-          }),
-      });
+      const migration = yield* migrateToUmu(parsedAppId, oldSteamAppId);
       if (!migration.success) return migration;
-      appInfo = loadLibraryInfo(parsedAppId);
+      appInfo = yield* library.get(parsedAppId);
       if (!appInfo)
         return { success: false, error: 'Game disappeared during migration' };
 
@@ -426,17 +425,19 @@ export function launchGameFromLibrary(
 
       const appID = appInfo.appID;
       // Register inside the queue so a concurrent removal cannot interleave;
-      // onError cleans up if the launch promise itself rejects.
+      // onError cleans up if the launch fails. The launch effect has no
+      // requirements, so it runs on the ambient runtime from the promise.
+      const launch = launchWithUmu(appInfo, {
+        onExit: () => {
+          runningGames.delete(appID);
+          mainWindow?.webContents.send('game:exit', { id: appID });
+        },
+      });
       const result = yield* Effect.tryPromise({
         try: () =>
-          enqueueGameOperation(parsedAppId, async () => {
+          enqueueGameOperation(parsedAppId, () => {
             runningGames.add(appInfo.appID);
-            return launchWithUmu(appInfo, {
-              onExit: () => {
-                runningGames.delete(appID);
-                mainWindow?.webContents.send('game:exit', { id: appID });
-              },
-            });
+            return Effect.runPromise(launch);
           }),
         catch: (cause) =>
           new LibraryError({
@@ -466,6 +467,7 @@ export function launchGameFromLibrary(
 
       // Already tracked by the pre-await add above; do not re-add here or a
       // fast crash's onExit delete would be resurrected.
+      yield* markLaunched(appInfo.appID);
       mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
       return { success: true };
     }
@@ -542,9 +544,15 @@ export function launchGameFromLibrary(
       mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
     });
 
+    yield* markLaunched(appInfo.appID);
     mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
     return { success: true };
-  });
+  }).pipe(
+    // The launch contract is a `LibraryError`, so database faults surface as one.
+    Effect.catchTag('DatabaseError', (cause) =>
+      Effect.fail(new LibraryError({ message: cause.message }))
+    )
+  );
 }
 
 export function executeWrapperCommandForApp(
@@ -552,7 +560,7 @@ export function executeWrapperCommandForApp(
   wrapperCommand: string,
   type: 'steam-proton' | 'unknown',
   launchEnv?: Record<string, string>
-): Effect.Effect<ExecuteWrapperResult> {
+): Effect.Effect<ExecuteWrapperResult, never, AppServices> {
   if (type === 'steam-proton') {
     return executeWrapperCommandForAppSteam(appid, wrapperCommand, launchEnv);
   }
@@ -566,11 +574,12 @@ function executeWrapperCommandForAppSteam(
   appid: number,
   wrapperCommand: string,
   launchEnv?: Record<string, string>
-): Effect.Effect<ExecuteWrapperResult> {
+): Effect.Effect<ExecuteWrapperResult, never, AppServices> {
   return Effect.gen(function* () {
-    ensureLibraryDir();
-
-    const appInfo = loadLibraryInfo(appid);
+    const library = yield* Library;
+    const appInfo = yield* library
+      .get(appid)
+      .pipe(Effect.catchTag('DatabaseError', () => Effect.succeed(null)));
     if (!appInfo) {
       return { success: false, error: 'Game not found' };
     }
@@ -785,7 +794,7 @@ function isMissingPath(path: string): Promise<boolean> {
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   const launchGame = ipcProcedure(
     ElectronRpc.app.launchGame,
-    ipcBoundary((_, appid: string) =>
+    ipcServiceBoundary((_, appid: string) =>
       Effect.gen(function* () {
         const result = yield* launchGameFromLibrary(Number(appid), mainWindow);
         if (!result.success) {
@@ -801,27 +810,17 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
   const executeWrapperCommand = ipcProcedure(
     ElectronRpc.app.executeWrapperCommand,
-    ipcBoundary((_, appid: number, wrapperCommand: string) =>
+    ipcServiceBoundary((_, appid: number, wrapperCommand: string) =>
       executeWrapperCommandForAppSteam(appid, wrapperCommand)
     )
   );
 
   const removeApp = ipcProcedure(
     ElectronRpc.app.removeApp,
-    ipcBoundary((_, appid: number, onlyIfMissing?: boolean) =>
+    ipcServiceBoundary((_, appid: number, onlyIfMissing?: boolean) =>
       Effect.gen(function* () {
-        yield* Effect.try({
-          try: () => {
-            ensureLibraryDir();
-            ensureInternalsDir();
-          },
-          catch: (cause) =>
-            new FileSystemError({
-              message: 'Could not update the library filesystem',
-              cause,
-            }),
-        });
-        const appInfo = yield* Effect.sync(() => loadLibraryInfo(appid));
+        const library = yield* Library;
+        const appInfo = yield* library.get(appid);
         if (!appInfo) return { status: 'success' as const };
         // Re-checked here since the folder may have come back (e.g. a drive
         // reconnected) after the renderer reported it missing. A game with no
@@ -849,14 +848,15 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           }
         }
         return yield* Effect.acquireUseRelease(
-          Effect.try({
-            try: () => stageLibraryRemoval(appid),
-            catch: (cause) =>
-              new FileSystemError({
-                message: 'Could not stage the library removal',
-                cause,
-              }),
-          }),
+          library.stageRemoval(appid).pipe(
+            Effect.mapError(
+              (cause) =>
+                new FileSystemError({
+                  message: 'Could not stage the library removal',
+                  cause,
+                })
+            )
+          ),
           (removal) =>
             Effect.gen(function* () {
               let warning = steamCleanupWarning;
@@ -899,11 +899,12 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               // after this returns can never collide with the deletion.
               let fileWarning: string | undefined;
               let deletionTaskId: string | undefined;
+              const otherGames = yield* library.list;
               const deletionPlan = planGameFileDeletion({
                 cwd: appInfo.cwd,
                 appID: appid,
                 running: runningGames.has(appid),
-                otherGames: getAllLibraryFiles(),
+                otherGames,
                 roots: deleteGuardRoots(),
                 pathExists: (path) => fs.existsSync(path),
               });
@@ -945,19 +946,19 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
   const getRemovalTasks = ipcProcedure(
     ElectronRpc.app.getRemovalTasks,
-    ipcBoundary(() => Effect.succeed(removalTaskSnapshots()))
+    ipcServiceBoundary(() => Effect.succeed(removalTaskSnapshots()))
   );
 
   const clearRemovalTasks = ipcProcedure(
     ElectronRpc.app.clearRemovalTasks,
-    ipcBoundary((_, ids: string[]) =>
+    ipcServiceBoundary((_, ids: string[]) =>
       Effect.sync(() => dismissRemovalTasks(ids))
     )
   );
 
   const insertApp = ipcProcedure(
     ElectronRpc.app.insertApp,
-    ipcBoundary(
+    ipcServiceBoundary(
       (
         _,
         data: LibraryInfo & {
@@ -965,18 +966,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         }
       ) =>
         Effect.gen(function* () {
-          yield* Effect.try({
-            try: () => {
-              ensureLibraryDir();
-              ensureInternalsDir();
-            },
-            catch: (cause) =>
-              new FileSystemError({
-                message: 'Could not update the library filesystem',
-                cause,
-              }),
-          });
-
+          const library = yield* Library;
           // Check if UMU is available and should be used (Linux only; macOS uses legacy)
           const umuAvailable = isLinux();
 
@@ -1028,8 +1018,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                   type: 'error',
                 });
                 data.umu = undefined;
-                saveLibraryInfo(data.appID, data);
-                addToInternalsApps(data.appID);
+                yield* library.save(data);
                 return 'setup-failed';
               }
             }
@@ -1046,8 +1035,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               }
 
               // Save the library info with UMU config
-              saveLibraryInfo(data.appID, data);
-              addToInternalsApps(data.appID);
+              yield* library.save(data);
 
               if (data.redistributables && data.redistributables.length > 0) {
                 logger.sync.info(
@@ -1065,8 +1053,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           }
 
           // Native applications do not need a Wine prefix.
-          saveLibraryInfo(data.appID, data);
-          addToInternalsApps(data.appID);
+          yield* library.save(data);
 
           if (process.platform === 'win32') {
             // if there are redistributables, we need to install them
@@ -1130,27 +1117,31 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
   const getAllApps = ipcProcedure(
     ElectronRpc.app.getAllApps,
-    ipcBoundary(() => Effect.succeed(getAllLibraryFiles()))
+    ipcServiceBoundary(() => Effect.flatMap(Library, (library) => library.list))
   );
 
   // Async checks so a slow or unmounted drive never blocks the renderer.
   const getMissingApps = ipcProcedure(
     ElectronRpc.app.getMissingApps,
-    ipcBoundary(() =>
-      Effect.filter(
-        getAllLibraryFiles(),
-        ({ cwd }) =>
-          cwd
-            ? Effect.promise(() => isMissingPath(cwd))
-            : Effect.succeed(false),
-        { concurrency: 'unbounded' }
+    ipcServiceBoundary(() =>
+      Effect.flatMap(Library, (library) => library.list).pipe(
+        Effect.flatMap((games) =>
+          Effect.filter(
+            games,
+            ({ cwd }) =>
+              cwd
+                ? Effect.promise(() => isMissingPath(cwd))
+                : Effect.succeed(false),
+            { concurrency: 'unbounded' }
+          )
+        )
       )
     )
   );
 
   const updateAppVersion = ipcProcedure(
     ElectronRpc.app.updateAppVersion,
-    ipcBoundary(
+    ipcServiceBoundary(
       (
         _,
         appID: number,
@@ -1173,9 +1164,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           launchEnv,
         };
         return Effect.gen(function* () {
-          const existing = yield* Effect.sync(() =>
-            loadLibraryInfo(data.appID)
-          );
+          const library = yield* Library;
+          const existing = yield* library.get(data.appID);
           if (!existing) return 'app-not-found';
 
           const requestedUmu =
@@ -1213,14 +1203,11 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           if (requestedUmu && !existing.umu) {
             logger.sync.info('[update] Migrating game from legacy to UMU mode');
             const oldSteamAppId = yield* findSteamAppIdForGame(data.appID);
-            const migrationResult = yield* Effect.tryPromise({
-              try: () => migrateToUmu(data.appID, oldSteamAppId, updates),
-              catch: (cause: unknown) =>
-                new LibraryError({
-                  message: `Migration failed: ${String(cause)}`,
-                  gameId: data.appID,
-                }),
-            });
+            const migrationResult = yield* migrateToUmu(
+              data.appID,
+              oldSteamAppId,
+              updates
+            );
             if (!migrationResult.success || !migrationResult.libraryInfo) {
               return yield* Effect.fail(
                 new LibraryError({
@@ -1235,7 +1222,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             Object.assign(appData, updates);
           }
 
-          saveLibraryInfo(data.appID, appData);
+          yield* library.save({ ...appData, appID: data.appID });
           return 'success';
         });
       }
@@ -1244,7 +1231,62 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
 
   const getLibraryInfo = ipcProcedure(
     ElectronRpc.app.getLibraryInfo,
-    ipcBoundary((_, appID: number) => Effect.succeed(loadLibraryInfo(appID)))
+    ipcServiceBoundary((_, appID: number) =>
+      Effect.flatMap(Library, (library) => library.get(appID))
+    )
+  );
+
+  const configureGame = ipcProcedure(
+    ElectronRpc.app.configureGame,
+    ipcServiceBoundary(
+      (
+        _,
+        appID: number,
+        settings: {
+          cwd: string;
+          launchExecutable: string;
+          launchArguments?: string;
+          dllOverrides?: string[];
+          protonVersion?: string;
+        }
+      ) =>
+        Effect.gen(function* () {
+          const library = yield* Library;
+          const appInfo = yield* library.get(appID);
+          if (!appInfo) return 'app-not-found';
+
+          appInfo.cwd = settings.cwd;
+          appInfo.launchExecutable = settings.launchExecutable;
+          if (settings.launchArguments === undefined) {
+            delete appInfo.launchArguments;
+          } else {
+            appInfo.launchArguments = settings.launchArguments;
+          }
+
+          if (appInfo.umu) {
+            if (
+              settings.dllOverrides === undefined ||
+              settings.dllOverrides.length === 0
+            ) {
+              delete appInfo.umu.dllOverrides;
+            } else {
+              appInfo.umu.dllOverrides = settings.dllOverrides;
+            }
+            // 'umu-proton' is umu's own default, so it is stored as "unset".
+            if (
+              settings.protonVersion === undefined ||
+              settings.protonVersion === 'umu-proton'
+            ) {
+              delete appInfo.umu.protonVersion;
+            } else {
+              appInfo.umu.protonVersion = settings.protonVersion;
+            }
+          }
+
+          yield* library.save({ ...appInfo, appID });
+          return 'success';
+        })
+    )
   );
 
   return router(
@@ -1257,6 +1299,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     getAllApps,
     getMissingApps,
     updateAppVersion,
-    getLibraryInfo
+    getLibraryInfo,
+    configureGame
   );
 }

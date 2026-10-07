@@ -7,6 +7,8 @@ import FSEventHandler from '@/electron/handlers/handler.fs.js';
 import OOBEHandler from '@/electron/handlers/handler.oobe.js';
 import { registerPowerSaveHandlers } from '@/electron/handlers/handler.power-save.js';
 import RealdDebridHandler from '@/electron/handlers/handler.realdebrid.js';
+import SetupHandler from '@/electron/handlers/handler.setup.js';
+import StateHandler from '@/electron/handlers/handler.state.js';
 import TorrentHandler from '@/electron/handlers/handler.torrent.js';
 import { registerUmuHandlers } from '@/electron/handlers/handler.umu.js';
 import { cancelQueuedDownload } from '@/electron/rpc/queue-cancel.js';
@@ -18,6 +20,8 @@ export function createElectronRouter(mainWindow: BrowserWindow) {
   return mergeRouters(
     AppEventHandler(mainWindow),
     FSEventHandler(),
+    SetupHandler(),
+    StateHandler(),
     RealdDebridHandler(mainWindow),
     AllDebridHandler(mainWindow),
     TorrentHandler(mainWindow),

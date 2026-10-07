@@ -24,7 +24,7 @@ import {
   router,
 } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
-import { addonServer } from '@/electron/server/addon-server.js';
+import { getAddonServer } from '@/electron/server/addon-server.js';
 import type { OperatingSystem } from '@/lib/electron-rpc.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 import { addToDesktop } from './helpers.app/desktop-shortcut.js';
@@ -146,14 +146,14 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     ),
     procedure(ElectronRpc.app.getAddonPath, (addonID: string) =>
       runBoundary(
-        Effect.sync(() => addonServer.getClient(addonID)?.filePath ?? null)
+        Effect.sync(() => getAddonServer().getClient(addonID)?.filePath ?? null)
       )
     ),
     procedure(ElectronRpc.app.getAddonIcon, (addonID: string) =>
       runBoundary(
         Effect.try({
           try: () => {
-            const client = addonServer.getClient(addonID);
+            const client = getAddonServer().getClient(addonID);
             if (!client?.filePath) return null;
             const addonJson = JSON.parse(
               fs.readFileSync(join(client.filePath, 'addon.json'), 'utf-8')
@@ -175,8 +175,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             join(__dirname, 'addons'),
             join(__dirname, 'public'),
             join(__dirname, 'config'),
-            ...Array.from(addonServer.getConnections()).flatMap((connection) =>
-              connection.filePath ? [connection.filePath] : []
+            ...Array.from(getAddonServer().getConnections()).flatMap(
+              (connection) => (connection.filePath ? [connection.filePath] : [])
             ),
           ].map((directory) => path.resolve(directory));
           const realPath = yield* Effect.try({

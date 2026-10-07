@@ -21,63 +21,31 @@ export function resolveRarArchivePath(
   filesMeta?: { name: string }[]
 ) {
   const trimmed = downloadPath.replace(/[\/\\]+$/, '');
-  const base = basename(trimmed);
-  if (/\.rar$/i.test(base)) {
+  if (/\.rar$/i.test(basename(trimmed))) {
     return Effect.succeed<string | null>(trimmed);
   }
-
+  const fromMeta = filesMeta?.find((file) => /\.rar$/i.test(file.name));
   return fsEffect(
-    electronRpc.fs.getFilesInDir(trimmed),
+    electronRpc.setup.findArchive(trimmed, 'rar'),
     'Failed to inspect the downloaded directory.',
     trimmed
   ).pipe(
-    Effect.map((files) => {
-      const rar = files.find((file) => /\.rar$/i.test(file));
-      if (rar) return `${trimmed}/${rar}`;
-      const fromMeta = filesMeta?.find((file) => /\.rar$/i.test(file.name));
-      return fromMeta ? `${trimmed}/${fromMeta.name}` : null;
-    }),
-    Effect.catchAll(() => {
-      const fromMeta = filesMeta?.find((file) => /\.rar$/i.test(file.name));
-      return Effect.succeed(fromMeta ? `${trimmed}/${fromMeta.name}` : null);
-    })
+    Effect.map(
+      (rar) => rar ?? (fromMeta ? `${trimmed}/${fromMeta.name}` : null)
+    ),
+    Effect.catchAll(() =>
+      Effect.succeed(fromMeta ? `${trimmed}/${fromMeta.name}` : null)
+    )
   );
 }
 
-export function drillDownSingleDirectories(
-  startDir: string,
-  maxDepth: number = 10
-) {
-  return Effect.gen(function* () {
-    let currentDir = startDir;
-    let filesInDir = yield* fsEffect(
-      electronRpc.fs.getFilesInDir(currentDir),
-      'Failed to inspect extraction output.',
-      currentDir
-    );
-
-    for (let depth = 0; filesInDir.length === 1 && depth < maxDepth; depth++) {
-      const nextPath = `${currentDir}/${filesInDir[0]}`;
-      const stat = yield* Effect.try({
-        try: () => window.electronAPI.fs.stat(nextPath),
-        catch: (cause) =>
-          new FileSystemError({
-            message: 'Failed to inspect extracted path.',
-            path: nextPath,
-            cause,
-          }),
-      });
-      if (!stat?.isDirectory) break;
-      currentDir = nextPath;
-      filesInDir = yield* fsEffect(
-        electronRpc.fs.getFilesInDir(currentDir),
-        'Failed to inspect extraction output.',
-        currentDir
-      );
-    }
-
-    return currentDir;
-  }).pipe(
+/** Descends through single-child directories; falls back to `startDir` on error. */
+export function drillDownSingleDirectories(startDir: string) {
+  return fsEffect(
+    electronRpc.setup.resolveContentRoot(startDir),
+    'Failed to inspect extraction output.',
+    startDir
+  ).pipe(
     Effect.tapError((error) =>
       logger.error('Failed to traverse directories from:', startDir, error)
     ),
@@ -85,43 +53,45 @@ export function drillDownSingleDirectories(
   );
 }
 
+/** Extracts the archive (which is deleted afterwards) and returns `outputDir`. */
+function extractArchive(params: {
+  archivePath: string;
+  outputDir: string;
+  downloadId: string;
+  kind: 'RAR' | 'ZIP';
+}) {
+  return logger
+    .info(
+      `Extracting ${params.kind} file:`,
+      params.archivePath,
+      'to',
+      params.outputDir
+    )
+    .pipe(
+      Effect.zipRight(
+        fsEffect(
+          electronRpc.setup.extractArchive({
+            archivePath: params.archivePath,
+            outputDir: params.outputDir,
+            downloadId: params.downloadId,
+          }),
+          `Failed to extract ${params.kind} file.`,
+          params.archivePath
+        )
+      )
+    );
+}
+
 export function unrarAndReturnOutputDir(params: {
   rarFilePath: string;
   outputBaseDir: string;
   downloadId: string;
 }) {
-  const { rarFilePath, outputBaseDir, downloadId } = params;
-  return Effect.gen(function* () {
-    yield* logger.info(
-      'Extracting RAR file:',
-      rarFilePath,
-      'to',
-      outputBaseDir
-    );
-    const extractedDir = yield* fsEffect(
-      electronRpc.fs.unrar({
-        outputDir: outputBaseDir,
-        rarFilePath,
-        downloadId,
-      }),
-      'Failed to extract RAR file.',
-      rarFilePath
-    );
-    yield* Effect.try({
-      try: () => window.electronAPI.fs.delete(rarFilePath),
-      catch: (cause) =>
-        new FileSystemError({
-          message: 'Failed to delete extracted RAR file.',
-          path: rarFilePath,
-          cause,
-        }),
-    }).pipe(
-      Effect.tapError((error) =>
-        logger.error(error.message, rarFilePath, error.cause)
-      ),
-      Effect.ignore
-    );
-    return extractedDir;
+  return extractArchive({
+    archivePath: params.rarFilePath,
+    outputDir: params.outputBaseDir,
+    downloadId: params.downloadId,
+    kind: 'RAR',
   });
 }
 
@@ -130,35 +100,14 @@ export function unzipAndReturnOutputDir(params: {
   outputDirBase: string;
   downloadId: string;
 }) {
-  const { zipFilePath, outputDirBase, downloadId } = params;
-  return Effect.gen(function* () {
-    yield* logger.info('Extracting ZIP file:', zipFilePath);
-    const queriedOutput = yield* fsEffect(
-      electronRpc.fs.unzip({
-        zipFilePath,
-        outputDir: outputDirBase,
-        downloadId,
-      }),
-      'Failed to extract ZIP file.',
-      zipFilePath
-    );
-    if (!queriedOutput) return undefined;
-
-    const outputDir = `${yield* drillDownSingleDirectories(queriedOutput, 10)}/`;
-    yield* Effect.try({
-      try: () => window.electronAPI.fs.delete(zipFilePath),
-      catch: (cause) =>
-        new FileSystemError({
-          message: 'Failed to delete extracted ZIP file.',
-          path: zipFilePath,
-          cause,
-        }),
-    }).pipe(
-      Effect.tapError((error) =>
-        logger.error(error.message, zipFilePath, error.cause)
-      ),
-      Effect.ignore
-    );
-    return outputDir;
-  });
+  // ZIPs commonly wrap everything in one folder; hand the addon the real root.
+  return extractArchive({
+    archivePath: params.zipFilePath,
+    outputDir: params.outputDirBase,
+    downloadId: params.downloadId,
+    kind: 'ZIP',
+  }).pipe(
+    Effect.flatMap(drillDownSingleDirectories),
+    Effect.map((outputDir) => `${outputDir}/`)
+  );
 }

@@ -2,12 +2,11 @@ import type { LibraryInfo, OGIAddonSDKEventListener } from '@ogi-sdk/connect';
 import { AddonError, FileSystemError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
-import { readFileSync, writeFileSync } from 'fs';
 import * as fs from 'fs/promises';
-import { join } from 'path';
 import { restartAddonServer } from '@/electron/handlers/handler.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { addonServer } from '@/electron/server/addon-server.js';
+import { getAddonServer } from '@/electron/server/addon-server.js';
+import { Database, Settings } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -30,9 +29,13 @@ export function isAddonEventAvailable(
 
 export function deleteInstalledAddon(
   addonID: string
-): Effect.Effect<DeleteInstalledAddonResult, FileSystemError | AddonError> {
+): Effect.Effect<
+  DeleteInstalledAddonResult,
+  FileSystemError | AddonError,
+  Settings | Database
+> {
   return Effect.gen(function* () {
-    const client = addonServer.getClient(addonID);
+    const client = getAddonServer().getClient(addonID);
     if (!client) {
       return { success: false, message: 'Client not found' };
     }
@@ -47,69 +50,66 @@ export function deleteInstalledAddon(
       };
     }
 
-    const generalConfigPath = join(__dirname, 'config/option/general.json');
-    yield* Effect.try({
-      try: () => {
-        const generalConfig = JSON.parse(
-          readFileSync(generalConfigPath, 'utf-8')
-        ) as { addons: string[] };
-        generalConfig.addons = generalConfig.addons.filter(
-          (addon) => addon !== client.addonLink
-        );
-        writeFileSync(
-          generalConfigPath,
-          JSON.stringify(generalConfig, null, 2)
-        );
-      },
-      catch: (cause) =>
-        new FileSystemError({
-          message: `Failed to update addon configuration: ${String(cause)}`,
-          path: generalConfigPath,
-          cause,
-        }),
-    });
+    // Unlink and forget the addon in one transaction, keeping what was removed
+    // so a failed folder removal below can put it back.
+    const database = yield* Database;
+    const previous = yield* database
+      .transaction((db) => {
+        const { addons } = db.getSettings();
+        const config = db.getAddonConfig(addonID);
+        db.updateSettings({
+          addons: addons.filter((addon) => addon !== client.addonLink),
+        });
+        db.deleteAddonConfig(addonID);
+        return { addons, config };
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new FileSystemError({
+              message: `Failed to update addon configuration: ${String(cause)}`,
+              cause,
+            })
+        )
+      );
 
     yield* restartAddonServer();
     yield* Effect.sleep('1 second');
 
-    const removals = yield* Effect.tryPromise({
-      try: () =>
-        Promise.allSettled([
-          fs.rm(client.filePath!!, { recursive: true, force: true }),
-          fs.rm(join(__dirname, 'config', addonID), {
-            recursive: true,
-            force: true,
-          }),
-        ]),
+    const removed = yield* Effect.tryPromise({
+      try: () => fs.rm(client.filePath!!, { recursive: true, force: true }),
       catch: (cause) =>
         new FileSystemError({
           message: `Failed to remove addon ${addonID}: ${String(cause)}`,
           path: client.filePath,
           cause,
         }),
-    });
+    }).pipe(
+      Effect.as(true),
+      Effect.catchAll((error) =>
+        logger
+          .error('Failed to remove addon from addons folder', error)
+          .pipe(Effect.as(false))
+      )
+    );
 
-    if (removals[0].status === 'fulfilled') {
+    if (removed) {
       yield* logger.info('Addon removed from addons folder');
-    } else {
-      yield* logger.error(
-        'Failed to remove addon from addons folder',
-        removals[0].reason
-      );
+      return { success: true };
     }
-
-    if (removals[1].status === 'fulfilled') {
-      yield* logger.info('Addon removed from config folder');
-    } else {
-      yield* logger.error(
-        'Failed to remove addon from config folder',
-        removals[1].reason
+    // The folder is still there, so keep it linked and configured.
+    yield* database
+      .transaction((db) => {
+        db.updateSettings({ addons: previous.addons });
+        if (previous.config) db.setAddonConfig(addonID, previous.config);
+      })
+      .pipe(
+        Effect.catchAll((error) =>
+          logger.error('Failed to restore addon after removal failed', error)
+        )
       );
-    }
-
-    return removals[0].status === 'fulfilled'
-      ? { success: true }
-      : { success: false, message: 'Failed to remove addon' };
+    yield* restartAddonServer();
+    return { success: false, message: 'Failed to remove addon' };
   });
 }
 
@@ -118,7 +118,7 @@ export function runLaunchAppHooks(
   launchType: 'pre' | 'post'
 ): Effect.Effect<RunLaunchAppHooksResult> {
   const clientsWithEvent = Array.from(
-    addonServer.getConnections().values()
+    getAddonServer().getConnections().values()
   ).filter((client) => isAddonEventAvailable(client, 'launch-app'));
 
   if (clientsWithEvent.length === 0) {

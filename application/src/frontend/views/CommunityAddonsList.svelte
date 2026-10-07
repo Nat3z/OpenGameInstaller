@@ -10,6 +10,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { settings } from '@/frontend/lib/core/state.svelte';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   type CommunityAddon,
@@ -19,9 +20,8 @@ import {
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
-let currentAddons = $state(
-  JSON.parse(window.electronAPI.fs.read('./config/option/general.json'))
-);
+// Mirrors `settings.addons`; refreshed from the install/uninstall replies.
+let currentAddons: { addons: string[] } = $state({ addons: settings.addons });
 let showWarningModal = $state(false);
 let selectedAddon: (CommunityAddon & { url: string }) | null = $state(null);
 let deleteConfirmationModalAddon: CommunityAddon | null = $state(null);
@@ -81,9 +81,11 @@ async function deleteAddon(addon: CommunityAddon) {
     return;
   }
 
-  currentAddons = JSON.parse(
-    window.electronAPI.fs.read('./config/option/general.json')
-  );
+  currentAddons = {
+    addons: await runFrontendEffect(electronRpc.state.getSettings()).then(
+      (next) => next.addons
+    ),
+  };
   deleteConfirmationModalAddon = null;
 }
 

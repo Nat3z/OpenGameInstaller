@@ -1,15 +1,30 @@
 import { realpathSync } from 'fs';
 import { homedir } from 'os';
-import { join, parse, resolve, sep } from 'path';
+import { basename, dirname, join, parse, resolve, sep } from 'path';
+
+/**
+ * Canonical absolute path. When the target does not exist yet, its deepest
+ * existing ancestor is resolved so a symlinked parent cannot smuggle a
+ * not-yet-created path outside a guarded root.
+ */
+const canonicalize = (value: string): string => {
+  const trailing: string[] = [];
+  let current = resolve(value);
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...trailing);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return join(current, ...trailing);
+      trailing.unshift(basename(current));
+      current = parent;
+    }
+  }
+};
 
 /** Realpath + case-normalize (win32) so symlinks and drive casing can't bypass guards. */
 export const normalizeDeletePath = (value: string): string => {
-  let normalized: string;
-  try {
-    normalized = realpathSync(value);
-  } catch {
-    normalized = resolve(value);
-  }
+  const normalized = canonicalize(value);
   // win32 and macOS default to case-insensitive filesystems
   return process.platform !== 'linux' ? normalized.toLowerCase() : normalized;
 };
@@ -129,13 +144,41 @@ export const planGameFileDeletion = (input: {
   return { kind: 'delete' };
 };
 
-/** App-owned directories that must never be wiped by a game removal. */
+/**
+ * App-owned directories that must never be wiped by a game removal. State now
+ * lives in `ogi.sqlite` directly under the data dir, which is already an
+ * exact-protected root; these four legacy directories still exist on upgraded
+ * installs and stay listed so they are never deleted either.
+ */
 export const appMetadataSubtrees = (dataDir: string): string[] => [
   join(dataDir, 'config'),
   join(dataDir, 'internals'),
   join(dataDir, 'addons'),
   join(dataDir, 'library'),
 ];
+
+/**
+ * Whether `location` is too broad to be a download root. Setup may move,
+ * extract into, and delete anything beneath it, so it must not contain the
+ * home or data directory, nor sit inside the app's metadata. System
+ * directories are left to OS permissions so `/var/home` and `/Volumes`
+ * layouts stay usable.
+ */
+export const isUnsafeDownloadLocation = (
+  location: string,
+  dataDir: string
+): boolean => {
+  const resolved = normalizeDeletePath(location);
+  return (
+    [homedir(), dataDir].some((path) =>
+      containsOrEquals(resolved, normalizeDeletePath(path))
+    ) ||
+    isProtectedDeletePath(location, {
+      exact: [],
+      subtrees: appMetadataSubtrees(dataDir),
+    })
+  );
+};
 
 /**
  * System directories no game install should ever live in. Kept separate from

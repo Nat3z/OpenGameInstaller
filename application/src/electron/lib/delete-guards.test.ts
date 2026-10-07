@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test';
+import * as fs from 'fs';
+import * as os from 'os';
 import { homedir } from 'os';
+import * as path from 'path';
 import { join, sep } from 'path';
 import {
   appMetadataSubtrees,
   type DeleteGuardRoots,
   filesystemRoot,
   isProtectedDeletePath,
+  isUnsafeDownloadLocation,
+  normalizeDeletePath,
   planGameFileDeletion,
   sharesDirectoryWithOtherGames,
   systemSubtrees,
@@ -62,7 +67,6 @@ const others = [
 ];
 
 describe('sharesDirectoryWithOtherGames', () => {
-
   test('detects exact, parent, and child overlaps with other games', () => {
     expect(sharesDirectoryWithOtherGames(9, '/games/alpha', others)).toBe(true);
     expect(sharesDirectoryWithOtherGames(9, '/games', others)).toBe(true);
@@ -142,5 +146,55 @@ describe('planGameFileDeletion', () => {
         pathExists: exists(new Set(['/games/gamma'])),
       })
     ).toEqual({ kind: 'delete' });
+  });
+});
+
+describe('normalizeDeletePath', () => {
+  test('resolves a missing leaf through a symlinked parent', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ogi-guard-'));
+    try {
+      const real = path.join(base, 'real');
+      fs.mkdirSync(real);
+      const link = path.join(base, 'link');
+      fs.symlinkSync(real, link);
+      const resolvedReal = fs.realpathSync(real);
+      const normalized = normalizeDeletePath(
+        path.join(link, 'missing', 'leaf')
+      );
+      const expected = path.join(resolvedReal, 'missing', 'leaf');
+      expect(normalized).toBe(
+        process.platform !== 'linux' ? expected.toLowerCase() : expected
+      );
+      expect(
+        isProtectedDeletePath(path.join(link, 'missing'), {
+          exact: [],
+          subtrees: [resolvedReal],
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('isUnsafeDownloadLocation', () => {
+  test('rejects roots that contain home or app state, allows narrow folders', () => {
+    const data = join(homedir(), '.local', 'share', 'OpenGameInstaller');
+    for (const unsafe of [
+      filesystemRoot(),
+      homedir(),
+      join(homedir(), '.local'),
+      data,
+      join(data, 'addons', 'x'),
+    ]) {
+      expect(isUnsafeDownloadLocation(unsafe, data)).toBe(true);
+    }
+    for (const safe of [
+      join(data, 'downloads'),
+      join(homedir(), 'Games'),
+      join(filesystemRoot(), 'mnt', 'games'),
+    ]) {
+      expect(isUnsafeDownloadLocation(safe, data)).toBe(false);
+    }
   });
 });

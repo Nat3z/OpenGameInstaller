@@ -1,6 +1,7 @@
 import {
   ConfigError,
   ConnectionRefreshRequested,
+  type DatabaseError,
   DownloadAborted,
   DownloadError,
   DownloadNotActive,
@@ -30,17 +31,15 @@ import { dirname } from 'path';
 import { Readable, Transform, type TransformCallback } from 'stream';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { sendNotification } from '@/electron/main.js';
-import {
-  getStoredValue,
-  refreshCached,
-} from '@/electron/manager/manager.config.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
 import {
   registerQueueCancel,
   removeQueueCancel,
 } from '@/electron/rpc/queue-cancel.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
+import { runEffectBoundary as runServiceBoundary } from '@/electron/runtime.js';
 import { setAddonDownloadContext } from '@/electron/server/addon-downloads.js';
+import { Settings } from '@/electron/services/index.js';
 import {
   clearDownloadHandshake,
   type DownloadHandshakeResult,
@@ -2796,10 +2795,10 @@ export class Download {
 
 function checkParallelChunkCount(
   activeDownloads: Iterable<Download>
-): Effect.Effect<void, ConfigError> {
+): Effect.Effect<void, ConfigError | DatabaseError, Settings> {
   return Effect.gen(function* () {
-    yield* refreshCached('general');
-    const val = Number(yield* getStoredValue('general', 'parallelChunkCount'));
+    const settings = yield* (yield* Settings).get;
+    const val = settings.parallelChunkCount;
     // Ensure minimum of 1, default to 8 if invalid
     const chunkCount = Math.max(1, Number.isFinite(val) ? val : 8);
     logger.sync.info('[direct] parallel chunk count:', chunkCount);
@@ -2818,7 +2817,7 @@ function checkParallelChunkCount(
       });
     }
 
-    const bwVal = Number(yield* getStoredValue('general', 'bandwidthLimit'));
+    const bwVal = settings.bandwidthLimit;
     BANDWIDTH_LIMIT_BYTES_PER_SEC =
       Number.isFinite(bwVal) && bwVal > 0 ? Math.round(bwVal * 1024 * 1024) : 0;
     globalTokenBucket.update(BANDWIDTH_LIMIT_BYTES_PER_SEC);
@@ -2840,11 +2839,11 @@ export interface DownloadServiceShape {
     jobs: DownloadJob[],
     part?: number,
     hooks?: DownloadHooks
-  ) => Effect.Effect<DownloadHandshakeResult, DownloadError>;
+  ) => Effect.Effect<DownloadHandshakeResult, DownloadError, Settings>;
   readonly pause: (id: string) => Effect.Effect<void, DownloadNotActive>;
   readonly resume: (
     id: string
-  ) => Effect.Effect<void, DownloadError | DownloadNotActive>;
+  ) => Effect.Effect<void, DownloadError | DownloadNotActive, Settings>;
   readonly abort: (id: string) => Effect.Effect<void, DownloadNotActive>;
   readonly statuses: Stream.Stream<
     ReadonlyArray<{ id: string; status: DownloadStatus }>
@@ -3006,8 +3005,8 @@ export default function handler(mainWindow: BrowserWindow) {
   const service = Effect.runSync(makeDownloadService(mainWindow));
   setAddonDownloadContext(service, mainWindow);
   const layer = Layer.succeed(DownloadService, service);
-  const run = <A, E>(effect: Effect.Effect<A, E, DownloadService>) =>
-    runEffectBoundary(effect.pipe(Effect.provide(layer)));
+  const run = <A, E>(effect: Effect.Effect<A, E, DownloadService | Settings>) =>
+    runServiceBoundary(effect.pipe(Effect.provide(layer)));
 
   mainWindow.once('closed', () => {
     void runEffectBoundary(service.shutdown);

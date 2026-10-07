@@ -1,10 +1,11 @@
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import '@/electron/lib/source-maps.js';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
+import { formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
-import fs, { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { closeDatabase, getOpenDatabase } from '@/electron/database/index.js';
 import { startAddons } from '@/electron/handlers/handler.addon.js';
 import {
   awaitPendingFileDeletions,
@@ -13,7 +14,6 @@ import {
   hasPendingFileDeletions,
   launchGameFromLibrary,
 } from '@/electron/handlers/handler.library.js';
-import { loadLibraryInfo } from '@/electron/handlers/helpers.app/library.js';
 import {
   isGamescopeSession,
   tagWindowForGamescope,
@@ -40,16 +40,16 @@ import {
 } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 import {
-  addonServer,
+  getAddonServer,
   isAddonServerListening,
   isSecurityCheckEnabled,
   port,
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
+import { Library } from '@/electron/services/index.js';
 import {
   checkForAddonUpdates,
-  convertLibrary,
   IS_NIXOS,
   startupEnvironmentReady,
 } from '@/electron/startup.js';
@@ -82,7 +82,7 @@ async function handleLaunchHooks(
     registerMainHandlers(mainWindow);
     const startupResult = await runElectronEffect(runStartupTasks(mainWindow));
     if (startupResult.shutdownPending) {
-      shutdownForInstallerUpdate(mainWindow);
+      shutdownAfterStartup(mainWindow);
       return;
     }
     await startAddonRuntime();
@@ -121,7 +121,7 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
     // Run startup tasks first
     const startupResult = await runElectronEffect(runStartupTasks(mainWindow));
     if (startupResult.shutdownPending) {
-      shutdownForInstallerUpdate(mainWindow);
+      shutdownAfterStartup(mainWindow);
       return;
     }
     await startAddonRuntime();
@@ -172,19 +172,13 @@ if (process.platform === 'win32') {
   app.disableHardwareAcceleration();
 }
 
-/* Sync IPC for initial theme: must be registered before renderer loads to avoid flash */
+/* Sync IPC for initial theme: must be registered before renderer loads to avoid
+   flash. Reads the database directly because it runs before the window exists
+   and Electron requires a synchronous return value. Never opens it: before
+   startup has (backup restore must run first) this falls back to light. */
 ipcMain.on('get-initial-theme', (event) => {
   try {
-    const configPath = join(__dirname, 'config/option/general.json');
-    if (existsSync(configPath)) {
-      const data = JSON.parse(readFileSync(configPath, 'utf-8')) as {
-        theme?: string;
-      };
-      const t = data.theme;
-      event.returnValue = t === 'dark' || t === 'synthwave' ? t : 'light';
-    } else {
-      event.returnValue = 'light';
-    }
+    event.returnValue = getOpenDatabase()?.getSettings().theme ?? 'light';
   } catch {
     event.returnValue = 'light';
   }
@@ -364,7 +358,7 @@ async function onMainAppReady() {
   if (ogiDebug()) {
     mainWindow?.webContents?.openDevTools();
   }
-  if (!isSecurityCheckEnabled) {
+  if (!isSecurityCheckEnabled()) {
     sendNotification({
       message:
         "Security checks are disabled and application security LOWERED. Only enable if you know what you're doing.",
@@ -372,8 +366,6 @@ async function onMainAppReady() {
       type: 'warning',
     });
   }
-
-  convertLibrary();
 
   mainWindow?.webContents?.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
@@ -445,14 +437,12 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
     'file://' +
       join(app.getAppPath(), 'public', 'splash.html') +
       '?secret=' +
-      addonServer.getSecret()
+      getAddonServer().getSecret()
   );
 
   mainWindow.on('closed', function () {
     mainWindow = null;
   });
-
-  fs.mkdir(join(__dirname, 'config'), (_) => {});
 
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
@@ -476,7 +466,7 @@ async function startAppFlow(win: BrowserWindow) {
   }
 
   if (shutdownPending) {
-    shutdownForInstallerUpdate(win);
+    shutdownAfterStartup(win);
     return;
   }
 
@@ -492,14 +482,14 @@ async function startAppFlow(win: BrowserWindow) {
         'file://' +
           join(app.getAppPath(), 'out', 'renderer', 'index.html') +
           '?secret=' +
-          addonServer.getSecret()
+          getAddonServer().getSecret()
       );
     }
     win.once('ready-to-show', onMainAppReady);
   }
 }
 
-function shutdownForInstallerUpdate(win: BrowserWindow): void {
+function shutdownAfterStartup(win: BrowserWindow): void {
   if (!win.isDestroyed()) {
     win.close();
     return;
@@ -546,12 +536,20 @@ async function runAddonLaunchEvent(
   gameId: number,
   launchType: 'pre' | 'post'
 ): Promise<{ success: boolean; error?: string }> {
-  const libraryInfo = loadLibraryInfo(gameId);
-  if (!libraryInfo) {
-    return { success: false, error: 'Game not found in library' };
-  }
-
-  return runElectronEffect(runLaunchAppHooks(libraryInfo, launchType));
+  return runElectronEffect(
+    Effect.gen(function* () {
+      const library = yield* Library;
+      const libraryInfo = yield* library.get(gameId);
+      if (!libraryInfo) {
+        return { success: false, error: 'Game not found in library' };
+      }
+      return yield* runLaunchAppHooks(libraryInfo, launchType);
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.succeed({ success: false, error: formatError(error) })
+      )
+    )
+  );
 }
 
 async function handleRemoteLaunchRequest(
@@ -779,6 +777,7 @@ app.on('window-all-closed', () => {
       }
       for (const interval of torrentIntervals) clearInterval(interval);
       if (isAddonServerListening) yield* stopAddonServer();
+      yield* Effect.sync(closeDatabase);
     }).pipe(
       Effect.catchAll((error) => logger.error('Error during cleanup:', error))
     )

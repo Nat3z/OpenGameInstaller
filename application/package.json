@@ -15,7 +15,11 @@
     "files": [
       "public/**/*",
       "out/**/*",
+      "drizzle/**/*",
       "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "**/*.node"
     ],
     "win": {},
     "linux": {
@@ -33,6 +37,8 @@
   },
   "scripts": {
     "build": "electron-vite build",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
     "build:all": "bun run --cwd .. --filter './packages/*' build",
     "dev": "bun run build:all && ELECTRON_EXEC_PATH=\"$(bun -e \"console.log(require('electron'))\" )\" electron-vite dev",
     "preview": "electron-vite preview",
@@ -53,12 +59,14 @@
     "@ogi-sdk/addon-server": "workspace:*",
     "@ogi-sdk/client-kit": "workspace:*",
     "@ogi-sdk/connect": "workspace:*",
-    "@ogi-sdk/executor": "workspace:*",
     "@ogi-sdk/errors": "workspace:*",
+    "@ogi-sdk/executor": "workspace:*",
     "@ogi-sdk/logger": "workspace:*",
     "all-debrid-js": "workspace:*",
     "axios": "^1.13.4",
+    "better-sqlite3": "^13.0.3",
     "d3": "^7.9.0",
+    "drizzle-orm": "^0.45.2",
     "effect": "3.22.0",
     "node-datachannel": "^0.32.0",
     "ogi-addon": "workspace:*",
@@ -71,9 +79,11 @@
     "webtorrent": "^2.8.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@tailwindcss/vite": "^4.1.18",
     "@tsconfig/svelte": "^5.0.6",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/d3": "^7.4.3",
     "@types/node": "^22.15.0",
     "@types/sanitize-html": "^2.16.0",
@@ -82,8 +92,8 @@
     "@types/webtorrent": "^0.110.1",
     "concurrently": "^7.6.0",
     "debug": "^4.4.3",
-    "@electron/rebuild": "^3.7.2",
-    "electron": "^40.1.0",
+    "drizzle-kit": "^0.31.10",
+    "electron": "^43.1.0",
     "electron-builder": "^23.6.0",
     "electron-vite": "^5.0.0",
     "nodemon": "^3.1.11",

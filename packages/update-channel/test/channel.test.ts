@@ -82,11 +82,15 @@ test('legacy unstable migrates and installation paths are isolated', () => {
   expect(channelStatePath(root, join(root, 'other'))).not.toBe(state);
 });
 
-test('pre-build-tracking state keeps its channel', () => {
+test('pre-build-tracking state keeps release choices but follows a downloaded nightly', () => {
   const { root, state } = installation();
   saveChannel(state, 'stable', {});
   writeFileSync(state, '{"channel":"unstable"}');
   expect(resolveChannel(state, root, 'setup', '2.2.0')).toBe('unstable');
+  writeFileSync(state, '{"channel":"stable"}');
+  expect(resolveChannel(state, root, 'setup', '2.2.1-nightly.100')).toBe(
+    'nightly'
+  );
 });
 
 test('invalid persisted state cannot silently change channels', () => {

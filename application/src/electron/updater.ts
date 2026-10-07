@@ -1226,6 +1226,8 @@ export function checkIfInstallerUpdateAvailable(
               `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
             );
             chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
+            // Keep the recorded version in sync with the replaced setup for channel switches.
+            writeFileSync('../updater-version.txt', latestSetupVersion.trim());
           } catch (moveError: any) {
             logger.sync.error(
               '[updater] Failed to move setup:',

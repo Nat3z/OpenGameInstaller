@@ -123,6 +123,8 @@ export function resolveChannel(
   const state = readState(statePath);
   const previous = state?.builds[executable];
   if (state && previous === kind) return state.channel;
+  // State saved before builds were tracked cannot tell an explicit choice from the
+  // automatic stable default, so a nightly build still moves it to nightly.
   const channel: UpdateChannel = !state
     ? existsSync(join(installRoot, 'COMMIT_EDGE.txt'))
       ? 'bleeding-edge'

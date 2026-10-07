@@ -11,6 +11,9 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ogi-desktop-shortcut-'));
 const updateDir = path.join(root, 'updater', 'update');
 const homeDir = path.join(root, 'home');
 const dataDir = path.join(root, 'data', 'OpenGameInstaller');
+// Steam shortcut launches run OGI with cwd set to the game's directory.
+const gameDir = path.join(root, 'games', 'SomeGame');
+const appImagePath = path.join(updateDir, 'OpenGameInstaller.AppImage');
 
 mock.module('electron', () => ({
   app: {
@@ -37,20 +40,20 @@ beforeAll(async () => {
   fs.mkdirSync(updateDir, { recursive: true });
   fs.mkdirSync(homeDir, { recursive: true });
   fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(gameDir, { recursive: true });
   // dev-mode source icon resolves to <__dirname>/../../public/favicon.png
   fs.mkdirSync(path.join(root, 'public'), { recursive: true });
   fs.writeFileSync(path.join(root, 'public', 'favicon.png'), 'icon-bytes');
-  fs.writeFileSync(
-    path.join(updateDir, 'OpenGameInstaller.AppImage'),
-    'app-bytes'
-  );
-  process.chdir(updateDir);
+  fs.writeFileSync(appImagePath, 'app-bytes');
+  process.env.APPIMAGE = appImagePath;
+  process.chdir(gameDir);
   ({ addToDesktop } = await import(
     '../src/electron/handlers/helpers.app/desktop-shortcut.js'
   ));
 });
 
 afterAll(() => {
+  delete process.env.APPIMAGE;
   process.chdir(originalCwd);
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -63,13 +66,10 @@ function simulateUpdaterWipe() {
     if (preserved.has(entry)) continue;
     fs.rmSync(path.join(updateDir, entry), { recursive: true, force: true });
   }
-  fs.writeFileSync(
-    path.join(updateDir, 'OpenGameInstaller.AppImage'),
-    'new-app-bytes'
-  );
+  fs.writeFileSync(appImagePath, 'new-app-bytes');
 }
 
-test('desktop shortcut icon survives an updater wipe of update/', async () => {
+test('desktop shortcut targets the AppImage and its icon survives an updater wipe', async () => {
   const result = await Effect.runPromise(addToDesktop());
   expect(result.success).toBe(true);
 
@@ -79,10 +79,9 @@ test('desktop shortcut icon survives an updater wipe of update/', async () => {
     'OpenGameInstaller.desktop'
   );
   expect(fs.existsSync(desktopFile)).toBe(true);
-  const iconLine = fs
-    .readFileSync(desktopFile, 'utf-8')
-    .split('\n')
-    .find((line) => line.startsWith('Icon='));
+  const lines = fs.readFileSync(desktopFile, 'utf-8').split('\n');
+  expect(lines).toContain(`Exec=${appImagePath}`);
+  const iconLine = lines.find((line) => line.startsWith('Icon='));
   expect(iconLine).toBeDefined();
   const iconPath = (iconLine as string).slice('Icon='.length);
   expect(fs.existsSync(iconPath)).toBe(true);

@@ -1,17 +1,19 @@
 import http from 'node:http';
 import https from 'node:https';
-import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import {
   acceptsRelease,
+  type ChannelBuilds,
   channelStatePath,
   NIGHTLY_API,
   nightlyRelease,
   parseNightlyManifest,
   resolveChannel,
   saveChannel,
+  selectChannel,
   shouldUpdateApplication,
   type UpdateChannel,
 } from '@ogi/update-channel';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
@@ -125,6 +127,13 @@ const channelPath = channelStatePath(app.getPath('appData'), __dirname);
 let updateChannel: UpdateChannel = 'stable';
 if (fs.existsSync(`./version.txt`)) {
   localVersion = fs.readFileSync(`./version.txt`, 'utf8');
+}
+
+/** Builds installed when a channel is chosen, so only a later download of another kind switches tracks. */
+function installedBuilds(): ChannelBuilds {
+  return fs.existsSync('./version.txt')
+    ? { setup: SETUP_VERSION, application: localVersion }
+    : { setup: SETUP_VERSION };
 }
 
 const PATCH_PROGRESS_INTERVAL = 128;
@@ -988,7 +997,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
 
     const channelResult = yield* Effect.either(
       tryFileSystem('read-update-channel', channelPath, () =>
-        resolveChannel(channelPath, __dirname, SETUP_VERSION)
+        resolveChannel(channelPath, __dirname, 'setup', SETUP_VERSION)
       )
     );
     const recoverChannel = channelResult._tag === 'Left';
@@ -1009,11 +1018,11 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       }
     }
     // COMMIT_EDGE.txt only records built= once a source build has been installed,
-    // so a marker left behind by a failed build does not force a reinstall.
-    const installedChannel =
-      recoverChannel && readStoredCommitEdgeTarget()?.built
-        ? 'bleeding-edge'
-        : updateChannel;
+    // so a marker left behind by a failed build does not force a reinstall. It is kept
+    // until a release replaces the source build, which also covers switching in the app.
+    const installedChannel = readStoredCommitEdgeTarget()?.built
+      ? 'bleeding-edge'
+      : updateChannel;
     const initialOnlineState = getEffectiveOnlineState();
     if (!initialOnlineState.effectiveOnline && !recoverChannel) {
       yield* logger.info(
@@ -1034,23 +1043,14 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       while (true) {
         const choice = yield* waitForUpdateChannelChoice();
         const channel = choice.channel;
-        if (channel === 'stable') {
-          yield* tryFileSystem('select-stable-channel', undefined, () => {
-            fs.rmSync('./bleeding-edge.txt', { force: true });
-            fs.rmSync('./COMMIT_EDGE.txt', { force: true });
-            saveChannel(channelPath, 'stable');
-          });
-          updateChannel = 'stable';
-          break;
-        }
-        if (channel === 'unstable' || channel === 'nightly') {
-          yield* tryFileSystem('select-unstable-channel', undefined, () => {
-            if (channel === 'unstable')
-              fs.writeFileSync('./bleeding-edge.txt', 'true');
-            else fs.rmSync('./bleeding-edge.txt', { force: true });
-            fs.rmSync('./COMMIT_EDGE.txt', { force: true });
-            saveChannel(channelPath, channel);
-          });
+        if (
+          channel === 'stable' ||
+          channel === 'unstable' ||
+          channel === 'nightly'
+        ) {
+          yield* tryFileSystem('select-update-channel', channelPath, () =>
+            selectChannel(channelPath, __dirname, channel, installedBuilds())
+          );
           updateChannel = channel;
           break;
         }
@@ -1082,7 +1082,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
                       ? stored.built
                       : ''
                   );
-                  saveChannel(channelPath, 'bleeding-edge');
+                  saveChannel(channelPath, 'bleeding-edge', installedBuilds());
                 }),
               (target) => ensureBleedingEdgeBuild(target.commit, target.branch)
             )
@@ -1219,9 +1219,10 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       if (!updateApplied) {
         yield* downloadFullRelease(targetRelease);
       }
-      yield* tryFileSystem('write-version', './version.txt', () =>
-        fs.writeFileSync('./version.txt', targetRelease.tag_name)
-      );
+      yield* tryFileSystem('write-version', './version.txt', () => {
+        fs.writeFileSync('./version.txt', targetRelease.tag_name);
+        fs.rmSync('./COMMIT_EDGE.txt', { force: true });
+      });
       mainWindow.webContents.send('text', 'Launching OpenGameInstaller');
       launchApp(true);
       return;

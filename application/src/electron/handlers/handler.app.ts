@@ -7,6 +7,7 @@ import {
   formatError,
   HttpError,
   PlatformError,
+  UpdateError,
 } from '@ogi-sdk/errors';
 import axios, { type AxiosRequestConfig } from 'axios';
 import { Effect } from 'effect';
@@ -25,7 +26,15 @@ import {
 } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { addonServer } from '@/electron/server/addon-server.js';
-import type { OperatingSystem } from '@/lib/electron-rpc.js';
+import {
+  getUpdateChannel,
+  relaunchThroughSetup,
+  setUpdateChannel,
+} from '@/electron/updater.js';
+import type {
+  OperatingSystem,
+  ReleaseUpdateChannel,
+} from '@/lib/electron-rpc.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 import { addToDesktop } from './helpers.app/desktop-shortcut.js';
 import { getCurrentUsername } from './helpers.app/platform.js';
@@ -73,6 +82,14 @@ const axiosRequest = (
           : 500,
         url: options.url,
       }),
+  });
+
+const updateChannelEffect = <A>(
+  operation: () => A
+): Effect.Effect<A, UpdateError> =>
+  Effect.try({
+    try: operation,
+    catch: (cause) => new UpdateError({ message: formatError(cause), cause }),
   });
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
@@ -143,6 +160,21 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
     ),
     procedure(ElectronRpc.app.isOnline, () =>
       runBoundary(Effect.sync(() => getEffectiveOnlineState().effectiveOnline))
+    ),
+    procedure(ElectronRpc.app.getUpdateChannel, () =>
+      runBoundary(updateChannelEffect(getUpdateChannel))
+    ),
+    procedure(
+      ElectronRpc.app.setUpdateChannel,
+      (channel: ReleaseUpdateChannel) =>
+        runBoundary(updateChannelEffect(() => setUpdateChannel(channel)))
+    ),
+    procedure(ElectronRpc.app.relaunchSetup, (gui: boolean) =>
+      runBoundary(
+        updateChannelEffect(() =>
+          relaunchThroughSetup(mainWindow, gui ? ['--gui'] : [])
+        )
+      )
     ),
     procedure(ElectronRpc.app.getAddonPath, (addonID: string) =>
       runBoundary(

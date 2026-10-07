@@ -16,6 +16,7 @@ import ThemePicker from '@/frontend/components/ThemePicker.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
+import type { UpdateChannel } from '@/lib/electron-rpc';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -736,8 +737,73 @@ $effect(() => {
   }
 });
 
+const updateChannels: {
+  id: UpdateChannel;
+  name: string;
+  description: string;
+}[] = [
+  { id: 'stable', name: 'Stable', description: 'Normal releases.' },
+  {
+    id: 'unstable',
+    name: 'Unstable',
+    description: 'Stable releases plus prereleases.',
+  },
+  {
+    id: 'nightly',
+    name: 'Nightly',
+    description: 'Automated builds of the latest main branch.',
+  },
+  {
+    id: 'bleeding-edge',
+    name: 'Source Build',
+    description: 'Builds a branch or commit from source in the setup.',
+  },
+];
+let updateChannel: { channel: UpdateChannel; managed: boolean } | null =
+  $state(null);
+let selectedUpdateChannel: UpdateChannel = $state('stable');
+let isSwitchingChannel = $state(false);
+
+async function switchUpdateChannel() {
+  isSwitchingChannel = true;
+  const channel = selectedUpdateChannel;
+  await runFrontendEffect(
+    (channel === 'bleeding-edge'
+      ? electronRpc.app.relaunchSetup(true)
+      : electronRpc.app
+          .setUpdateChannel(channel)
+          .pipe(Effect.zipRight(electronRpc.app.relaunchSetup(false)))
+    ).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          isSwitchingChannel = false;
+          createNotification({
+            id: Math.random().toString(36).substring(7),
+            message: `Could not switch update channel: ${error.message}`,
+            type: 'error',
+          });
+        })
+      )
+    )
+  );
+}
+
 let reasonForSteamGridLaunch: string = $state('');
 onMount(() => {
+  runFrontendEffect(
+    electronRpc.app.getUpdateChannel().pipe(
+      Effect.tap((info) =>
+        Effect.sync(() => {
+          updateChannel = info;
+          selectedUpdateChannel = info.channel;
+        })
+      ),
+      Effect.catchAll((error) =>
+        logger.error('Failed to read update channel:', error)
+      )
+    )
+  );
+
   function steamgriddbLaunch(event: Event) {
     doSteamGridDBReconfigure = true;
     reasonForSteamGridLaunch = (event as CustomEvent).detail || '';
@@ -871,6 +937,44 @@ onMount(() => {
                   </a>
                 </div>
                 <p class="about-version">v{window.electronAPI.getVersion()}</p>
+                {#if updateChannel}
+                  <div class="option-item update-channel">
+                    <label class="option-label" for="update-channel">
+                      Update Channel
+                    </label>
+                    <p class="option-description">
+                      {updateChannel.managed
+                        ? 'OpenGameInstaller restarts through the setup to install the selected channel.'
+                        : 'Portable copies keep the channel they were downloaded with.'}
+                    </p>
+                    {#if updateChannel.managed}
+                      <CustomDropdown
+                        id="update-channel"
+                        options={updateChannels}
+                        selectedId={selectedUpdateChannel}
+                        onchange={({ selectedId }) =>
+                          (selectedUpdateChannel = selectedId as UpdateChannel)}
+                      />
+                      {#if selectedUpdateChannel !== updateChannel.channel}
+                        <button
+                          class="action-button bg-accent-light text-accent-dark hover:bg-accent-dark hover:text-accent-light mt-4"
+                          disabled={isSwitchingChannel}
+                          onclick={switchUpdateChannel}
+                        >
+                          {selectedUpdateChannel === 'bleeding-edge'
+                            ? 'Open Setup'
+                            : 'Switch and Restart'}
+                        </button>
+                      {/if}
+                    {:else}
+                      <p class="text-text-primary font-medium">
+                        {updateChannels.find(
+                          (option) => option.id === updateChannel?.channel
+                        )?.name}
+                      </p>
+                    {/if}
+                  </div>
+                {/if}
               </div>
             </div>
           {:else}
@@ -1341,6 +1445,10 @@ onMount(() => {
 
   .about-version {
     @apply text-sm text-text-muted mt-8;
+  }
+
+  .update-channel {
+    @apply w-full text-left;
   }
 
   /* Options Grid */

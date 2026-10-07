@@ -49,6 +49,20 @@ export type GameRemovalProgress = {
 
 export type OperatingSystem = typeof OperatingSystem.Type;
 
+export const ReleaseUpdateChannel = Schema.Literal(
+  'stable',
+  'unstable',
+  'nightly'
+);
+export type ReleaseUpdateChannel = typeof ReleaseUpdateChannel.Type;
+export const UpdateChannel = Schema.Literal(
+  'stable',
+  'unstable',
+  'nightly',
+  'bleeding-edge'
+);
+export type UpdateChannel = typeof UpdateChannel.Type;
+
 export class ElectronRpcError extends Schema.TaggedError<ElectronRpcError>()(
   'ElectronRpcError',
   {
@@ -128,6 +142,14 @@ export const ElectronRpc = {
     isSteamDeck: rpc('app.isSteamDeck', [], Schema.Boolean),
     inputSend: rpc('app.inputSend', [Schema.String, Schema.Unknown], Void),
     isOnline: rpc('app.isOnline', [], Schema.Boolean),
+    getUpdateChannel: rpc(
+      'app.getUpdateChannel',
+      [],
+      Schema.Struct({ channel: UpdateChannel, managed: Schema.Boolean })
+    ),
+    setUpdateChannel: rpc('app.setUpdateChannel', [ReleaseUpdateChannel], Void),
+    /** Restarts through the setup, optionally opening its channel picker. */
+    relaunchSetup: rpc('app.relaunchSetup', [Schema.Boolean], Void),
     getAddonPath: rpc(
       'app.getAddonPath',
       [Schema.String],

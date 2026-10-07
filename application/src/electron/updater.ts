@@ -1,5 +1,3 @@
-import { formatError, NetworkError, ValidationError } from '@ogi-sdk/errors';
-import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import {
   acceptsRelease,
   channelStatePath,
@@ -7,9 +5,12 @@ import {
   nightlyRelease,
   parseNightlyManifest,
   resolveChannel,
+  selectChannel,
   shouldUpdateSetup,
   type UpdateChannel,
 } from '@ogi/update-channel';
+import { formatError, NetworkError, ValidationError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { exec, spawn } from 'child_process';
 import { createHash } from 'crypto';
@@ -69,6 +70,86 @@ let __dirname = isDev()
 if (process.platform === 'linux') {
   // it's most likely sandboxed, so just use ./
   __dirname = './';
+}
+
+// The setup installs the application into its update/ directory.
+const setupExecutable =
+  process.platform === 'win32'
+    ? path.resolve(__dirname, '..', 'OpenGameInstaller.exe')
+    : path.resolve('../OpenGameInstaller-Setup.AppImage');
+
+/** Channel state is keyed by the setup's directory, or the app's own for portable copies. */
+function channelLocation(): {
+  root: string;
+  statePath: string;
+  managed: boolean;
+} {
+  const managed =
+    !isDev() &&
+    (process.platform === 'linux'
+      ? existsSync(setupExecutable)
+      : basename(path.resolve(__dirname)) === 'update');
+  const root = managed ? join(__dirname, '..') : __dirname;
+  return {
+    root,
+    statePath: channelStatePath(app.getPath('appData'), root),
+    managed,
+  };
+}
+
+export type ChannelInfo = {
+  channel: UpdateChannel;
+  /** Whether a setup manages this installation and can apply a switch. */
+  managed: boolean;
+};
+
+export function getUpdateChannel(): ChannelInfo {
+  const { root, statePath, managed } = channelLocation();
+  return {
+    channel: resolveChannel(statePath, root, 'application', app.getVersion()),
+    managed,
+  };
+}
+
+/** Saves a release-feed channel; the setup installs its build on the next launch. */
+export function setUpdateChannel(
+  channel: Exclude<UpdateChannel, 'bleeding-edge'>
+): void {
+  const { root, statePath } = channelLocation();
+  const setupVersionPath = join(root, 'updater-version.txt');
+  selectChannel(statePath, root, channel, {
+    application: app.getVersion(),
+    ...(existsSync(setupVersionPath)
+      ? { setup: readFileSync(setupVersionPath, 'utf8') }
+      : {}),
+  });
+}
+
+/**
+ * Closes the app and relaunches the setup once shutdown cleanup has released the
+ * addon server port, since the setup refuses to start beside a running instance.
+ */
+export function relaunchThroughSetup(
+  mainWindow: Electron.BrowserWindow,
+  args: string[] = []
+): void {
+  if (!channelLocation().managed)
+    throw new Error('This installation is not managed by the setup');
+  // Drop this AppImage's runtime variables so the setup AppImage mounts its own.
+  const { APPDIR, APPIMAGE, ARGV0, OWD, ...env } = process.env;
+  app.once('quit', () => {
+    spawn(
+      setupExecutable,
+      process.platform === 'linux' ? [...args, '--no-sandbox'] : args,
+      {
+        cwd: path.dirname(setupExecutable),
+        detached: true,
+        stdio: 'ignore',
+        env,
+      }
+    ).unref();
+  });
+  mainWindow.close();
 }
 
 /**
@@ -904,17 +985,13 @@ export function checkIfInstallerUpdateAvailable(
       }
     };
 
-    const installRoot = join(__dirname, '..');
     let channel: UpdateChannel;
     try {
-      const portable =
-        process.platform === 'linux'
-          ? !existsSync('../OpenGameInstaller-Setup.AppImage')
-          : basename(__dirname) !== 'update';
-      const root = portable ? __dirname : installRoot;
+      const { root, statePath } = channelLocation();
       channel = resolveChannel(
-        channelStatePath(app.getPath('appData'), root),
+        statePath,
         root,
+        'application',
         app.getVersion()
       );
     } catch (error) {

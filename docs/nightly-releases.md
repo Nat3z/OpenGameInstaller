@@ -9,9 +9,11 @@ Nightlies use the existing Bun, Electron Builder, GitHub Releases, npm and block
 - **Nightly** follows the validated nightly channel manifest.
 - **Bleeding Edge** retains the existing branch/commit source-build flow.
 
-Run the setup executable with `--gui` to select a channel. Nightly application and setup packages embed a `-nightly.<run-id>` version, which initializes nightly membership on first launch. Existing explicit selection takes precedence. Selecting stable permits a downgrade from a nightly application/setup to the current stable release.
+Change channels from **Settings → About → Update Channel**, which saves the choice and restarts through the setup to install it, or run the setup executable with `--gui`. Source builds always open the setup's picker.
 
-Selection is stored under the OS application-data directory at `OpenGameInstaller/channels/<installation-root-hash>.json`. Both executables use the same installation root. This survives application and setup replacement without depending on the backup directory. Existing `bleeding-edge.txt` and `COMMIT_EDGE.txt` markers migrate to unstable and source-build channels respectively. Invalid saved state opens a recovery prompt and requires an explicit channel choice instead of silently opting into another channel.
+The downloaded build decides the track. Nightly application and setup packages embed a `-nightly.<run-id>` version. Running one where the previous build was a release moves the installation to nightly, and running a release build where a nightly ran before moves it back to stable. The state records which kind of build each executable last ran as, so updates within a channel never trigger this and explicit choices stick. A release build replacing a nightly keeps an explicit unstable choice. Selecting stable permits a downgrade from a nightly application/setup to the current stable release.
+
+Selection is stored under the OS application-data directory at `OpenGameInstaller/channels/<installation-root-hash>.json`. Both executables use the same installation root. This survives application and setup replacement without depending on the backup directory. Existing `bleeding-edge.txt` and `COMMIT_EDGE.txt` markers migrate to unstable and source-build channels respectively. `COMMIT_EDGE.txt` stays until a release replaces the source build, so leaving a source build from the app still reinstalls a release. Invalid saved state opens a recovery prompt and requires an explicit channel choice instead of silently opting into another channel.
 
 Portable copies retain their channel identity but do not install an updater. Download another portable build to update them, or use the nightly setup for automatic application updates. Offline launches do not require the manifest.
 

@@ -25,16 +25,52 @@ afterEach(() => {
 
 test('nightly bootstrap persists an explicit return to stable across replacement', () => {
   const { root, state } = installation();
-  expect(resolveChannel(state, root, '2.2.1-nightly.100')).toBe('nightly');
-  saveChannel(state, 'stable');
-  expect(resolveChannel(state, root, '2.2.1-nightly.101')).toBe('stable');
+  expect(resolveChannel(state, root, 'setup', '2.2.1-nightly.100')).toBe(
+    'nightly'
+  );
+  saveChannel(state, 'stable', {
+    setup: '2.2.1-nightly.100',
+    application: 'nightly-100',
+  });
+  expect(resolveChannel(state, root, 'setup', '2.2.1-nightly.101')).toBe(
+    'stable'
+  );
+  expect(resolveChannel(state, root, 'application', 'v4.3.1')).toBe('stable');
+});
+
+test('a downloaded build of another kind moves to its track', () => {
+  const { root, state } = installation();
+  expect(resolveChannel(state, root, 'setup', '2.2.0')).toBe('stable');
+  expect(resolveChannel(state, root, 'setup', '2.2.1-nightly.100')).toBe(
+    'nightly'
+  );
+  // The nightly app it installs agrees with the new track.
+  expect(resolveChannel(state, root, 'application', '4.3.2-nightly.100')).toBe(
+    'nightly'
+  );
+  expect(resolveChannel(state, root, 'setup', '2.2.0')).toBe('stable');
+});
+
+test('a stable build keeps non-nightly choices', () => {
+  const { root, state } = installation();
+  saveChannel(state, 'unstable', { setup: '2.2.1-nightly.100' });
+  expect(resolveChannel(state, root, 'setup', '2.2.0')).toBe('unstable');
+});
+
+test('a choice made from a stable app survives the setup and app it installs', () => {
+  const { root, state } = installation();
+  saveChannel(state, 'nightly', { application: '4.3.2', setup: '2.2.0' });
+  expect(resolveChannel(state, root, 'setup', '2.2.0')).toBe('nightly');
+  expect(resolveChannel(state, root, 'application', '4.3.3-nightly.7')).toBe(
+    'nightly'
+  );
 });
 
 test('legacy source marker takes priority over unstable and embedded nightly', () => {
   const { root, state } = installation();
   writeFileSync(join(root, 'bleeding-edge.txt'), 'true');
   writeFileSync(join(root, 'COMMIT_EDGE.txt'), 'main');
-  expect(resolveChannel(state, root, '2.2.1-nightly.100')).toBe(
+  expect(resolveChannel(state, root, 'setup', '2.2.1-nightly.100')).toBe(
     'bleeding-edge'
   );
 });
@@ -42,15 +78,22 @@ test('legacy source marker takes priority over unstable and embedded nightly', (
 test('legacy unstable migrates and installation paths are isolated', () => {
   const { root, state } = installation();
   writeFileSync(join(root, 'bleeding-edge.txt'), 'true');
-  expect(resolveChannel(state, root, '2.2.0')).toBe('unstable');
+  expect(resolveChannel(state, root, 'setup', '2.2.0')).toBe('unstable');
   expect(channelStatePath(root, join(root, 'other'))).not.toBe(state);
+});
+
+test('pre-build-tracking state keeps its channel', () => {
+  const { root, state } = installation();
+  saveChannel(state, 'stable', {});
+  writeFileSync(state, '{"channel":"unstable"}');
+  expect(resolveChannel(state, root, 'setup', '2.2.0')).toBe('unstable');
 });
 
 test('invalid persisted state cannot silently change channels', () => {
   const { root, state } = installation();
-  saveChannel(state, 'nightly');
+  saveChannel(state, 'nightly', { setup: '2.2.0' });
   writeFileSync(state, '{"channel":"unknown"}');
-  expect(() => resolveChannel(state, root, '2.2.0')).toThrow();
+  expect(() => resolveChannel(state, root, 'setup', '2.2.0')).toThrow();
 });
 
 test('stable and unstable feeds exclude nightly releases', () => {

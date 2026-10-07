@@ -131,8 +131,8 @@ jobs:
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
-      # Dist-tag updates over trusted publishing (OIDC) need npm 11.21+.
-      - run: npm install -g npm@^11.21.0
+      # Dist-tag updates over trusted publishing (OIDC) need npm 11.21+; pinned like the actions.
+      - run: npm install -g npm@11.21.0
       - run: bun install --frozen-lockfile --ignore-scripts
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:

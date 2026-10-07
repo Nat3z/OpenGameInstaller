@@ -92,13 +92,29 @@ const toManifest = (info: LibraryInfo): typeof ManifestSchema.Encoded => {
 const writeLock = Effect.unsafeMakeSemaphore(1);
 // Bounds directory reads across a whole scan.
 const readLimit = Effect.unsafeMakeSemaphore(16);
-/** A slow or hung volume yields nothing rather than holding up the scan. */
+/** A hung drive gives up its folder's manifest work so the lock is never held. */
+const FOLDER_TIMEOUT = '10 seconds';
+/** A slow or hung volume stops being scanned; games already found are kept. */
 const ROOT_SCAN_TIMEOUT = '15 seconds';
+
+const withFolderTimeout = (
+  dir: string,
+  effect: Effect.Effect<void>
+): Effect.Effect<void> =>
+  effect.pipe(
+    Effect.timeoutTo({
+      duration: FOLDER_TIMEOUT,
+      onSuccess: () => Effect.void,
+      onTimeout: () =>
+        logger.warn(`[library] Gave up updating the manifest in ${dir}`),
+    }),
+    Effect.flatten
+  );
 
 const writeManifest = (info: LibraryInfo): Effect.Effect<void> => {
   const file = join(info.cwd, MANIFEST_FILE);
   const contents = `${JSON.stringify(toManifest(info), null, 2)}\n`;
-  return Effect.tryPromise(async () => {
+  const write = Effect.tryPromise(async () => {
     const stat = await fsp.stat(info.cwd).catch(() => null);
     if (!stat?.isDirectory()) return;
     const existing = await fsp.readFile(file, 'utf8').catch(() => null);
@@ -116,16 +132,20 @@ const writeManifest = (info: LibraryInfo): Effect.Effect<void> => {
       logger.warn(`[library] Could not write ${file}`, error)
     )
   );
+  return withFolderTimeout(info.cwd, write);
 };
 
 const removeOwnedManifest = (dir: string, appID: number): Effect.Effect<void> =>
-  readManifest(dir).pipe(
-    Effect.flatMap((game) =>
-      game?.appID === appID
-        ? Effect.promise(() =>
-            fsp.rm(join(dir, MANIFEST_FILE), { force: true }).catch(() => {})
-          )
-        : Effect.void
+  withFolderTimeout(
+    dir,
+    readManifest(dir).pipe(
+      Effect.flatMap((game) =>
+        game?.appID === appID
+          ? Effect.promise(() =>
+              fsp.rm(join(dir, MANIFEST_FILE), { force: true }).catch(() => {})
+            )
+          : Effect.void
+      )
     )
   );
 
@@ -192,60 +212,61 @@ export const removeManifest = (
 ): Effect.Effect<void> =>
   removeOwnedManifest(dir, appID).pipe(writeLock.withPermits(1));
 
+/** Pushes each game folder into `found` as soon as it is read. */
 const scanDirectory = (
   dir: string,
-  depth: number
-): Effect.Effect<FoundManifest[]> =>
+  depth: number,
+  found: FoundManifest[]
+): Effect.Effect<void> =>
   Effect.gen(function* () {
     const entries = yield* Effect.promise(() =>
       fsp.readdir(dir, { withFileTypes: true }).catch((): Dirent[] => [])
     ).pipe(readLimit.withPermits(1));
-    const found: FoundManifest[] = [];
     if (entries.some((entry) => entry.name === MANIFEST_FILE)) {
       const game = yield* readManifest(dir);
       if (game) found.push({ path: dir, game });
       // A game folder holds no other games, unless a game was installed
       // straight into the scan root.
-      if (depth > 0) return found;
+      if (depth > 0) return;
     }
-    if (depth >= MAX_SCAN_DEPTH) return found;
-    const nested = yield* Effect.forEach(
+    if (depth >= MAX_SCAN_DEPTH) return;
+    yield* Effect.forEach(
       entries.filter(
         (entry) =>
           entry.isDirectory() &&
           !entry.name.startsWith('.') &&
           !SKIPPED_DIRS.has(entry.name)
       ),
-      (entry) => scanDirectory(join(dir, entry.name), depth + 1),
-      { concurrency: 'unbounded' }
+      (entry) => scanDirectory(join(dir, entry.name), depth + 1, found),
+      { concurrency: 'unbounded', discard: true }
     );
-    return [...found, ...nested.flat()];
   });
 
 /** Game folders with a valid manifest at or below `roots`, deduplicated. */
 export const findManifests = (
   roots: readonly string[]
-): Effect.Effect<FoundManifest[]> =>
-  Effect.forEach(
+): Effect.Effect<FoundManifest[]> => {
+  const found: FoundManifest[] = [];
+  return Effect.forEach(
     new Set(roots.map((root) => resolve(root))),
     (root) =>
-      scanDirectory(root, 0).pipe(
+      scanDirectory(root, 0, found).pipe(
         Effect.timeoutTo({
           duration: ROOT_SCAN_TIMEOUT,
-          onSuccess: (found) => found,
-          onTimeout: () => {
-            logger.sync.warn(`[library] Gave up scanning ${root} for games`);
-            return [];
-          },
-        })
+          onSuccess: () => Effect.void,
+          onTimeout: () =>
+            logger.warn(`[library] Stopped scanning ${root} for games`),
+        }),
+        Effect.flatten
       ),
-    { concurrency: 'unbounded' }
+    { concurrency: 'unbounded', discard: true }
   ).pipe(
-    Effect.map((results) => {
+    Effect.map(() => {
       const unique = new Map<string, FoundManifest>();
-      for (const found of results.flat()) {
-        unique.set(normalizeDeletePath(found.path), found);
+      for (const entry of found) {
+        unique.set(normalizeDeletePath(entry.path), entry);
       }
       return [...unique.values()];
     })
   );
+};

@@ -81,27 +81,25 @@ async function reloadLibrary() {
 }
 
 // Runs apart from reloadLibrary so the folder checks never delay the grid.
-// Missing games show without waiting on the slower disk scan, and found games
-// follow once that prompt closes. Games already found in a new folder are not
-// reported missing, since adding them back fixes their entry.
+// Waits on the disk scan (bounded per drive) so a game that moved folders is
+// offered back with its setup intact instead of offered for removal; found
+// games show first and are left out of the missing ones.
 async function checkMissingGames() {
   const check = ++missingGamesCheck;
   const foundCheck = ++foundGamesCheck;
-  void findGamesOnDisk()
-    .then((found) => {
-      if (foundCheck !== foundGamesCheck) return;
-      const moved = new Set(found.map((entry) => entry.game.appID));
-      foundGames = found;
-      missingGames = missingGames.filter((game) => !moved.has(game.appID));
-    })
-    .catch((err) => {
-      logger.sync.error('Failed to look for games on disk:', err);
-    });
   try {
-    const missing = await findMissingGames();
-    if (check !== missingGamesCheck) return;
-    const moved = new Set(foundGames.map((entry) => entry.game.appID));
-    missingGames = missing.filter((game) => !moved.has(game.appID));
+    const [missing, found] = await Promise.all([
+      findMissingGames(),
+      findGamesOnDisk().catch((err) => {
+        logger.sync.error('Failed to look for games on disk:', err);
+        return [];
+      }),
+    ]);
+    const moved = new Set(found.map((entry) => entry.game.appID));
+    if (foundCheck === foundGamesCheck) foundGames = found;
+    if (check === missingGamesCheck) {
+      missingGames = missing.filter((game) => !moved.has(game.appID));
+    }
   } catch (err) {
     logger.sync.error('Failed to check for missing games:', err);
   }
@@ -485,10 +483,10 @@ onDestroy(() => {
   </div>
 {/key}
 
-{#if missingGames.length > 0 && !$selectedApp}
-  <MissingGamesModal games={missingGames} onClose={closeMissingGames} />
-{:else if foundGames.length > 0 && !$selectedApp}
+{#if foundGames.length > 0 && !$selectedApp}
   <FoundGamesModal games={foundGames} onClose={closeFoundGames} />
+{:else if missingGames.length > 0 && !$selectedApp}
+  <MissingGamesModal games={missingGames} onClose={closeMissingGames} />
 {/if}
 
 <style>

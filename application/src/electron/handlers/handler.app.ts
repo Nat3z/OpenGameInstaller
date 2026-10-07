@@ -15,6 +15,7 @@ import { registerLibraryHandlers } from '@/electron/handlers/handler.library.js'
 import { registerRedistributableHandlers } from '@/electron/handlers/handler.redists.js';
 import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
+import { setQuitHold } from '@/electron/lib/quit-hold.js';
 import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import {
@@ -77,7 +78,10 @@ const axiosRequest = (
 
 export default function handler(mainWindow: Electron.BrowserWindow) {
   const appRouter = router(
-    procedure(ElectronRpc.app.close, () => mainWindow?.close()),
+    procedure(ElectronRpc.app.close, () => {
+      setQuitHold(false);
+      mainWindow?.close();
+    }),
     procedure(ElectronRpc.app.hideWindow, () => mainWindow?.hide()),
     procedure(ElectronRpc.app.showWindow, () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -86,7 +90,13 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       }
     }),
     procedure(ElectronRpc.app.minimize, () => mainWindow?.minimize()),
-    procedure(ElectronRpc.app.quit, () => app.quit()),
+    procedure(ElectronRpc.app.quit, () => {
+      setQuitHold(false);
+      app.quit();
+    }),
+    procedure(ElectronRpc.app.setQuitHold, (active: boolean) =>
+      setQuitHold(active)
+    ),
     procedure(ElectronRpc.app.getOS, (): OperatingSystem => {
       if (
         process.platform === 'darwin' ||

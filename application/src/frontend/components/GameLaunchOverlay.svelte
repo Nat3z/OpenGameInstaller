@@ -5,7 +5,7 @@ import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import AddonFailurePromptModal from '@/frontend/components/built/AddonFailurePromptModal.svelte';
 import { createLaunchPrompt } from '@/frontend/lib/core/launch-prompt.svelte';
-import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   gameFocused,
@@ -38,6 +38,12 @@ let isMounted = false;
 // Prompt state: lets the user launch even when the addon pre-launch step failed
 const addonFailurePrompt = createLaunchPrompt();
 
+// While held, a quit (e.g. Steam stopping the game) waits for the launch flow
+// so post-launch hooks still run before the app exits.
+function setQuitHold(active: boolean) {
+  runDetached(electronRpc.app.setQuitHold(active), 'Failed to set quit hold');
+}
+
 onMount(async () => {
   isMounted = true;
   // Parse query parameters
@@ -69,6 +75,7 @@ onMount(async () => {
 
     gameName = libraryInfo.name;
     status = 'running';
+    setQuitHold(true);
 
     if (isHookOnly && hookType) {
       // Hook-only mode: run addon event without launching game.
@@ -81,6 +88,7 @@ onMount(async () => {
       const hookResult = await runFrontendEffect(
         runLaunchAppAddons(libraryInfo, hookType).pipe(Effect.either)
       );
+      setQuitHold(false);
       if (hookResult._tag === 'Right') {
         status = 'success';
         logger.sync.info(
@@ -128,6 +136,7 @@ onMount(async () => {
         // Ask the user whether to continue launching despite the addon failure
         const proceed = await addonFailurePrompt.request(failureText);
         if (!proceed) {
+          setQuitHold(false);
           status = 'error';
           errorMessage = failureText;
           onError(errorMessage);
@@ -163,6 +172,7 @@ onMount(async () => {
         );
         postLaunchError = formatError(error) || 'Post-launch failed';
       }
+      setQuitHold(false);
 
       if (wrapperError || postLaunchError) {
         status = 'error';
@@ -208,6 +218,7 @@ onMount(async () => {
         });
       });
       if (!ready) {
+        setQuitHold(false);
         status = 'error';
         errorMessage =
           'Library view did not load in time. Please try launching again.';
@@ -217,15 +228,18 @@ onMount(async () => {
       launchGameTrigger.set(gameId);
 
       // Keep this overlay mounted for Steam shortcut launches.
-      // The window will be hidden on game:launch and shown again on game:exit.
+      // The window will be hidden on game:launch and shown again on game:exit,
+      // where GameManager runs post-launch hooks and releases the quit hold.
       status = 'running';
     } else {
+      setQuitHold(false);
       status = 'error';
       errorMessage =
         'Game is not configured for Steam shortcut launching (UMU mode required)';
       onError(errorMessage);
     }
   } catch (error) {
+    setQuitHold(false);
     logger.sync.error('[GameLaunchOverlay] Error launching game:', error);
     status = 'error';
     errorMessage =

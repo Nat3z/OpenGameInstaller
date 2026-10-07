@@ -19,6 +19,11 @@ import {
   tagWindowForGamescope,
 } from '@/electron/lib/gamescope.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
+import {
+  isQuitHeld,
+  setQuitHold,
+  waitForQuitRelease,
+} from '@/electron/lib/quit-hold.js';
 import { RendererEventReadiness } from '@/electron/lib/renderer-event-readiness.js';
 import {
   createSingleInstanceData,
@@ -763,10 +768,25 @@ app.on('ready', async () => {
   }
 });
 
-// Quit when all windows are closed.
+// Quit when all windows are closed. No renderer is left to finish a held
+// launch flow, so drop the hold rather than waiting it out.
 app.on('window-all-closed', () => {
   if (!gotTheLock || process.platform === 'darwin') return;
-  void runElectronEffect(
+  setQuitHold(false);
+  app.quit();
+});
+
+// Cap on how long a launch flow may delay quitting; Steam force-kills the
+// session eventually anyway.
+const QUIT_HOLD_TIMEOUT_MS = 30_000;
+let shutdownState: 'idle' | 'running' | 'done' = 'idle';
+
+async function shutdown(): Promise<void> {
+  if (isQuitHeld()) {
+    logger.sync.info('[quit] Waiting for the launch flow to finish');
+    await waitForQuitRelease(QUIT_HOLD_TIMEOUT_MS);
+  }
+  await runElectronEffect(
     Effect.gen(function* () {
       releasePowerSaveBlock();
       logger.sync.info('Stopping torrent client...');
@@ -781,8 +801,22 @@ app.on('window-all-closed', () => {
     }).pipe(
       Effect.catchAll((error) => logger.error('Error during cleanup:', error))
     )
-  ).finally(() => {
-    void disposeElectronRuntime().finally(() => app.quit());
+  );
+  await disposeElectronRuntime();
+}
+
+// Every quit funnels through here: window close, app.quit(), and the
+// SIGTERM/SIGINT Electron turns into app.quit() (Steam stopping a game). The
+// window stays up so a held launch flow can run its post-launch hooks, then
+// addons are stopped so no orphan keeps Steam's game session alive.
+app.on('before-quit', (event) => {
+  if (!gotTheLock || shutdownState === 'done') return;
+  event.preventDefault();
+  if (shutdownState === 'running') return;
+  shutdownState = 'running';
+  void shutdown().finally(() => {
+    shutdownState = 'done';
+    app.quit();
   });
 });
 

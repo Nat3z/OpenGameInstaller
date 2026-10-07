@@ -46,7 +46,7 @@ Changed packages publish in dependency order under `nightly-staging`. After all 
 
 ## Publication and Recovery
 
-Every desktop build gets an immutable `nightly-<run-id>` prerelease with the existing asset names and blockmaps. SHA-256 and size metadata are recorded in `nightly.json`. The GitHub release named `nightly` has a JSON body containing the complete authoritative channel manifest. Updating this one body atomically promotes the application, installer and SDK version map. Clients fetch it directly through the releases-by-tag API, not by sorting prereleases.
+Every desktop build gets an immutable `nightly-<run-id>` prerelease with the existing asset names and blockmaps. SHA-256 and size metadata are recorded in `nightly.json`. The GitHub release tagged `nightly-channel` has a JSON body containing the complete authoritative channel manifest. **Never delete it**: immutable releases permanently burn a deleted release's tag name (this already happened to the original `nightly` pointer), and moving the pointer requires a client update. Updating this one body atomically promotes the application, installer and SDK version map. Clients fetch it directly through the releases-by-tag API, not by sorting prereleases.
 
 The pipeline validates tarball entrypoints, installs the package set together, validates blockmap sizes, checks hashes and rejects missing platform assets. Publication rechecks validated bytes. A release starts as a draft and is made public only after all required uploads exist. Installer reuse is checked before promotion. Failed builds/publications leave the previous desktop pointer unchanged.
 

@@ -11,6 +11,7 @@ import {
 import { basename, join, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import {
+  NIGHTLY_POINTER_TAG,
   parseNightlyManifest,
   type NightlyManifest,
   type ReleaseAsset,
@@ -167,7 +168,7 @@ async function plan(): Promise<void> {
   if (process.env.NIGHTLY_PUBLISH === 'true') assertPublishAllowed();
   await api(''); // A missing/inaccessible repository must not look like a first nightly.
   const pointer = await api<GitHubRelease>(
-    '/releases/tags/nightly',
+    `/releases/tags/${NIGHTLY_POINTER_TAG}`,
     'GET',
     undefined,
     true
@@ -487,7 +488,7 @@ async function publish(plan: Plan): Promise<void> {
     throw new Error('Validated manifest changed');
   assertPublishAllowed();
   const pointer = await api<GitHubRelease>(
-    '/releases/tags/nightly',
+    `/releases/tags/${NIGHTLY_POINTER_TAG}`,
     'GET',
     undefined,
     true
@@ -606,15 +607,14 @@ async function publish(plan: Plan): Promise<void> {
       'nightly',
     ]);
   // One release-body update atomically promotes the complete structured manifest.
+  // Only the body is patched: an immutable release's prerelease/latest flags are locked.
   if (pointer)
     await api(`/releases/${pointer.id}`, 'PATCH', {
       body: JSON.stringify(manifest),
-      prerelease: true,
-      make_latest: 'false',
     });
   else
     await api('/releases', 'POST', {
-      tag_name: 'nightly',
+      tag_name: NIGHTLY_POINTER_TAG,
       target_commitish: plan.source,
       name: 'Nightly channel',
       body: JSON.stringify(manifest),

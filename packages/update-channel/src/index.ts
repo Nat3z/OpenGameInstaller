@@ -11,8 +11,9 @@ import { dirname, join, resolve } from 'node:path';
 import semver from 'semver';
 
 export type UpdateChannel = 'stable' | 'unstable' | 'nightly' | 'bleeding-edge';
-export const NIGHTLY_API =
-  'https://api.github.com/repos/Nat3z/OpenGameInstaller/releases/tags/nightly';
+// Immutable releases burn a deleted release's tag, so the old `nightly` pointer can't be reused.
+export const NIGHTLY_POINTER_TAG = 'nightly-channel';
+export const NIGHTLY_API = `https://api.github.com/repos/Nat3z/OpenGameInstaller/releases/tags/${NIGHTLY_POINTER_TAG}`;
 
 export function isUpdateChannel(value: unknown): value is UpdateChannel {
   return (

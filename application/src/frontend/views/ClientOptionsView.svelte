@@ -1,6 +1,7 @@
 <script lang="ts">
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
+import { update } from 'effect/TestAnnotationMap';
 import { onMount } from 'svelte';
 import { fly } from 'svelte/transition';
 import { parseAddonLink } from '@/electron/lib/addon-links';
@@ -954,42 +955,34 @@ onMount(() => {
                     Documentation
                   </a>
                 </div>
-                <p class="about-version">v{window.electronAPI.getVersion()}</p>
+                <p class="about-version">
+                  v{window.electronAPI.getVersion()}
+                  {#if updateChannel && !updateChannel.managed}
+                    ∙ {updateChannel.channel}
+                  {/if}
+                </p>
                 {#if updateChannel}
-                  <div class="option-item update-channel">
-                    <label class="option-label" for="update-channel">
-                      Update Channel
-                    </label>
-                    <p class="option-description">
-                      {updateChannel.managed
-                        ? 'OpenGameInstaller restarts through the setup to install the selected channel.'
-                        : 'Portable copies keep the channel they were downloaded with.'}
-                    </p>
-                    {#if updateChannel.managed}
-                      <CustomDropdown
-                        id="update-channel"
-                        options={updateChannels}
-                        selectedId={selectedUpdateChannel}
-                        onchange={({ selectedId }) =>
-                          (selectedUpdateChannel = selectedId as UpdateChannel)}
-                      />
-                      {#if selectedUpdateChannel !== updateChannel.channel}
-                        <button
-                          class="action-button bg-accent-light text-accent-dark hover:bg-accent-dark hover:text-accent-light mt-4"
-                          disabled={isSwitchingChannel}
-                          onclick={switchUpdateChannel}
+                  <div class="w-10/12">
+                  {#if updateChannel.managed}
+                    <CustomDropdown
+                      id="update-channel"
+                      options={updateChannels}
+                      selectedId={selectedUpdateChannel}
+                      onchange={({ selectedId }) =>
+                        (selectedUpdateChannel = selectedId as UpdateChannel)}
+                    />
+                    {#if selectedUpdateChannel !== updateChannel.channel}
+                      <button
+                        class="action-button animate-fade-in bg-accent-light text-accent-dark hover:bg-accent-dark hover:text-accent-light mt-4"
+                        disabled={isSwitchingChannel}
+                        onclick={switchUpdateChannel}
                         >
-                          {selectedUpdateChannel === 'bleeding-edge'
-                            ? 'Open Setup'
-                            : 'Switch and Restart'}
-                        </button>
+                        {selectedUpdateChannel === 'bleeding-edge'
+                          ? 'Open Setup'
+                          : 'Switch and Restart'}
+                      </button>
+
                       {/if}
-                    {:else}
-                      <p class="text-text-primary font-medium">
-                        {updateChannels.find(
-                          (option) => option.id === updateChannel?.channel
-                        )?.name}
-                      </p>
                     {/if}
                   </div>
                 {/if}

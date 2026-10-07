@@ -1,7 +1,6 @@
 <script lang="ts">
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
-import { update } from 'effect/TestAnnotationMap';
 import { onMount } from 'svelte';
 import { fly } from 'svelte/transition';
 import { parseAddonLink } from '@/electron/lib/addon-links';

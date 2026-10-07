@@ -63,7 +63,12 @@ export function getPersistedFilePaths(
         // Resolve against the root (not the process cwd) so the path that was
         // checked is the one later handed to `fs.rm`.
         const resolved = path.resolve(downloadRoot, file.path);
-        if (isPathContained(resolved, downloadRoot)) {
+        // A file entry is never the root itself (e.g. `"."`); deleting it would
+        // wipe every other download sharing that folder.
+        if (
+          isPathContained(resolved, downloadRoot) &&
+          !isSamePath(resolved, downloadRoot)
+        ) {
           paths.push(resolved);
         } else {
           logger.sync.warn(
@@ -97,6 +102,11 @@ export function getPersistedFilePaths(
   }
 
   return [];
+}
+
+/** Whether two paths resolve to the same location (symlinks included). */
+function isSamePath(a: string, b: string): boolean {
+  return normalizeDeletePath(a) === normalizeDeletePath(b);
 }
 
 /**

@@ -258,6 +258,13 @@ describe('download path containment', () => {
         files: [{ name: 'evil', path: `${root}/../../etc/passwd` }],
       })
     ).toEqual([`${root}/evil`]);
+    // A file entry that is the root itself must never be deleted as a file.
+    expect(
+      getPersistedFilePaths({
+        downloadPath: root,
+        files: [{ name: 'part1.bin', path: '.' }],
+      })
+    ).toEqual([`${root}/part1.bin`]);
     // A name that merely starts with '..' is still inside the root.
     const dotted = `${root}${process.platform === 'win32' ? '\\' : '/'}..cache`;
     expect(

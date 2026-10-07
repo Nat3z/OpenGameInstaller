@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -86,11 +87,13 @@ const toManifest = (info: LibraryInfo): typeof ManifestSchema.Encoded => {
   return { version: 1, game };
 };
 
-// Writes are serialized so overlapping saves never interleave in one file,
-// and atomic so a drive pulled mid-write never leaves a torn manifest.
+// Writes and removals are serialized so a removal never races a pending write,
+// and writes are atomic so a drive pulled mid-write never leaves a torn manifest.
 const writeLock = Effect.unsafeMakeSemaphore(1);
 // Bounds directory reads across a whole scan.
 const readLimit = Effect.unsafeMakeSemaphore(16);
+/** A slow or hung volume yields nothing rather than holding up the scan. */
+const ROOT_SCAN_TIMEOUT = '15 seconds';
 
 const writeManifest = (info: LibraryInfo): Effect.Effect<void> => {
   const file = join(info.cwd, MANIFEST_FILE);
@@ -100,9 +103,14 @@ const writeManifest = (info: LibraryInfo): Effect.Effect<void> => {
     if (!stat?.isDirectory()) return;
     const existing = await fsp.readFile(file, 'utf8').catch(() => null);
     if (existing === contents) return;
-    const temporary = `${file}.${process.pid}.tmp`;
-    await fsp.writeFile(temporary, contents);
-    await fsp.rename(temporary, file);
+    // Unpredictable and exclusively created, so a planted symlink is never
+    // followed; rename replaces a symlink at `file` instead of writing through.
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    await fsp.writeFile(temporary, contents, { flag: 'wx' });
+    await fsp.rename(temporary, file).catch(async (error) => {
+      await fsp.rm(temporary, { force: true });
+      throw error;
+    });
   }).pipe(
     Effect.catchAll((error) =>
       logger.warn(`[library] Could not write ${file}`, error)
@@ -110,28 +118,55 @@ const writeManifest = (info: LibraryInfo): Effect.Effect<void> => {
   );
 };
 
+const removeOwnedManifest = (dir: string, appID: number): Effect.Effect<void> =>
+  readManifest(dir).pipe(
+    Effect.flatMap((game) =>
+      game?.appID === appID
+        ? Effect.promise(() =>
+            fsp.rm(join(dir, MANIFEST_FILE), { force: true }).catch(() => {})
+          )
+        : Effect.void
+    )
+  );
+
 /**
- * Mirrors games into their folders (only `appID` when given). Folders that are
- * shared with another game, or are home or a filesystem root, are skipped so a
- * manifest never claims a folder holding other installs.
+ * Mirrors games into their folders (only `appID` and the games sharing its
+ * folder when given). The library is loaded under the lock so a game removed
+ * meanwhile is never written back. A folder shared with another game, home,
+ * or a filesystem root never holds a manifest, so one written before the
+ * folder became shared is removed.
  */
 export const writeManifests = (
-  games: readonly LibraryInfo[],
+  loadGames: Effect.Effect<readonly LibraryInfo[], unknown>,
   appID?: number
 ): Effect.Effect<void> =>
-  Effect.forEach(
-    games.filter(
+  Effect.gen(function* () {
+    const games = yield* loadGames;
+    const target = games.find((game) => game.appID === appID);
+    const candidates = games.filter(
       (game) =>
-        (appID === undefined || game.appID === appID) &&
         isAbsolute(game.cwd) &&
-        ![homedir(), filesystemRoot()].some(
+        (appID === undefined ||
+          game === target ||
+          (target !== undefined &&
+            sharesDirectoryWithOtherGames(game.appID, game.cwd, [target])))
+    );
+    yield* Effect.forEach(
+      candidates,
+      (game) =>
+        [homedir(), filesystemRoot()].some(
           (path) => normalizeDeletePath(path) === normalizeDeletePath(game.cwd)
-        ) &&
-        !sharesDirectoryWithOtherGames(game.appID, game.cwd, games)
+        ) || sharesDirectoryWithOtherGames(game.appID, game.cwd, games)
+          ? removeOwnedManifest(game.cwd, game.appID)
+          : writeManifest(game),
+      { concurrency: 4, discard: true }
+    );
+  }).pipe(
+    Effect.catchAll((error) =>
+      logger.warn('[library] Could not write game manifests', error)
     ),
-    writeManifest,
-    { concurrency: 4, discard: true }
-  ).pipe(writeLock.withPermits(1));
+    writeLock.withPermits(1)
+  );
 
 /** The entry stored in `dir`, rebased onto it; null when absent or invalid. */
 export const readManifest = (dir: string): Effect.Effect<LibraryInfo | null> =>
@@ -146,20 +181,16 @@ export const readManifest = (dir: string): Effect.Effect<LibraryInfo | null> =>
     Effect.catchAll(() => Effect.succeed(null))
   );
 
-/** Drops the manifest in `dir` if it belongs to `appID`, so the game is not offered again. */
+/**
+ * Drops the manifest in `dir` if it belongs to `appID`, so the game is not
+ * offered again. Call after the library entry is gone; queued writes then
+ * skip it.
+ */
 export const removeManifest = (
   dir: string,
   appID: number
 ): Effect.Effect<void> =>
-  readManifest(dir).pipe(
-    Effect.flatMap((game) =>
-      game?.appID === appID
-        ? Effect.promise(() =>
-            fsp.rm(join(dir, MANIFEST_FILE), { force: true }).catch(() => {})
-          )
-        : Effect.void
-    )
-  );
+  removeOwnedManifest(dir, appID).pipe(writeLock.withPermits(1));
 
 const scanDirectory = (
   dir: string,
@@ -197,7 +228,17 @@ export const findManifests = (
 ): Effect.Effect<FoundManifest[]> =>
   Effect.forEach(
     new Set(roots.map((root) => resolve(root))),
-    (root) => scanDirectory(root, 0),
+    (root) =>
+      scanDirectory(root, 0).pipe(
+        Effect.timeoutTo({
+          duration: ROOT_SCAN_TIMEOUT,
+          onSuccess: (found) => found,
+          onTimeout: () => {
+            logger.sync.warn(`[library] Gave up scanning ${root} for games`);
+            return [];
+          },
+        })
+      ),
     { concurrency: 'unbounded' }
   ).pipe(
     Effect.map((results) => {

@@ -1210,9 +1210,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
         // Games installed before manifests existed get theirs on first scan.
         if (!manifestsBackfilled) {
           manifestsBackfilled = true;
-          yield* Effect.forkDaemon(
-            library.list.pipe(Effect.flatMap(writeManifests), Effect.ignore)
-          );
+          yield* Effect.forkDaemon(writeManifests(library.list));
         }
         const roots = yield* gameSearchRoots;
         const found = yield* findManifests(folder ? [...roots, folder] : roots);

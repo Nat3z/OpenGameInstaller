@@ -43,8 +43,9 @@ let revealLibraryTimer: ReturnType<typeof setTimeout> | undefined;
 let missingGames: LibraryInfo[] = $state([]);
 let foundGames: FoundGame[] = $state([]);
 let scanningFolder = $state(false);
-// Bumped per check and on close so a stale result never reopens the modal.
+// Bumped per check and on close so a stale result never reopens a modal.
 let missingGamesCheck = 0;
+let foundGamesCheck = 0;
 
 let { exitPlayPage = $bindable() } = $props();
 
@@ -80,21 +81,26 @@ async function reloadLibrary() {
 }
 
 // Runs apart from reloadLibrary so the folder checks never delay the grid.
-// Games found in a new folder are offered first, and are not also reported
-// missing, since adding them back fixes their entry.
+// Missing games show without waiting on the slower disk scan, and found games
+// follow once that prompt closes. Games already found in a new folder are not
+// reported missing, since adding them back fixes their entry.
 async function checkMissingGames() {
   const check = ++missingGamesCheck;
+  const foundCheck = ++foundGamesCheck;
+  void findGamesOnDisk()
+    .then((found) => {
+      if (foundCheck !== foundGamesCheck) return;
+      const moved = new Set(found.map((entry) => entry.game.appID));
+      foundGames = found;
+      missingGames = missingGames.filter((game) => !moved.has(game.appID));
+    })
+    .catch((err) => {
+      logger.sync.error('Failed to look for games on disk:', err);
+    });
   try {
-    const [missing, found] = await Promise.all([
-      findMissingGames(),
-      findGamesOnDisk().catch((err) => {
-        logger.sync.error('Failed to look for games on disk:', err);
-        return [];
-      }),
-    ]);
+    const missing = await findMissingGames();
     if (check !== missingGamesCheck) return;
-    const moved = new Set(found.map((entry) => entry.game.appID));
-    foundGames = found;
+    const moved = new Set(foundGames.map((entry) => entry.game.appID));
     missingGames = missing.filter((game) => !moved.has(game.appID));
   } catch (err) {
     logger.sync.error('Failed to check for missing games:', err);
@@ -110,6 +116,7 @@ function closeMissingGames(kept: number[], removedAny: boolean) {
 
 function closeFoundGames(skipped: string[], importedAny: boolean) {
   skipFoundGames(skipped);
+  foundGamesCheck++;
   foundGames = [];
   if (importedAny) {
     void reloadLibrary();
@@ -133,7 +140,7 @@ async function scanFolderForGames() {
         type: 'info',
       });
     }
-    missingGamesCheck++;
+    foundGamesCheck++;
     foundGames = found;
   } catch (err) {
     logger.sync.error('Failed to scan folder for games:', err);
@@ -478,10 +485,10 @@ onDestroy(() => {
   </div>
 {/key}
 
-{#if foundGames.length > 0 && !$selectedApp}
-  <FoundGamesModal games={foundGames} onClose={closeFoundGames} />
-{:else if missingGames.length > 0 && !$selectedApp}
+{#if missingGames.length > 0 && !$selectedApp}
   <MissingGamesModal games={missingGames} onClose={closeMissingGames} />
+{:else if foundGames.length > 0 && !$selectedApp}
+  <FoundGamesModal games={foundGames} onClose={closeFoundGames} />
 {/if}
 
 <style>

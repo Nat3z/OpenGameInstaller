@@ -47,12 +47,7 @@ export const LibraryLive: Layer.Layer<Library, never, Database> = Layer.effect(
       save: (info) =>
         database.library.save(info).pipe(
           Effect.tap(() =>
-            Effect.forkDaemon(
-              database.library.list.pipe(
-                Effect.flatMap((games) => writeManifests(games, info.appID)),
-                Effect.ignore
-              )
-            )
+            Effect.forkDaemon(writeManifests(database.library.list, info.appID))
           ),
           Effect.asVoid
         ),

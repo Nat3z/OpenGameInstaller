@@ -34,7 +34,7 @@ describe('library manifests', () => {
     const root = mkdtempSync(join(tmpdir(), 'ogi-manifest-'));
     const before = join(root, 'sd-a', 'Game');
     fs.mkdirSync(before, { recursive: true });
-    await Effect.runPromise(writeManifests([game(1, before)]));
+    await Effect.runPromise(writeManifests(Effect.succeed([game(1, before)])));
 
     const after = join(root, 'sd-b', 'Game');
     fs.mkdirSync(join(root, 'sd-b'));
@@ -48,12 +48,16 @@ describe('library manifests', () => {
     expect(found.game.umu).toEqual({ umuId: 'umu:1' });
   });
 
-  test('a folder shared by two games gets no manifest', async () => {
+  test('a folder that becomes shared loses its manifest', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ogi-manifest-'));
-    await Effect.runPromise(
-      writeManifests([game(1, root), game(2, join(root, 'nested'))])
-    );
+    const first = game(1, root);
+    await Effect.runPromise(writeManifests(Effect.succeed([first])));
+    expect(await Effect.runPromise(readManifest(root))).not.toBeNull();
+
+    const nested = game(2, join(root, 'nested'));
+    fs.mkdirSync(nested.cwd);
+    await Effect.runPromise(writeManifests(Effect.succeed([first, nested]), 2));
     expect(fs.existsSync(join(root, MANIFEST_FILE))).toBe(false);
-    expect(await Effect.runPromise(readManifest(root))).toBeNull();
+    expect(fs.existsSync(join(nested.cwd, MANIFEST_FILE))).toBe(false);
   });
 });

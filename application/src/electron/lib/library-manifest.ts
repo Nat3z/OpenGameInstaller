@@ -97,6 +97,16 @@ const FOLDER_TIMEOUT = '10 seconds';
 /** A slow or hung volume stops being scanned; games already found are kept. */
 const ROOT_SCAN_TIMEOUT = '15 seconds';
 
+// A timed-out write keeps running in the background; bumping the file's
+// generation on every write or removal stops it from publishing late over a
+// newer one.
+const generations = new Map<string, number>();
+const claimFile = (file: string): (() => boolean) => {
+  const generation = (generations.get(file) ?? 0) + 1;
+  generations.set(file, generation);
+  return () => generations.get(file) === generation;
+};
+
 const withFolderTimeout = (
   dir: string,
   effect: Effect.Effect<void>
@@ -114,6 +124,7 @@ const withFolderTimeout = (
 const writeManifest = (info: LibraryInfo): Effect.Effect<void> => {
   const file = join(info.cwd, MANIFEST_FILE);
   const contents = `${JSON.stringify(toManifest(info), null, 2)}\n`;
+  const isCurrent = claimFile(file);
   const write = Effect.tryPromise(async () => {
     const stat = await fsp.stat(info.cwd).catch(() => null);
     if (!stat?.isDirectory()) return;
@@ -123,6 +134,10 @@ const writeManifest = (info: LibraryInfo): Effect.Effect<void> => {
     // followed; rename replaces a symlink at `file` instead of writing through.
     const temporary = `${file}.${randomUUID()}.tmp`;
     await fsp.writeFile(temporary, contents, { flag: 'wx' });
+    if (!isCurrent()) {
+      await fsp.rm(temporary, { force: true });
+      return;
+    }
     await fsp.rename(temporary, file).catch(async (error) => {
       await fsp.rm(temporary, { force: true });
       throw error;
@@ -135,19 +150,23 @@ const writeManifest = (info: LibraryInfo): Effect.Effect<void> => {
   return withFolderTimeout(info.cwd, write);
 };
 
-const removeOwnedManifest = (dir: string, appID: number): Effect.Effect<void> =>
-  withFolderTimeout(
+const removeOwnedManifest = (
+  dir: string,
+  appID: number
+): Effect.Effect<void> => {
+  const file = join(dir, MANIFEST_FILE);
+  const isCurrent = claimFile(file);
+  return withFolderTimeout(
     dir,
     readManifest(dir).pipe(
       Effect.flatMap((game) =>
-        game?.appID === appID
-          ? Effect.promise(() =>
-              fsp.rm(join(dir, MANIFEST_FILE), { force: true }).catch(() => {})
-            )
+        game?.appID === appID && isCurrent()
+          ? Effect.promise(() => fsp.rm(file, { force: true }).catch(() => {}))
           : Effect.void
       )
     )
   );
+};
 
 /**
  * Mirrors games into their folders (only `appID` and the games sharing its

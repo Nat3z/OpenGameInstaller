@@ -804,13 +804,20 @@ function executeWrapperCommandForAppSteam(
 }
 
 // Only a definitely absent path counts as missing; permission or transient
-// errors leave the game alone.
+// errors, or a drive that doesn't answer within a few seconds, leave the game
+// alone.
 function isMissingPath(path: string): Promise<boolean> {
-  return fsp.access(path).then(
-    () => false,
-    (error: NodeJS.ErrnoException) =>
-      error.code === 'ENOENT' || error.code === 'ENOTDIR'
-  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    fsp.access(path).then(
+      () => false,
+      (error: NodeJS.ErrnoException) =>
+        error.code === 'ENOENT' || error.code === 'ENOTDIR'
+    ),
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), 5000);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**

@@ -54,6 +54,14 @@ export type GameRemovalProgress = {
   error?: string;
 };
 
+/** A game folder on disk whose manifest is not (or no longer) in the library. */
+export type FoundGame = {
+  path: string;
+  game: LibraryInfo;
+  /** The library entry's old, now missing, folder when the game was moved. */
+  movedFrom?: string;
+};
+
 export type OperatingSystem = typeof OperatingSystem.Type;
 
 export const ReleaseUpdateChannel = Schema.Literal(
@@ -233,6 +241,19 @@ export const ElectronRpc = {
     ),
     getAllApps: rpc('app.getAllApps', [], opaque<LibraryInfo[]>()),
     getMissingApps: rpc('app.getMissingApps', [], opaque<LibraryInfo[]>()),
+    // Scans download locations and installed games' parent folders, plus
+    // `folder` when given, for game manifests that aren't in the library.
+    findGamesOnDisk: rpc(
+      'app.findGamesOnDisk',
+      [OptionalString],
+      opaque<FoundGame[]>()
+    ),
+    // Accepts only paths returned by findGamesOnDisk.
+    importGamesFromDisk: rpc(
+      'app.importGamesFromDisk',
+      [StringArray],
+      opaque<{ imported: number; errors: string[] }>()
+    ),
     updateAppVersion: rpc(
       'app.updateAppVersion',
       [

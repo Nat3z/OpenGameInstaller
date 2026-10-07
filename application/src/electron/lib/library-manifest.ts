@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect, Schema } from 'effect';
+import { Deferred, Effect, Queue, Schema } from 'effect';
 import { LibraryInfoSchema } from 'ogi-addon';
 import {
   filesystemRoot,
@@ -90,8 +90,8 @@ const toManifest = (info: LibraryInfo): typeof ManifestSchema.Encoded => {
 // Writes and removals are serialized so a removal never races a pending write,
 // and writes are atomic so a drive pulled mid-write never leaves a torn manifest.
 const writeLock = Effect.unsafeMakeSemaphore(1);
-// Bounds directory reads across every root of a scan, and folders visited at
-// once within a root.
+// Bounds directory reads across every root of a scan, and workers walking
+// each root.
 const readLimit = Effect.unsafeMakeSemaphore(16);
 const SCAN_CONCURRENCY = 16;
 /** A hung drive gives up its folder's manifest work so the lock is never held. */
@@ -263,17 +263,38 @@ const visitDirectory = (
   });
 
 /**
- * Walks `root` one depth level at a time so in-flight work stays bounded,
- * pushing each game folder into `found` as soon as it is read.
+ * Walks `root` with a fixed pool of workers sharing one queue, so in-flight
+ * work stays bounded while each folder queues its children as soon as it is
+ * read, never waiting on a stalled sibling. Each game folder is pushed into
+ * `found` as soon as it is read.
  */
 const scanRoot = (root: string, found: FoundManifest[]): Effect.Effect<void> =>
-  Effect.iterate([{ dir: root, depth: 0 }] as ScanTarget[], {
-    while: (level) => level.length > 0,
-    body: (level) =>
-      Effect.forEach(level, (target) => visitDirectory(target, found), {
-        concurrency: SCAN_CONCURRENCY,
-      }).pipe(Effect.map((next) => next.flat())),
-  }).pipe(Effect.asVoid);
+  Effect.scoped(
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<ScanTarget>();
+      const done = yield* Deferred.make<void>();
+      // Folders queued or being visited; the walk ends when none are left.
+      let pending = 1;
+      yield* Queue.offer(queue, { dir: root, depth: 0 });
+      const worker = Queue.take(queue).pipe(
+        Effect.flatMap((target) => visitDirectory(target, found)),
+        Effect.flatMap((next) => {
+          pending += next.length - 1;
+          return pending === 0
+            ? Deferred.succeed(done, undefined)
+            : Queue.offerAll(queue, next);
+        }),
+        Effect.forever
+      );
+      // Workers are interrupted with the scope once the walk ends or times out.
+      yield* Effect.forkScoped(
+        Effect.replicateEffect(worker, SCAN_CONCURRENCY, {
+          concurrency: 'unbounded',
+        })
+      );
+      yield* Deferred.await(done);
+    })
+  );
 
 /** Game folders with a valid manifest at or below `roots`, deduplicated. */
 export const findManifests = (

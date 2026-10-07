@@ -125,6 +125,7 @@ export const ElectronRpc = {
     showWindow: rpc('app.showWindow', [], Void),
     minimize: rpc('app.minimize', [], Void),
     quit: rpc('app.quit', [], Void),
+    setQuitHold: rpc('app.setQuitHold', [Schema.Boolean], Void),
     getOS: rpc('app.getOS', [], OperatingSystem),
     grantRootPassword: rpc('app.grantRootPassword', [Schema.String], Void),
     openSteamKeyboard: rpc(

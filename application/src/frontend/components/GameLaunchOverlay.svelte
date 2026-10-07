@@ -3,12 +3,15 @@ import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
+import { derived } from 'svelte/store';
 import AddonFailurePromptModal from '@/frontend/components/built/AddonFailurePromptModal.svelte';
 import { createLaunchPrompt } from '@/frontend/lib/core/launch-prompt.svelte';
-import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   gameFocused,
+  gamesExiting,
+  gamesLaunched,
   launchGameTrigger,
   launchOverlayPlayPageReady,
   selectedView,
@@ -34,9 +37,16 @@ let wrapperCommand: string | null = $state(null);
 let isWrapperLaunch = $state(false);
 const timeouts: ReturnType<typeof setTimeout>[] = [];
 let isMounted = false;
+let unsubscribeLaunchState: (() => void) | null = null;
 
 // Prompt state: lets the user launch even when the addon pre-launch step failed
 const addonFailurePrompt = createLaunchPrompt();
+
+// While held, a quit (e.g. Steam stopping the game) waits for the launch flow
+// so post-launch hooks still run before the app exits.
+function setQuitHold(active: boolean) {
+  runDetached(electronRpc.app.setQuitHold(active), 'Failed to set quit hold');
+}
 
 onMount(async () => {
   isMounted = true;
@@ -69,6 +79,7 @@ onMount(async () => {
 
     gameName = libraryInfo.name;
     status = 'running';
+    setQuitHold(true);
 
     if (isHookOnly && hookType) {
       // Hook-only mode: run addon event without launching game.
@@ -81,6 +92,7 @@ onMount(async () => {
       const hookResult = await runFrontendEffect(
         runLaunchAppAddons(libraryInfo, hookType).pipe(Effect.either)
       );
+      setQuitHold(false);
       if (hookResult._tag === 'Right') {
         status = 'success';
         logger.sync.info(
@@ -128,6 +140,7 @@ onMount(async () => {
         // Ask the user whether to continue launching despite the addon failure
         const proceed = await addonFailurePrompt.request(failureText);
         if (!proceed) {
+          setQuitHold(false);
           status = 'error';
           errorMessage = failureText;
           onError(errorMessage);
@@ -163,6 +176,7 @@ onMount(async () => {
         );
         postLaunchError = formatError(error) || 'Post-launch failed';
       }
+      setQuitHold(false);
 
       if (wrapperError || postLaunchError) {
         status = 'error';
@@ -208,6 +222,7 @@ onMount(async () => {
         });
       });
       if (!ready) {
+        setQuitHold(false);
         status = 'error';
         errorMessage =
           'Library view did not load in time. Please try launching again.';
@@ -216,16 +231,36 @@ onMount(async () => {
       }
       launchGameTrigger.set(gameId);
 
+      // The launch flow is over once PlayPage has cleared the game (cancelled,
+      // failed, or exited) and GameManager has no post-launch hooks left
+      // running for it. Only then may a quit go ahead.
+      const launchActive = derived(
+        [gamesLaunched, gamesExiting],
+        ([launched, exiting]) => !!launched[gameId] || exiting.has(gameId)
+      );
+      let launchSeen = false;
+      unsubscribeLaunchState = launchActive.subscribe((active) => {
+        if (active) {
+          launchSeen = true;
+        } else if (launchSeen) {
+          setQuitHold(false);
+          unsubscribeLaunchState?.();
+          unsubscribeLaunchState = null;
+        }
+      });
+
       // Keep this overlay mounted for Steam shortcut launches.
       // The window will be hidden on game:launch and shown again on game:exit.
       status = 'running';
     } else {
+      setQuitHold(false);
       status = 'error';
       errorMessage =
         'Game is not configured for Steam shortcut launching (UMU mode required)';
       onError(errorMessage);
     }
   } catch (error) {
+    setQuitHold(false);
     logger.sync.error('[GameLaunchOverlay] Error launching game:', error);
     status = 'error';
     errorMessage =
@@ -236,6 +271,7 @@ onMount(async () => {
 
 onDestroy(() => {
   isMounted = false;
+  unsubscribeLaunchState?.();
   for (const id of timeouts) clearTimeout(id);
   timeouts.length = 0;
   // Never leave the launch flow hanging if the overlay unmounts mid-prompt

@@ -4,7 +4,11 @@ import { Effect } from 'effect';
 import { getAllApps } from '@/frontend/lib/core/library';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
-import { gameRemovalTasks, gamesLaunched } from '@/frontend/store.svelte';
+import {
+  gameRemovalTasks,
+  gamesExiting,
+  gamesLaunched,
+} from '@/frontend/store.svelte';
 import { runLaunchAppAddons } from '@/frontend/utils';
 import type { GameRemovalProgress } from '@/lib/electron-rpc.js';
 
@@ -84,6 +88,7 @@ runDetached(
 document.addEventListener('game:exit', async (event: Event) => {
   const appID = (event as CustomEvent).detail.id;
   const isShortcutLaunch = isShortcutLaunchForGame(appID);
+  gamesExiting.update((games) => new Set(games).add(appID));
 
   try {
     // For Steam shortcut launches, unhide first so post-launch UI is visible.
@@ -105,6 +110,11 @@ document.addEventListener('game:exit', async (event: Event) => {
     gamesLaunched.update((games) => {
       delete games[appID];
       return games;
+    });
+    gamesExiting.update((games) => {
+      const next = new Set(games);
+      next.delete(appID);
+      return next;
     });
 
     if (isShortcutLaunch) {

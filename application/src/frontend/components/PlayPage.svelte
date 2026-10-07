@@ -121,6 +121,12 @@ const addonFailurePrompt = createLaunchPrompt();
 
 async function launchGame() {
   if ($gamesLaunched[libraryInfo.appID]) return;
+  // Marked before any await so a launch flow is visible (and deduped) from
+  // the moment it starts; every early exit below clears it again.
+  gamesLaunched.update((games) => {
+    games[libraryInfo.appID] = 'launching';
+    return games;
+  });
   if (
     libraryInfo.cwd &&
     !(await runFrontendEffect(
@@ -129,6 +135,10 @@ async function launchGame() {
         .pipe(Effect.orElseSucceed(() => false))
     ))
   ) {
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
     createNotification({
       id: Math.random().toString(36).substring(7),
       message:
@@ -143,11 +153,6 @@ async function launchGame() {
   playButton?.setAttribute('data-error', 'false');
 
   // Fire of the addon launch-app event first
-
-  gamesLaunched.update((games) => {
-    games[libraryInfo.appID] = 'launching';
-    return games;
-  });
 
   if (playButton) {
     playButton.disabled = true;

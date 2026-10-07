@@ -69,18 +69,18 @@ function simulateUpdaterWipe() {
   fs.writeFileSync(appImagePath, 'new-app-bytes');
 }
 
-test('desktop shortcut targets the AppImage and its icon survives an updater wipe', async () => {
+const desktopFile = path.join(homeDir, 'Desktop', 'OpenGameInstaller.desktop');
+
+async function writeShortcut(): Promise<string[]> {
   const result = await Effect.runPromise(addToDesktop());
   expect(result.success).toBe(true);
+  return fs.readFileSync(desktopFile, 'utf-8').split('\n');
+}
 
-  const desktopFile = path.join(
-    homeDir,
-    'Desktop',
-    'OpenGameInstaller.desktop'
-  );
-  expect(fs.existsSync(desktopFile)).toBe(true);
-  const lines = fs.readFileSync(desktopFile, 'utf-8').split('\n');
+test('desktop shortcut targets the AppImage and its icon survives an updater wipe', async () => {
+  const lines = await writeShortcut();
   expect(lines).toContain(`Exec=${appImagePath}`);
+  expect(lines).toContain(`Path=${updateDir}`);
   const iconLine = lines.find((line) => line.startsWith('Icon='));
   expect(iconLine).toBeDefined();
   const iconPath = (iconLine as string).slice('Icon='.length);
@@ -89,4 +89,19 @@ test('desktop shortcut targets the AppImage and its icon survives an updater wip
   simulateUpdaterWipe();
 
   expect(fs.existsSync(iconPath)).toBe(true);
+});
+
+test('desktop shortcut prefers the setup AppImage beside update/', async () => {
+  const setupPath = path.join(
+    path.dirname(updateDir),
+    'OpenGameInstaller-Setup.AppImage'
+  );
+  fs.writeFileSync(setupPath, 'setup-bytes');
+  try {
+    const lines = await writeShortcut();
+    expect(lines).toContain(`Exec=${setupPath}`);
+    expect(lines).toContain(`Path=${path.dirname(updateDir)}`);
+  } finally {
+    fs.rmSync(setupPath);
+  }
 });

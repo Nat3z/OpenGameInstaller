@@ -124,12 +124,12 @@ function closeFoundGames(skipped: string[], importedAny: boolean) {
 }
 
 async function scanFolderForGames() {
-  const folder = await runFrontendEffect(
-    electronRpc.fs.dialog.showOpenDialog({ properties: ['openDirectory'] })
-  );
-  if (!folder) return;
-  scanningFolder = true;
   try {
+    const folder = await runFrontendEffect(
+      electronRpc.fs.dialog.showOpenDialog({ properties: ['openDirectory'] })
+    );
+    if (!folder) return;
+    scanningFolder = true;
     const found = await findGamesOnDisk(folder);
     if (found.length === 0) {
       createNotification({

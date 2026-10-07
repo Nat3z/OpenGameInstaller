@@ -1264,6 +1264,11 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
             errors.push(`${path}: no longer contains a game`);
             continue;
           }
+          // Only import the game the user was shown.
+          if (game.appID !== found.game.appID) {
+            errors.push(`${path}: the game changed since it was found`);
+            continue;
+          }
           const existing = yield* library.get(game.appID);
           if (
             existing?.cwd &&
@@ -1289,7 +1294,11 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               fsp.mkdir(winePrefixPath, { recursive: true }).catch(() => {})
             );
           }
-          yield* library.save(info);
+          const saved = yield* Effect.either(library.save(info));
+          if (saved._tag === 'Left') {
+            errors.push(`${info.name}: ${saved.left.message}`);
+            continue;
+          }
           lastFoundGames.delete(normalizeDeletePath(path));
           imported++;
           if (!existing) {

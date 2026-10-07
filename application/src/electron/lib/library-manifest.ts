@@ -90,8 +90,10 @@ const toManifest = (info: LibraryInfo): typeof ManifestSchema.Encoded => {
 // Writes and removals are serialized so a removal never races a pending write,
 // and writes are atomic so a drive pulled mid-write never leaves a torn manifest.
 const writeLock = Effect.unsafeMakeSemaphore(1);
-// Bounds directory reads across a whole scan.
+// Bounds directory reads across every root of a scan, and folders visited at
+// once within a root.
 const readLimit = Effect.unsafeMakeSemaphore(16);
+const SCAN_CONCURRENCY = 16;
 /** A hung drive gives up its folder's manifest work so the lock is never held. */
 const FOLDER_TIMEOUT = '10 seconds';
 /** A slow or hung volume stops being scanned; games already found are kept. */
@@ -231,12 +233,13 @@ export const removeManifest = (
 ): Effect.Effect<void> =>
   removeOwnedManifest(dir, appID).pipe(writeLock.withPermits(1));
 
-/** Pushes each game folder into `found` as soon as it is read. */
-const scanDirectory = (
-  dir: string,
-  depth: number,
+type ScanTarget = { dir: string; depth: number };
+
+/** Records `dir` if it is a game folder and returns the subfolders to scan next. */
+const visitDirectory = (
+  { dir, depth }: ScanTarget,
   found: FoundManifest[]
-): Effect.Effect<void> =>
+): Effect.Effect<ScanTarget[]> =>
   Effect.gen(function* () {
     const entries = yield* Effect.promise(() =>
       fsp.readdir(dir, { withFileTypes: true }).catch((): Dirent[] => [])
@@ -246,20 +249,31 @@ const scanDirectory = (
       if (game) found.push({ path: dir, game });
       // A game folder holds no other games, unless a game was installed
       // straight into the scan root.
-      if (depth > 0) return;
+      if (depth > 0) return [];
     }
-    if (depth >= MAX_SCAN_DEPTH) return;
-    yield* Effect.forEach(
-      entries.filter(
+    if (depth >= MAX_SCAN_DEPTH) return [];
+    return entries
+      .filter(
         (entry) =>
           entry.isDirectory() &&
           !entry.name.startsWith('.') &&
           !SKIPPED_DIRS.has(entry.name)
-      ),
-      (entry) => scanDirectory(join(dir, entry.name), depth + 1, found),
-      { concurrency: 'unbounded', discard: true }
-    );
+      )
+      .map((entry) => ({ dir: join(dir, entry.name), depth: depth + 1 }));
   });
+
+/**
+ * Walks `root` one depth level at a time so in-flight work stays bounded,
+ * pushing each game folder into `found` as soon as it is read.
+ */
+const scanRoot = (root: string, found: FoundManifest[]): Effect.Effect<void> =>
+  Effect.iterate([{ dir: root, depth: 0 }] as ScanTarget[], {
+    while: (level) => level.length > 0,
+    body: (level) =>
+      Effect.forEach(level, (target) => visitDirectory(target, found), {
+        concurrency: SCAN_CONCURRENCY,
+      }).pipe(Effect.map((next) => next.flat())),
+  }).pipe(Effect.asVoid);
 
 /** Game folders with a valid manifest at or below `roots`, deduplicated. */
 export const findManifests = (
@@ -269,7 +283,7 @@ export const findManifests = (
   return Effect.forEach(
     new Set(roots.map((root) => resolve(root))),
     (root) =>
-      scanDirectory(root, 0, found).pipe(
+      scanRoot(root, found).pipe(
         Effect.timeoutTo({
           duration: ROOT_SCAN_TIMEOUT,
           onSuccess: () => Effect.void,

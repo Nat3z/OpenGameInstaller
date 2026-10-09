@@ -2,6 +2,7 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { type DatabaseError, GameNotFound } from '@ogi-sdk/errors';
 import { Context, Effect, Layer } from 'effect';
 import type { LibraryRemoval } from '@/electron/database/index.js';
+import { writeManifests } from '@/electron/lib/library-manifest.js';
 import { Database } from '@/electron/services/database.js';
 
 /** The game library, most recently launched first. */
@@ -14,6 +15,7 @@ export type LibraryShape = {
     appID: number
   ) => Effect.Effect<LibraryInfo, DatabaseError | GameNotFound>;
   readonly list: Effect.Effect<LibraryInfo[], DatabaseError>;
+  /** Also mirrors the entry into the game folder's manifest, in the background. */
   readonly save: (info: LibraryInfo) => Effect.Effect<void, DatabaseError>;
   readonly markLaunched: (appID: number) => Effect.Effect<void, DatabaseError>;
   /** Hides the game until `commit`; fails when it is not in the library. */
@@ -41,7 +43,14 @@ export const LibraryLive: Layer.Layer<Library, never, Database> = Layer.effect(
             )
           ),
       list: database.library.list,
-      save: database.library.save,
+      // Forked so callers running synchronously never wait on the disk.
+      save: (info) =>
+        database.library.save(info).pipe(
+          Effect.tap(() =>
+            Effect.forkDaemon(writeManifests(database.library.list, info.appID))
+          ),
+          Effect.asVoid
+        ),
       markLaunched: database.library.markLaunched,
       stageRemoval: database.library.stageRemoval,
     };

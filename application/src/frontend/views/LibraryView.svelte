@@ -3,6 +3,7 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { onDestroy, onMount, tick } from 'svelte';
 import { type Writable, writable } from 'svelte/store';
+import FoundGamesModal from '@/frontend/components/built/FoundGamesModal.svelte';
 import MissingGamesModal from '@/frontend/components/built/MissingGamesModal.svelte';
 import Image from '@/frontend/components/Image.svelte';
 import PlayPage from '@/frontend/components/PlayPage.svelte';
@@ -10,16 +11,19 @@ import MigrateIcon from '@/frontend/Icons/MigrateIcon.svelte';
 import UpdateIcon from '@/frontend/Icons/UpdateIcon.svelte';
 import {
   filterLibrary,
+  findGamesOnDisk,
   findMissingGames,
   getAllApps,
   getRecentlyPlayed,
   keepMissingGames,
+  skipFoundGames,
   sortLibraryAlphabetically,
 } from '@/frontend/lib/core/library';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { updatesManager } from '@/frontend/states.svelte';
-import { gameFocused } from '@/frontend/store.svelte';
+import { createNotification, gameFocused } from '@/frontend/store.svelte';
+import type { FoundGame } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -37,8 +41,11 @@ let revealLibraryEntries = $state(false);
 let revealLibraryDelayActive = $state(false);
 let revealLibraryTimer: ReturnType<typeof setTimeout> | undefined;
 let missingGames: LibraryInfo[] = $state([]);
-// Bumped per check and on close so a stale result never reopens the modal.
+let foundGames: FoundGame[] = $state([]);
+let scanningFolder = $state(false);
+// Bumped per check and on close so a stale result never reopens a modal.
 let missingGamesCheck = 0;
+let foundGamesCheck = 0;
 
 let { exitPlayPage = $bindable() } = $props();
 
@@ -74,11 +81,25 @@ async function reloadLibrary() {
 }
 
 // Runs apart from reloadLibrary so the folder checks never delay the grid.
+// Waits on the disk scan (bounded per drive) so a game that moved folders is
+// offered back with its setup intact instead of offered for removal; found
+// games show first and are left out of the missing ones.
 async function checkMissingGames() {
   const check = ++missingGamesCheck;
+  const foundCheck = ++foundGamesCheck;
   try {
-    const games = await findMissingGames();
-    if (check === missingGamesCheck) missingGames = games;
+    const [missing, found] = await Promise.all([
+      findMissingGames(),
+      findGamesOnDisk().catch((err) => {
+        logger.sync.error('Failed to look for games on disk:', err);
+        return [];
+      }),
+    ]);
+    const moved = new Set(found.map((entry) => entry.game.appID));
+    if (foundCheck === foundGamesCheck) foundGames = found;
+    if (check === missingGamesCheck) {
+      missingGames = missing.filter((game) => !moved.has(game.appID));
+    }
   } catch (err) {
     logger.sync.error('Failed to check for missing games:', err);
   }
@@ -89,6 +110,41 @@ function closeMissingGames(kept: number[], removedAny: boolean) {
   missingGamesCheck++;
   missingGames = [];
   if (removedAny) void reloadLibrary();
+}
+
+function closeFoundGames(skipped: string[], importedAny: boolean) {
+  skipFoundGames(skipped);
+  foundGamesCheck++;
+  foundGames = [];
+  if (importedAny) {
+    void reloadLibrary();
+    // Entries that were moved are no longer missing.
+    void checkMissingGames();
+  }
+}
+
+async function scanFolderForGames() {
+  try {
+    const folder = await runFrontendEffect(
+      electronRpc.fs.dialog.showOpenDialog({ properties: ['openDirectory'] })
+    );
+    if (!folder) return;
+    scanningFolder = true;
+    const found = await findGamesOnDisk(folder);
+    if (found.length === 0) {
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: 'No games to add were found in that folder',
+        type: 'info',
+      });
+    }
+    foundGamesCheck++;
+    foundGames = found;
+  } catch (err) {
+    logger.sync.error('Failed to scan folder for games:', err);
+  } finally {
+    scanningFolder = false;
+  }
 }
 
 async function runInitialLibraryReveal() {
@@ -289,6 +345,15 @@ onDestroy(() => {
             class="bg-accent-lighter px-4 py-2 rounded-lg flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
           >
             <h2 class="text-xl font-semibold text-accent-dark">All Games</h2>
+            <div class="flex flex-row gap-2 items-center w-full sm:w-auto">
+            <button
+              class="shrink-0 px-3 py-2 border border-accent rounded-md text-sm text-accent-dark bg-surface hover:bg-accent-lighter transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={scanningFolder}
+              title="Look for installed games in a folder, like a reconnected drive or SD card"
+              onclick={() => void scanFolderForGames()}
+            >
+              {scanningFolder ? 'Scanning…' : 'Find Games'}
+            </button>
             <div class="relative w-full sm:w-auto">
               <div
                 class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
@@ -313,6 +378,7 @@ onDestroy(() => {
                 placeholder="Search games..."
                 class="block w-full sm:w-64 pl-9 pr-3 py-2 border border-accent rounded-md text-sm bg-surface text-text-primary placeholder-accent caret-accent-dark focus:outline-none focus:ring-1 focus:ring-accent-dark focus:border-accent-dark transition-colors"
               />
+            </div>
             </div>
           </div>
 
@@ -417,7 +483,9 @@ onDestroy(() => {
   </div>
 {/key}
 
-{#if missingGames.length > 0 && !$selectedApp}
+{#if foundGames.length > 0 && !$selectedApp}
+  <FoundGamesModal games={foundGames} onClose={closeFoundGames} />
+{:else if missingGames.length > 0 && !$selectedApp}
   <MissingGamesModal games={missingGames} onClose={closeMissingGames} />
 {/if}
 

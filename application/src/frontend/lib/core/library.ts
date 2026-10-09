@@ -1,6 +1,7 @@
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
+import type { FoundGame } from '@/lib/electron-rpc.js';
 
 /** Loads the library, most recently launched first. */
 export function getAllApps(): Promise<LibraryInfo[]> {
@@ -93,4 +94,24 @@ export async function findMissingGames(): Promise<LibraryInfo[]> {
 
 export function keepMissingGames(appIDs: number[]): void {
   for (const appID of appIDs) keptMissingGames.add(appID);
+}
+
+// Found game folders the user chose to skip; not prompted again this session.
+const skippedFoundGames = new Set<string>();
+
+/**
+ * Finds game folders on disk (download locations, other games' folders,
+ * removable media, and `folder` when given) whose games are not in the
+ * library or were moved there from a now-missing folder. Skipped folders are
+ * left out unless `folder` was picked by hand.
+ */
+export async function findGamesOnDisk(folder?: string): Promise<FoundGame[]> {
+  const found = await runFrontendEffect(
+    electronRpc.app.findGamesOnDisk(folder)
+  );
+  return folder ? found : found.filter((g) => !skippedFoundGames.has(g.path));
+}
+
+export function skipFoundGames(paths: string[]): void {
+  for (const path of paths) skippedFoundGames.add(path);
 }

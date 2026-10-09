@@ -45,20 +45,42 @@ import {
   notifyInfo,
   notifySuccess,
 } from '@/electron/handlers/helpers.app/notifications.js';
-import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
+import {
+  getCurrentUsername,
+  isLinux,
+} from '@/electron/handlers/helpers.app/platform.js';
 import {
   appMetadataSubtrees,
   type DeleteGuardRoots,
   filesystemRoot,
+  isUnsafeDownloadLocation,
+  normalizeDeletePath,
   planGameFileDeletion,
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
+import { sessionDownloadLocations } from '@/electron/lib/download-paths.js';
+import {
+  findManifests,
+  readManifest,
+  relocateGame,
+  removeManifest,
+  writeManifests,
+} from '@/electron/lib/library-manifest.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { ipcServiceBoundary } from '@/electron/runtime.js';
-import { type AppServices, Library } from '@/electron/services/index.js';
-import { ElectronRpc, type GameRemovalProgress } from '@/lib/electron-rpc.js';
+import {
+  type AppServices,
+  Database,
+  Library,
+  Settings,
+} from '@/electron/services/index.js';
+import {
+  ElectronRpc,
+  type FoundGame,
+  type GameRemovalProgress,
+} from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -782,14 +804,58 @@ function executeWrapperCommandForAppSteam(
 }
 
 // Only a definitely absent path counts as missing; permission or transient
-// errors leave the game alone.
+// errors, or a drive that doesn't answer within a few seconds, leave the game
+// alone.
 function isMissingPath(path: string): Promise<boolean> {
-  return fsp.access(path).then(
-    () => false,
-    (error: NodeJS.ErrnoException) =>
-      error.code === 'ENOENT' || error.code === 'ENOTDIR'
-  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    fsp.access(path).then(
+      () => false,
+      (error: NodeJS.ErrnoException) =>
+        error.code === 'ENOENT' || error.code === 'ENOTDIR'
+    ),
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), 5000);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
+
+/**
+ * Removable media mount points, where swapped SD cards and drives appear.
+ * SteamOS mounts SD cards at either `/run/media/<device>` or
+ * `/run/media/<user>/<label>` depending on the version.
+ */
+function removableMediaRoots(): string[] {
+  if (process.platform === 'darwin') return ['/Volumes'];
+  if (process.platform !== 'linux') return [];
+  const user = getCurrentUsername();
+  return user ? ['/run/media', `/media/${user}`] : ['/run/media'];
+}
+
+/**
+ * Folders that may hold games: download locations, the folders installed
+ * games sit in, and removable media. Anything broad enough to contain home or
+ * app data is dropped since it would mean scanning the whole drive.
+ */
+const gameSearchRoots = Effect.gen(function* () {
+  const database = yield* Database;
+  const { fileDownloadLocation } = yield* (yield* Settings).get;
+  const games = yield* (yield* Library).list;
+  return [
+    fileDownloadLocation,
+    ...sessionDownloadLocations,
+    ...(yield* database.downloadRoots.list),
+    ...games.filter((game) => game.cwd).map((game) => dirname(game.cwd)),
+  ]
+    .filter(
+      (root) => root.trim() !== '' && !isUnsafeDownloadLocation(root, __dirname)
+    )
+    .concat(removableMediaRoots());
+});
+
+// Game folders handed to the renderer by the last scan; imports must name one.
+let lastFoundGames = new Map<string, FoundGame>();
+let manifestsBackfilled = false;
 
 export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
   const launchGame = ipcProcedure(
@@ -910,6 +976,10 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               });
               if (deletionPlan.kind === 'skip') {
                 fileWarning = deletionPlan.warning;
+                // The files stay, so keep them from being offered back.
+                if (appInfo.cwd) {
+                  yield* removeManifest(appInfo.cwd, appid);
+                }
               } else if (appInfo.cwd) {
                 const cwd = appInfo.cwd;
                 const deletion = yield* Effect.sync(() =>
@@ -1139,6 +1209,109 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     )
   );
 
+  const findGamesOnDisk = ipcProcedure(
+    ElectronRpc.app.findGamesOnDisk,
+    ipcServiceBoundary((_, folder?: string) =>
+      Effect.gen(function* () {
+        const library = yield* Library;
+        // Games installed before manifests existed get theirs on first scan.
+        if (!manifestsBackfilled) {
+          manifestsBackfilled = true;
+          yield* Effect.forkDaemon(writeManifests(library.list));
+        }
+        const roots = yield* gameSearchRoots;
+        const found = yield* findManifests(folder ? [...roots, folder] : roots);
+        const games = yield* library.list;
+        const results = new Map<string, FoundGame>();
+        for (const { path, game } of found) {
+          const existing = games.find((entry) => entry.appID === game.appID);
+          if (existing) {
+            // Already installed here or somewhere that still exists.
+            if (
+              !existing.cwd ||
+              normalizeDeletePath(existing.cwd) === normalizeDeletePath(path) ||
+              !(yield* Effect.promise(() => isMissingPath(existing.cwd)))
+            ) {
+              continue;
+            }
+          }
+          const result: FoundGame = existing
+            ? { path, game, movedFrom: existing.cwd }
+            : { path, game };
+          // Copies of one game on several drives are offered once.
+          if (![...results.values()].some((r) => r.game.appID === game.appID)) {
+            results.set(normalizeDeletePath(path), result);
+          }
+        }
+        lastFoundGames = results;
+        return [...results.values()];
+      })
+    )
+  );
+
+  const importGamesFromDisk = ipcProcedure(
+    ElectronRpc.app.importGamesFromDisk,
+    ipcServiceBoundary((_, paths: string[]) =>
+      Effect.gen(function* () {
+        const library = yield* Library;
+        const errors: string[] = [];
+        let imported = 0;
+        for (const path of paths) {
+          const found = lastFoundGames.get(normalizeDeletePath(path));
+          // Re-read so a folder that changed since the scan is not trusted.
+          const game = found ? yield* readManifest(found.path) : null;
+          if (!found || !game) {
+            errors.push(`${path}: no longer contains a game`);
+            continue;
+          }
+          // Only import the game the user was shown.
+          if (game.appID !== found.game.appID) {
+            errors.push(`${path}: the game changed since it was found`);
+            continue;
+          }
+          const existing = yield* library.get(game.appID);
+          if (
+            existing?.cwd &&
+            !(yield* Effect.promise(() => isMissingPath(existing.cwd)))
+          ) {
+            errors.push(`${game.name}: already in your library`);
+            continue;
+          }
+          // A moved game keeps its machine-specific setup (prefix, Steam
+          // shortcut); a new one starts from the manifest.
+          const info = existing ? relocateGame(existing, found.path) : game;
+          if (
+            isLinux() &&
+            !info.umu &&
+            info.launchExecutable.toLowerCase().endsWith('.exe')
+          ) {
+            info.umu = { umuId: `umu:${info.appID}` };
+          }
+          if (isLinux() && info.umu && !info.umu.winePrefixPath) {
+            const winePrefixPath = getUmuWinePrefix(info.umu.umuId);
+            info.umu.winePrefixPath = winePrefixPath;
+            yield* Effect.promise(() =>
+              fsp.mkdir(winePrefixPath, { recursive: true }).catch(() => {})
+            );
+          }
+          const saved = yield* Effect.either(library.save(info));
+          if (saved._tag === 'Left') {
+            errors.push(`${info.name}: ${saved.left.message}`);
+            continue;
+          }
+          lastFoundGames.delete(normalizeDeletePath(path));
+          imported++;
+          if (!existing) {
+            yield* Effect.forkDaemon(
+              addDeckGameToSteam(mainWindow, info.appID)
+            );
+          }
+        }
+        return { imported, errors };
+      })
+    )
+  );
+
   const updateAppVersion = ipcProcedure(
     ElectronRpc.app.updateAppVersion,
     ipcServiceBoundary(
@@ -1298,6 +1471,8 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
     insertApp,
     getAllApps,
     getMissingApps,
+    findGamesOnDisk,
+    importGamesFromDisk,
     updateAppVersion,
     getLibraryInfo,
     configureGame

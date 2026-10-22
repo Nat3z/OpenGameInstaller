@@ -27,6 +27,7 @@ import {
   getUmuLaunchEnvironment,
   getUmuRedistributableEnvironment,
 } from '@/electron/handlers/helpers.app/umu-environment.js';
+import { trackGameProcess } from '@/electron/lib/game-processes.js';
 import {
   type LaunchArgumentToken,
   parseLaunchArgumentTokens,
@@ -589,6 +590,7 @@ export function launchWithUmu(
         ? spawn(spawnInvocation.command, spawnInvocation.args, spawnOptions)
         : spawn(spawnInvocation.command, spawnOptions);
       child.unref();
+      trackGameProcess(child, true);
 
       child.stdout?.on('data', (data) => {
         logger.sync.info(`[umu stdout] ${data}`);

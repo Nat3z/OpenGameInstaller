@@ -59,6 +59,7 @@ import {
   systemSubtrees,
 } from '@/electron/lib/delete-guards.js';
 import { sessionDownloadLocations } from '@/electron/lib/download-paths.js';
+import { trackGameProcess } from '@/electron/lib/game-processes.js';
 import {
   findManifests,
   readManifest,
@@ -539,6 +540,7 @@ export function launchGameFromLibrary(
           gameId: parsedAppId,
         }),
     });
+    trackGameProcess(spawnedItem, false);
     spawnedItem.on('error', (error) => {
       logger.sync.error(error);
       runningGames.delete(appInfo.appID);
@@ -755,12 +757,15 @@ function executeWrapperCommandForAppSteam(
           }
         : baseEnv;
 
+      // Own process group so quitting can take down proton's wine children too.
       const wrappedChild = spawn(wrappedCommand, wrappedArgv, {
         cwd: appInfo.cwd,
         env,
+        detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       runningGames.add(appid);
+      trackGameProcess(wrappedChild, true);
 
       wrappedChild.stdout?.on('data', (data) => {
         logger.sync.info(`[wrapper stdout] ${data}`);

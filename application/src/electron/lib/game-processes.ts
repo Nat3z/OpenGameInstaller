@@ -9,15 +9,34 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
  * umu/proton/wine tree goes down, not just the launcher.
  */
 const gameProcesses = new Map<ChildProcess, boolean>();
+// Set once shutdown starts; a game spawned after that is killed on sight.
+let terminating = false;
 
 export function trackGameProcess(
   child: ChildProcess,
   processGroup: boolean
 ): void {
   if (child.pid === undefined) return;
+  if (terminating) {
+    logger.sync.warn(`[game] ${child.pid} started during shutdown, killing`);
+    signalGame(child, processGroup, 'SIGKILL');
+    return;
+  }
   gameProcesses.set(child, processGroup);
-  // A group can outlive its leader, so only a lone process is dropped on exit.
-  if (!processGroup) child.once('exit', () => gameProcesses.delete(child));
+  if (!processGroup) {
+    child.once('exit', () => gameProcesses.delete(child));
+    return;
+  }
+  // A group can outlive its leader, so it is only retired once empty; its id
+  // could otherwise be reused by an unrelated group and signalled later.
+  child.once('exit', () => {
+    const poll = setInterval(() => {
+      if (signalGame(child, true, 0)) return;
+      clearInterval(poll);
+      gameProcesses.delete(child);
+    }, 1_000);
+    poll.unref();
+  });
 }
 
 /** Signal a game; false once nothing is left to signal. */
@@ -46,6 +65,7 @@ function signalGame(
  * since umu-run can exit while wine processes are still shutting down.
  */
 export async function terminateGameProcesses(timeoutMs: number): Promise<void> {
+  terminating = true;
   const games = [...gameProcesses];
   if (games.length === 0) return;
   logger.sync.info(`[game] Terminating ${games.length} running game(s)`);

@@ -14,8 +14,10 @@ import {
   hasPendingFileDeletions,
   launchGameFromLibrary,
 } from '@/electron/handlers/handler.library.js';
+import { terminateGameProcesses } from '@/electron/lib/game-processes.js';
 import {
   isGamescopeSession,
+  isSteamLaunch,
   tagWindowForGamescope,
 } from '@/electron/lib/gamescope.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
@@ -27,6 +29,7 @@ import {
 import { RendererEventReadiness } from '@/electron/lib/renderer-event-readiness.js';
 import {
   createSingleInstanceData,
+  isGameSpecificLaunch,
   type LaunchForwardPayload,
   parseGameIdArg,
   parseLaunchHookArgs,
@@ -779,9 +782,19 @@ app.on('window-all-closed', () => {
 // Cap on how long a launch flow may delay quitting; Steam force-kills the
 // session eventually anyway.
 const QUIT_HOLD_TIMEOUT_MS = 30_000;
+// How long a game gets to exit on SIGTERM before its process group is killed.
+const GAME_TERMINATE_TIMEOUT_MS = 5_000;
 let shutdownState: 'idle' | 'running' | 'done' = 'idle';
 
 async function shutdown(): Promise<void> {
+  // When Steam launched OGI for a game, OGI is the game as far as Steam knows,
+  // so quitting (Steam's "Exit game") must take the game's process tree with
+  // it. umu runs it in its own session, out of reach of Steam's reaper.
+  // Desktop shortcut launches leave games running. Killed first since the
+  // hold below waits on the game exiting.
+  if (isGameSpecificLaunch() && isSteamLaunch()) {
+    await terminateGameProcesses(GAME_TERMINATE_TIMEOUT_MS);
+  }
   if (isQuitHeld()) {
     logger.sync.info('[quit] Waiting for the launch flow to finish');
     await waitForQuitRelease(QUIT_HOLD_TIMEOUT_MS);

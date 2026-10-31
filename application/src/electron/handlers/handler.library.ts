@@ -758,14 +758,16 @@ function executeWrapperCommandForAppSteam(
         : baseEnv;
 
       // Own process group so quitting can take down proton's wine children too.
+      // Windows has no groups, and detaching there only opens a console.
+      const groupLeader = process.platform !== 'win32';
       const wrappedChild = spawn(wrappedCommand, wrappedArgv, {
         cwd: appInfo.cwd,
         env,
-        detached: true,
+        detached: groupLeader,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       runningGames.add(appid);
-      trackGameProcess(wrappedChild, true);
+      trackGameProcess(wrappedChild, groupLeader);
 
       wrappedChild.stdout?.on('data', (data) => {
         logger.sync.info(`[wrapper stdout] ${data}`);

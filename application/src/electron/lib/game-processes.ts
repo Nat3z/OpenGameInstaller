@@ -69,7 +69,14 @@ type ProcessTable = Map<number, { ppid: number; start: string }>;
 function readProcesses(): ProcessTable {
   const table: ProcessTable = new Map();
   if (process.platform !== 'linux') return table;
-  for (const entry of readdirSync('/proc')) {
+  let entries: string[];
+  try {
+    entries = readdirSync('/proc');
+  } catch {
+    // Without /proc only the tracked launchers are signalled.
+    return table;
+  }
+  for (const entry of entries) {
     if (!/^\d+$/.test(entry)) continue;
     try {
       const stat = readFileSync(`/proc/${entry}/stat`, 'utf8');
@@ -109,6 +116,17 @@ function extendTree(tree: Map<number, string>): void {
   }
 }
 
+/** Signals the tree's processes that are still the ones it recorded. */
+function killTree(tree: Map<number, string>, signal: NodeJS.Signals): void {
+  for (const pid of liveInTree(tree, readProcesses())) {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
 /**
  * SIGTERM every running game, then SIGKILL whatever is left after
  * `timeoutMs`. umu-run starts proton in a session of its own, so its group
@@ -135,6 +153,7 @@ export async function terminateGameProcesses(timeoutMs: number): Promise<void> {
   for (const [child, processGroup] of games) {
     signalGame(child, processGroup, 'SIGTERM');
   }
+  killTree(tree, 'SIGTERM');
   const deadline = Date.now() + timeoutMs;
   let alive = games;
   let survivors = liveInTree(tree, readProcesses());
@@ -146,17 +165,8 @@ export async function terminateGameProcesses(timeoutMs: number): Promise<void> {
   if (alive.length === 0 && survivors.length === 0) return;
   // Walked again to catch anything spawned during the grace period.
   extendTree(tree);
-  survivors = liveInTree(tree, readProcesses());
-  logger.sync.warn(
-    `[game] ${survivors.length} process(es) ignored SIGTERM, sending SIGKILL`
-  );
-  for (const pid of survivors) {
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {
-      // Already gone.
-    }
-  }
+  logger.sync.warn('[game] Games ignored SIGTERM, sending SIGKILL');
+  killTree(tree, 'SIGKILL');
   for (const [child, processGroup] of alive) {
     signalGame(child, processGroup, 'SIGKILL');
   }

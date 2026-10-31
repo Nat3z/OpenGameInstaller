@@ -238,24 +238,39 @@ async function plan(): Promise<void> {
   console.log(JSON.stringify(result, null, 2));
 }
 
+function stampDesktop(manifest: PackageJson, version: string): void {
+  manifest.version = version;
+  // Windows numeric file versions cannot contain our large workflow run ID.
+  manifest.build = {
+    ...(manifest.build as Record<string, unknown>),
+    buildVersion: `${version.split('-')[0]}.0`,
+  };
+}
+
+/** Marks untagged CI builds as nightlies so downloaded artifacts follow the nightly channel. */
+function stampCi(): void {
+  const build = process.env.GITHUB_RUN_ID;
+  if (!build) throw new Error('GITHUB_RUN_ID is required');
+  for (const directory of ['application', 'updater']) {
+    const manifest = packageJson(directory);
+    stampDesktop(manifest, nightlyVersion(manifest.version, build));
+    writeJson(`${directory}/package.json`, manifest);
+  }
+}
+
 function stamp(plan: Plan): void {
   if (command('git', ['rev-parse', 'HEAD']) !== plan.source)
     throw new Error('Nightly source mismatch');
   for (const directory of ['application', 'updater', ...packageDirectories]) {
     const manifest = packageJson(directory);
-    manifest.version =
-      directory === 'application'
-        ? plan.applicationVersion
-        : directory === 'updater'
-          ? plan.updaterVersion
-          : plan.packages[manifest.name]!;
-    if (directory === 'application' || directory === 'updater') {
-      // Windows numeric file versions cannot contain our large workflow run ID.
-      manifest.build = {
-        ...(manifest.build as Record<string, unknown>),
-        buildVersion: `${manifest.version.split('-')[0]}.0`,
-      };
-    }
+    if (directory === 'application' || directory === 'updater')
+      stampDesktop(
+        manifest,
+        directory === 'application'
+          ? plan.applicationVersion
+          : plan.updaterVersion
+      );
+    else manifest.version = plan.packages[manifest.name]!;
     // The frozen source install has already run. Only packaging metadata changes.
     if (
       packageDirectories.includes(directory) &&
@@ -660,6 +675,7 @@ async function listReleases(): Promise<GitHubRelease[]> {
 if (import.meta.main) {
   const operation = process.argv[2];
   if (operation === 'plan') await plan();
+  else if (operation === 'stamp-ci') stampCi();
   else {
     const stored = readJson<Plan>(`${stateDirectory}/plan.json`);
     if (operation === 'stamp') stamp(stored);

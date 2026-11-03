@@ -15,7 +15,12 @@ import {
   launchGameFromLibrary,
 } from '@/electron/handlers/handler.library.js';
 import {
+  hasLaunchedGame,
+  terminateGameProcesses,
+} from '@/electron/lib/game-processes.js';
+import {
   isGamescopeSession,
+  isSteamLaunch,
   tagWindowForGamescope,
 } from '@/electron/lib/gamescope.js';
 import { releasePowerSaveBlock } from '@/electron/lib/power-save.js';
@@ -27,6 +32,7 @@ import {
 import { RendererEventReadiness } from '@/electron/lib/renderer-event-readiness.js';
 import {
   createSingleInstanceData,
+  isGameSpecificLaunch,
   type LaunchForwardPayload,
   parseGameIdArg,
   parseLaunchHookArgs,
@@ -67,6 +73,17 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
 
 // import steamworks from 'steamworks.js';
 
+function rendererBaseUrl(): string {
+  return isDev()
+    ? 'http://localhost:8080'
+    : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}`;
+}
+
+/** Renderer URL that only runs a game's pre or post-launch hooks. */
+function hookOnlyLaunchUrl(gameId: number, hookType: 'pre' | 'post'): string {
+  return `${rendererBaseUrl()}?launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
+}
+
 /**
  * Handle launch hooks (pre/post) for games
  * This runs addon events without actually launching the game
@@ -92,15 +109,7 @@ async function handleLaunchHooks(
     }
     await startAddonRuntime();
 
-    // Load the main app with game ID and hook flags
-    const baseUrl = isDev()
-      ? `http://localhost:8080`
-      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}`;
-
-    // Add flags to indicate this is a hook-only launch
-    const launchUrl = `${baseUrl}?launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
-
-    await mainWindow.loadURL(launchUrl);
+    await mainWindow.loadURL(hookOnlyLaunchUrl(gameId, hookType));
 
     mainWindow.once('ready-to-show', () => {
       mainWindow?.show();
@@ -131,20 +140,15 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
     }
     await startAddonRuntime();
 
-    // Load the main app with the game ID in the query params
-    // The Svelte frontend will detect this and show the GameLaunchOverlay
-    const baseUrl = isDev()
-      ? `http://localhost:8080`
-      : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}`;
-
     logger.sync.info('Direct wrapper command: ' + wrapperCommand);
 
+    // The Svelte frontend detects the game ID and shows the GameLaunchOverlay
     const wrapperQuery = wrapperCommand
       ? `&wrapperCommand=${encodeURIComponent(wrapperCommand)}`
       : '';
-    const launchUrl = `${baseUrl}?launchGameId=${gameId}${wrapperQuery}`;
-
-    await mainWindow.loadURL(launchUrl);
+    await mainWindow.loadURL(
+      `${rendererBaseUrl()}?launchGameId=${gameId}${wrapperQuery}`
+    );
 
     mainWindow.once('ready-to-show', () => {
       mainWindow?.show();
@@ -171,6 +175,19 @@ if (IS_NIXOS) {
   );
 }
 logger.sync.info('Running in directory: ' + __dirname);
+
+// Steam's "Exit game" SIGTERMs OGI's whole process tree, Chromium's zygote
+// included. The GPU process can't be relaunched without it, so Chromium aborts
+// (SIGTRAP) before the post-launch hooks run. Without a zygote the helpers are
+// spawned directly and come back. Needs --no-sandbox, which shortcuts pass.
+if (
+  process.platform === 'linux' &&
+  isGameSpecificLaunch() &&
+  isSteamLaunch() &&
+  app.commandLine.hasSwitch('no-sandbox')
+) {
+  app.commandLine.appendSwitch('no-zygote');
+}
 
 // disable hardware acceleration on windows to prevent rendering glitches
 if (process.platform === 'win32') {
@@ -779,12 +796,64 @@ app.on('window-all-closed', () => {
 // Cap on how long a launch flow may delay quitting; Steam force-kills the
 // session eventually anyway.
 const QUIT_HOLD_TIMEOUT_MS = 30_000;
+// How long a game gets to exit on SIGTERM before its process group is killed.
+const GAME_TERMINATE_TIMEOUT_MS = 5_000;
 let shutdownState: 'idle' | 'running' | 'done' = 'idle';
 
+/** Resolves once the main window's renderer has died, if it ever does. */
+function rendererGone(): Promise<void> {
+  const contents = mainWindow?.webContents;
+  if (!contents || contents.isDestroyed()) return new Promise(() => {});
+  if (contents.isCrashed()) return Promise.resolve();
+  return new Promise((resolve) =>
+    contents.once('render-process-gone', () => resolve())
+  );
+}
+
+/**
+ * The launch flow's renderer died with Steam's signal (addons too), so the
+ * game's post-launch hooks never ran. Load a fresh renderer in hook-only mode;
+ * it respawns the addons, runs the hooks and releases the hold.
+ */
+async function rerunPostLaunchHooks(): Promise<void> {
+  const gameId = parseGameIdArg();
+  if (gameId === null || !hasLaunchedGame()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  logger.sync.warn(
+    '[quit] Renderer died mid launch flow, rerunning post-launch hooks'
+  );
+  setQuitHold(true);
+  try {
+    await mainWindow.loadURL(hookOnlyLaunchUrl(gameId, 'post'));
+    // Hidden while the game ran; the normal game:exit flow shows it too.
+    mainWindow.show();
+  } catch (error) {
+    logger.sync.error('[quit] Failed to reload for post-launch hooks:', error);
+    setQuitHold(false);
+    return;
+  }
+  await Promise.race([
+    waitForQuitRelease(QUIT_HOLD_TIMEOUT_MS),
+    rendererGone(),
+  ]);
+}
+
 async function shutdown(): Promise<void> {
+  // When Steam launched OGI for a game, OGI is the game as far as Steam knows,
+  // so quitting (Steam's "Exit game") must take the game's process tree with
+  // it. umu runs it in its own session, out of reach of Steam's reaper.
+  // Desktop shortcut launches leave games running. Killed first since the
+  // hold below waits on the game exiting.
+  if (isGameSpecificLaunch() && isSteamLaunch()) {
+    await terminateGameProcesses(GAME_TERMINATE_TIMEOUT_MS);
+  }
   if (isQuitHeld()) {
     logger.sync.info('[quit] Waiting for the launch flow to finish');
-    await waitForQuitRelease(QUIT_HOLD_TIMEOUT_MS);
+    const finished = await Promise.race([
+      waitForQuitRelease(QUIT_HOLD_TIMEOUT_MS).then(() => true),
+      rendererGone().then(() => false),
+    ]);
+    if (!finished) await rerunPostLaunchHooks();
   }
   await runElectronEffect(
     Effect.gen(function* () {

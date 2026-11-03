@@ -14,6 +14,11 @@ export function isGamescopeSession(
   );
 }
 
+/** True when Steam launched OGI, since its reaper exports SteamGameId. */
+export function isSteamLaunch(env: NodeJS.ProcessEnv = process.env): boolean {
+  return getGamescopeAppId(env) !== null;
+}
+
 /**
  * Resolve the 32-bit appid gamescope associates with this launch session.
  * Steam exports SteamGameId as the 64-bit gameid; for non-Steam shortcuts the

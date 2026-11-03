@@ -12,6 +12,12 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
 const gameProcesses = new Map<ChildProcess, boolean>();
 // Set once shutdown starts; a game spawned after that is killed on sight.
 let terminating = false;
+// Set once a game ran this session, so its post-launch hooks are owed.
+let launchedGame = false;
+
+export function hasLaunchedGame(): boolean {
+  return launchedGame;
+}
 
 export function trackGameProcess(
   child: ChildProcess,
@@ -23,6 +29,7 @@ export function trackGameProcess(
     signalGame(child, processGroup, 'SIGKILL');
     return;
   }
+  launchedGame = true;
   gameProcesses.set(child, processGroup);
   if (!processGroup) {
     child.once('exit', () => gameProcesses.delete(child));

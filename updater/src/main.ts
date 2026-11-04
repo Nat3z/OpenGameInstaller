@@ -1,22 +1,26 @@
 import http from 'node:http';
 import https from 'node:https';
 import {
-  acceptsRelease,
+  blockmapAsset,
   type ChannelBuilds,
   channelStatePath,
-  NIGHTLY_API,
-  nightlyRelease,
-  parseNightlyManifest,
+  downloadAsset,
+  fetchReleases,
+  findApplicationUpdate,
+  formatBytes,
+  platformAsset,
+  type ReleaseAsset,
+  type ReleaseChannel,
+  type ReleaseError,
   resolveChannel,
   saveChannel,
   selectChannel,
-  shouldUpdateApplication,
   type UpdateChannel,
+  verifyAsset,
 } from '@ogi/update-channel';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { spawn } from 'child_process';
-import { createHash } from 'crypto';
 import { Data, Effect } from 'effect';
 import { app, BrowserWindow, dialog, ipcMain, net } from 'electron';
 import fs from 'fs';
@@ -90,6 +94,20 @@ const tryFileSystem = <A>(
 const runUpdater = <A>(effect: Effect.Effect<A, UpdaterError>): Promise<A> =>
   Effect.runPromise(logger.observe(effect));
 
+/** Keeps shared release failures in the setup's own error type. */
+const fromRelease = <A>(
+  effect: Effect.Effect<A, ReleaseError>
+): Effect.Effect<A, UpdateError> =>
+  Effect.mapError(
+    effect,
+    (error) =>
+      new UpdateError({
+        message: error.message,
+        phase: error.phase,
+        cause: error.cause,
+      })
+  );
+
 let mainWindow: BrowserWindow | null = null;
 
 function isDev() {
@@ -109,18 +127,6 @@ fs.writeFile(join(__dirname, 'updater-version.txt'), SETUP_VERSION, () => {
   logger.sync.info('Wrote version file');
 });
 process.noAsar = true;
-
-function correctParsingSize(size: number) {
-  if (size < 1024) {
-    return size + 'B';
-  } else if (size < 1024 * 1024) {
-    return (size / 1024).toFixed(2) + 'KB';
-  } else if (size < 1024 * 1024 * 1024) {
-    return (size / (1024 * 1024)).toFixed(2) + 'MB';
-  } else {
-    return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
-  }
-}
 
 let localVersion = '0.0.0';
 const channelPath = channelStatePath(app.getPath('appData'), __dirname);
@@ -731,95 +737,6 @@ function getEffectiveOnlineState(requestedOnline = getRequestedOnlineState()) {
   };
 }
 
-function parseReleaseVersion(tagName) {
-  if (typeof tagName !== 'string') {
-    return null;
-  }
-
-  const match = tagName
-    .trim()
-    .replace(/^v/i, '')
-    .match(
-      /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/
-    );
-  if (!match) {
-    return null;
-  }
-
-  return {
-    major: Number.parseInt(match[1], 10),
-    minor: Number.parseInt(match[2], 10),
-    patch: Number.parseInt(match[3], 10),
-    prerelease: match[4] ? match[4].split('.') : [],
-  };
-}
-
-function comparePrereleaseIdentifier(a, b) {
-  const aIsNumeric = /^\d+$/.test(a);
-  const bIsNumeric = /^\d+$/.test(b);
-
-  if (aIsNumeric && bIsNumeric) {
-    const aNumber = Number.parseInt(a, 10);
-    const bNumber = Number.parseInt(b, 10);
-    if (aNumber > bNumber) return 1;
-    if (aNumber < bNumber) return -1;
-    return 0;
-  }
-
-  if (aIsNumeric) return -1;
-  if (bIsNumeric) return 1;
-  if (a > b) return 1;
-  if (a < b) return -1;
-  return 0;
-}
-
-function compareParsedReleaseVersion(a, b) {
-  if (a.major !== b.major) return a.major > b.major ? 1 : -1;
-  if (a.minor !== b.minor) return a.minor > b.minor ? 1 : -1;
-  if (a.patch !== b.patch) return a.patch > b.patch ? 1 : -1;
-
-  const aHasPrerelease = a.prerelease.length > 0;
-  const bHasPrerelease = b.prerelease.length > 0;
-  if (!aHasPrerelease && !bHasPrerelease) return 0;
-  if (!aHasPrerelease) return 1;
-  if (!bHasPrerelease) return -1;
-
-  const maxLength = Math.max(a.prerelease.length, b.prerelease.length);
-  for (let i = 0; i < maxLength; i++) {
-    const aIdentifier = a.prerelease[i];
-    const bIdentifier = b.prerelease[i];
-    if (aIdentifier === undefined) return -1;
-    if (bIdentifier === undefined) return 1;
-
-    const identifierOrder = comparePrereleaseIdentifier(
-      aIdentifier,
-      bIdentifier
-    );
-    if (identifierOrder !== 0) {
-      return identifierOrder;
-    }
-  }
-
-  return 0;
-}
-
-function compareReleaseOrder(a: any, b: any) {
-  const parsedA = parseReleaseVersion(a?.tag_name);
-  const parsedB = parseReleaseVersion(b?.tag_name);
-
-  if (parsedA && parsedB) {
-    const semanticOrder = compareParsedReleaseVersion(parsedB, parsedA);
-    if (semanticOrder !== 0) {
-      return semanticOrder;
-    }
-  }
-
-  return (
-    new Date(b?.published_at || b?.created_at || 0).getTime() -
-    new Date(a?.published_at || a?.created_at || 0).getTime()
-  );
-}
-
 function sendUpdaterStatus(
   text: string,
   progress?: number,
@@ -1117,31 +1034,10 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
       launchApp(false);
       return;
     }
-    const gitRepo = 'Nat3z/OpenGameInstaller';
+    // Bleeding edge returned above after building from source.
+    const releaseChannel = updateChannel as ReleaseChannel;
     const releaseResult = yield* Effect.either(
-      tryUpdatePromise('check-for-updates', async (signal) => {
-        if (updateChannel === 'nightly') {
-          const response = await axios.get(NIGHTLY_API, {
-            signal,
-            timeout: 10000,
-          });
-          return {
-            data: [
-              nightlyRelease(
-                parseNightlyManifest(JSON.parse(response.data.body)),
-                'application'
-              ),
-            ],
-          };
-        }
-        return axios.get(
-          `https://api.github.com/repos/${gitRepo}/releases?per_page=100`,
-          {
-            signal,
-            timeout: 10000,
-          }
-        );
-      })
+      fromRelease(fetchReleases(releaseChannel, 'application'))
     );
     if (releaseResult._tag === 'Left') {
       yield* logger.error(releaseResult.left);
@@ -1158,34 +1054,19 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
     }
 
     mainWindow.webContents.send('text', 'Checking for Updates');
-    const releases = releaseResult.right.data
-      .filter(
-        (rel) =>
-          updateChannel === 'nightly' || acceptsRelease(updateChannel, rel)
-      )
-      .sort(compareReleaseOrder);
-    const localIndex = releases.findIndex(
-      (rel) => rel.tag_name === localVersion
+    const releases = releaseResult.right;
+    const update = findApplicationUpdate(
+      releases,
+      localVersion,
+      releaseChannel,
+      installedChannel
     );
-    const targetRelease = releases[0];
-    const updating =
-      Boolean(targetRelease) &&
-      shouldUpdateApplication(
-        localVersion,
-        targetRelease.tag_name,
-        updateChannel,
-        installedChannel
-      );
-    if (targetRelease && updating) {
-      const releasePath =
-        localIndex > 0
-          ? releases.slice(0, localIndex).reverse()
-          : [targetRelease];
-      const gap =
-        localIndex > 0 ? releasePath.length : Number.POSITIVE_INFINITY;
+    if (update) {
+      const targetRelease = update.release;
+      const releasePath = update.path;
       let updateApplied = false;
 
-      if (Number.isFinite(gap) && gap > 0 && gap <= 3) {
+      if (releasePath.length > 0 && releasePath.length <= 3) {
         mainWindow.webContents.send(
           'text',
           'Preparing incremental update path'
@@ -1210,7 +1091,7 @@ function createWindow(): Effect.Effect<void, UpdaterError> {
         mainWindow.webContents.send(
           'text',
           'Falling back to full download',
-          Number.isFinite(gap)
+          releasePath.length > 0
             ? 'Version too old for incremental update'
             : 'Local version missing from release feed'
         );
@@ -1313,26 +1194,6 @@ function cleanupAfterUpdate(currentTag, currentAssetName) {
   }
 }
 
-function getPlatformAsset(release) {
-  if (process.platform === 'win32') {
-    return release.assets.find(
-      (asset) =>
-        asset.name.toLowerCase().includes('portable') ||
-        asset.name.toLowerCase().includes('portrable')
-    );
-  }
-  return release.assets.find((asset) =>
-    asset.name.toLowerCase().includes('linux-pt.appimage')
-  );
-}
-
-function getBlockmapAsset(release, targetAsset) {
-  return release.assets.find(
-    (asset) =>
-      asset.name.toLowerCase() === `${targetAsset.name.toLowerCase()}.blockmap`
-  );
-}
-
 function getReleaseByTag(releases, tagName) {
   return releases.find((release) => release.tag_name === tagName);
 }
@@ -1408,7 +1269,7 @@ function ensureCachedSourceArtifact(cacheDir, release, asset) {
     }
 
     yield* downloadToFile(
-      asset.browser_download_url,
+      asset,
       sourceArtifactPath,
       `Downloading base artifact ${release.tag_name}`
     );
@@ -1419,8 +1280,8 @@ function ensureCachedSourceArtifact(cacheDir, release, asset) {
 
 function ensureCachedBlockmap(cacheDir: string, release: any, asset: any) {
   return Effect.gen(function* () {
-    const blockmapAsset = getBlockmapAsset(release, asset);
-    if (!blockmapAsset) {
+    const blockmap = blockmapAsset(release, asset);
+    if (!blockmap) {
       return yield* Effect.fail(
         new UpdateError({
           message: `Blockmap missing for ${release.tag_name}`,
@@ -1441,7 +1302,7 @@ function ensureCachedBlockmap(cacheDir: string, release: any, asset: any) {
       fs.mkdirSync(cacheDir, { recursive: true })
     );
     yield* downloadToFile(
-      blockmapAsset.browser_download_url,
+      blockmap,
       blockmapPath,
       `Downloading blockmap ${release.tag_name}`
     );
@@ -1450,150 +1311,34 @@ function ensureCachedBlockmap(cacheDir: string, release: any, asset: any) {
 }
 
 function downloadToFile(
-  url: string,
+  asset: ReleaseAsset,
   destination: string,
   status: string
-): Effect.Effect<void, UpdaterError> {
-  const attemptDownload = (
-    attempt: number
-  ): Effect.Effect<void, UpdaterError> =>
-    Effect.gen(function* () {
-      yield* logger.info(`Starting download: ${status}`, {
-        url,
-        destination,
-        attempt,
-      });
-      yield* tryFileSystem('prepare-download', destination, () =>
-        fs.rmSync(destination, { force: true })
-      );
-      const response = yield* tryUpdatePromise('start-download', (signal) =>
-        axios({
-          signal,
-          url,
-          method: 'GET',
-          responseType: 'stream',
-          timeout: HTTP_REQUEST_TIMEOUT_MS,
-          ...getAxiosTransportOptions(url),
-        })
-      );
-      const writer = yield* tryFileSystem('open-download', destination, () =>
-        fs.createWriteStream(destination)
-      );
-      const contentLength = response.headers['content-length'];
-      const fileSize =
-        contentLength === undefined
-          ? undefined
-          : Number(
-              Array.isArray(contentLength) ? contentLength[0] : contentLength
-            );
-      const startTime = Date.now();
-
-      yield* Effect.async<void, UpdateError>((resume) => {
-        let settled = false;
-        const destroyStreams = () => {
-          response.data.destroy?.();
-          writer.destroy();
-        };
-        const finish = (effect: Effect.Effect<void, UpdateError>) => {
-          if (!settled) {
-            settled = true;
-            resume(effect);
-          }
-        };
-        const failAfterClose = (effect: Effect.Effect<void, UpdateError>) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          const openStreams = [response.data, writer].filter(
-            (stream) => !stream.closed
-          );
-          let remaining = openStreams.length;
-          if (remaining === 0) {
-            resume(effect);
-            return;
-          }
-          for (const stream of openStreams) {
-            stream.once('close', () => {
-              remaining--;
-              if (remaining === 0) {
-                resume(effect);
-              }
-            });
-          }
-          destroyStreams();
-        };
-        response.data.on('data', () => {
-          const elapsedTime = (Date.now() - startTime) / 1000;
-          const downloadSpeed = writer.bytesWritten / Math.max(elapsedTime, 1);
-          sendUpdaterStatus(
-            status,
-            writer.bytesWritten,
-            Number.isFinite(fileSize) ? fileSize : undefined,
-            correctParsingSize(downloadSpeed) + '/s'
-          );
+): Effect.Effect<void, UpdateError> {
+  return fromRelease(
+    downloadAsset(asset, destination, {
+      onProgress: ({ written, total, bytesPerSecond }) =>
+        sendUpdaterStatus(
+          status,
+          written,
+          total ?? asset.size,
+          `${formatBytes(bytesPerSecond)}/s`
+        ),
+      onRetry: (attempt, attempts, error) => {
+        logger.sync.info(`Download failed, retrying: ${status}`, {
+          destination,
+          attempt,
+          error: error.message,
         });
-        writer.once('finish', () => finish(Effect.void));
-        writer.once('error', (cause) =>
-          failAfterClose(
-            Effect.fail(
-              new UpdateError({
-                message: formatCause(cause),
-                phase: 'write-download',
-                cause,
-              })
-            )
-          )
+        sendUpdaterStatus(
+          status,
+          undefined,
+          undefined,
+          `Retrying (${attempt}/${attempts})`
         );
-        response.data.once('error', (cause) =>
-          failAfterClose(
-            Effect.fail(
-              new UpdateError({
-                message: formatCause(cause),
-                phase: 'read-download',
-                cause,
-              })
-            )
-          )
-        );
-        response.data.pipe(writer);
-
-        return Effect.sync(destroyStreams);
-      });
-      yield* logger.info(`Finished download: ${status}`, {
-        destination,
-        bytesWritten: writer.bytesWritten,
-        attempt,
-      });
-    }).pipe(
-      Effect.catchAll((error) =>
-        Effect.gen(function* () {
-          yield* tryFileSystem('clean-failed-download', destination, () =>
-            fs.rmSync(destination, { force: true })
-          ).pipe(Effect.orElseSucceed(() => undefined));
-          const retryable = shouldRetryHttpError(error.cause ?? error);
-          yield* logger.info(`Download attempt failed: ${status}`, {
-            destination,
-            attempt,
-            retryable,
-            error: error.message,
-          });
-          if (!retryable || attempt === HTTP_RETRY_ATTEMPTS) {
-            return yield* Effect.fail(error);
-          }
-          sendUpdaterStatus(
-            status,
-            undefined,
-            undefined,
-            `Retrying (${attempt + 1}/${HTTP_RETRY_ATTEMPTS})`
-          );
-          yield* sleep(getRetryDelay(attempt));
-          return yield* attemptDownload(attempt + 1);
-        })
-      )
-    );
-
-  return attemptDownload(1);
+      },
+    })
+  );
 }
 
 function copyCacheToUpdate(cacheDir: string) {
@@ -1624,7 +1369,7 @@ function copyCacheToUpdate(cacheDir: string) {
 
 function downloadFullRelease(release: any) {
   return Effect.gen(function* () {
-    const assetWithPortable = getPlatformAsset(release);
+    const assetWithPortable = platformAsset(release, 'application');
     if (!assetWithPortable) {
       return yield* Effect.fail(
         new UpdateError({
@@ -1637,7 +1382,7 @@ function downloadFullRelease(release: any) {
     yield* tryUpdate('prepare-release-cache', () =>
       fs.mkdirSync(localCache, { recursive: true })
     );
-    const blockmapAsset = getBlockmapAsset(release, assetWithPortable);
+    const blockmap = blockmapAsset(release, assetWithPortable);
 
     sendUpdaterStatus('Downloading Update');
     const downloadPath =
@@ -1649,25 +1394,15 @@ function downloadFullRelease(release: any) {
         fs.mkdirSync('./update', { recursive: true })
       );
     }
+    // Verified against the release's size and digest before it is installed.
     yield* downloadToFile(
-      assetWithPortable.browser_download_url,
+      assetWithPortable,
       downloadPath,
       'Downloading Update'
     );
-    sendUpdaterStatus('Verifying Download');
-    yield* verifyReleaseArtifact(
-      downloadPath,
-      {
-        size: assetWithPortable.size,
-        digest: assetWithPortable.sha256
-          ? `sha256:${assetWithPortable.sha256}`
-          : assetWithPortable.digest,
-      },
-      'downloaded release artifact'
-    );
-    if (blockmapAsset) {
+    if (blockmap) {
       yield* downloadToFile(
-        blockmapAsset.browser_download_url,
+        blockmap,
         path.join(localCache, `${assetWithPortable.name}.blockmap`),
         'Downloading blockmap'
       );
@@ -1731,7 +1466,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
       }
       const fromCache = getVersionCache(currentTag);
       const nextCache = getVersionCache(nextRelease.tag_name);
-      const currentAsset = getPlatformAsset(currentRelease);
+      const currentAsset = platformAsset(currentRelease, 'application');
       if (!currentAsset) {
         return yield* Effect.fail(
           new UpdateError({
@@ -1740,7 +1475,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
           })
         );
       }
-      const nextAsset = getPlatformAsset(nextRelease);
+      const nextAsset = platformAsset(nextRelease, 'application');
       if (!nextAsset) {
         return yield* Effect.fail(
           new UpdateError({
@@ -1750,7 +1485,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
         );
       }
       latestAssetName = nextAsset.name;
-      const newBlockmapAsset = getBlockmapAsset(nextRelease, nextAsset);
+      const newBlockmapAsset = blockmapAsset(nextRelease, nextAsset);
       if (!newBlockmapAsset) {
         return yield* Effect.fail(
           new UpdateError({
@@ -1765,14 +1500,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
         currentAsset
       );
       sendUpdaterStatus('Verifying base artifact');
-      yield* verifyReleaseArtifact(
-        sourceArtifact,
-        {
-          size: currentAsset.size,
-          digest: currentAsset.digest,
-        },
-        'base artifact'
-      );
+      yield* fromRelease(verifyAsset(sourceArtifact, currentAsset));
       const oldBlockmapPath = yield* ensureCachedBlockmap(
         fromCache,
         currentRelease,
@@ -1785,7 +1513,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
       );
       if (!fs.existsSync(newBlockmapPath)) {
         yield* downloadToFile(
-          newBlockmapAsset.browser_download_url,
+          newBlockmapAsset,
           newBlockmapPath,
           'Downloading blockmap'
         );
@@ -1810,7 +1538,7 @@ function applyBlockmapPath(releasePath: any, releases: any) {
         outputArtifact,
         newBlockmapPath,
         nextAsset.browser_download_url,
-        { size: nextAsset.size, digest: nextAsset.digest },
+        nextAsset,
         {
           patchLabel: `Building patch ${i + 1} of ${releasePath.length}`,
           verifyLabel: `Verifying patch ${i + 1} of ${releasePath.length}`,
@@ -1884,7 +1612,7 @@ function applyBlockmapPatch(
   outputArtifact,
   newBlockmapPath,
   targetUrl,
-  expectedArtifact = {},
+  expectedArtifact: ReleaseAsset,
   statusLabels: any = {}
 ): Effect.Effect<void, UpdaterError> {
   return Effect.gen(function* () {
@@ -2332,108 +2060,10 @@ function downloadRangeChunk(
   });
 }
 
-function parseDigest(digest) {
-  if (typeof digest !== 'string') {
-    return null;
-  }
-  const [algorithm, value] = digest.split(':', 2);
-  if (!algorithm || !value) {
-    return null;
-  }
-  const normalizedAlgorithm = algorithm.toLowerCase();
-  if (
-    normalizedAlgorithm !== 'sha256' &&
-    normalizedAlgorithm !== 'sha384' &&
-    normalizedAlgorithm !== 'sha512'
-  ) {
-    return null;
-  }
-  return { algorithm: normalizedAlgorithm, value: value.toLowerCase() };
-}
-
-function hashFile(filePath, algorithm): Effect.Effect<string, FileSystemError> {
-  return Effect.async<string, FileSystemError>((resume) => {
-    const hash = createHash(algorithm);
-    const stream = fs.createReadStream(filePath);
-    stream.once('error', (cause) =>
-      resume(
-        Effect.fail(
-          new FileSystemError({
-            message: formatCause(cause),
-            operation: 'hash-file',
-            path: filePath,
-            cause,
-          })
-        )
-      )
-    );
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.once('end', () => resume(Effect.succeed(hash.digest('hex'))));
-    return Effect.sync(() => stream.destroy());
-  });
-}
-
-function verifyReleaseArtifact(
-  artifactPath,
-  expectedArtifact,
-  logLabel = 'release artifact'
-): Effect.Effect<void, UpdaterError> {
-  return Effect.gen(function* () {
-    const stat = yield* tryUpdate('verify-release-artifact', () =>
-      fs.statSync(artifactPath)
-    );
-    if (
-      Number.isFinite(expectedArtifact.size) &&
-      expectedArtifact.size > 0 &&
-      stat.size !== expectedArtifact.size
-    ) {
-      return yield* Effect.fail(
-        new UpdateError({
-          message: `${logLabel} size mismatch: expected ${expectedArtifact.size}, got ${stat.size}`,
-        })
-      );
-    }
-
-    const parsedDigest = parseDigest(expectedArtifact.digest);
-    if (expectedArtifact.digest && !parsedDigest) {
-      yield* logger.info('Invalid digest format, aborting verification', {
-        artifactPath,
-        logLabel,
-        digest: expectedArtifact.digest,
-      });
-      return yield* Effect.fail(
-        new UpdateError({
-          message: `${logLabel} has invalid digest format: ${expectedArtifact.digest}`,
-        })
-      );
-    }
-    if (!parsedDigest) {
-      yield* logger.info(
-        'No release digest available for artifact verification',
-        {
-          artifactPath,
-          logLabel,
-        }
-      );
-      return;
-    }
-
-    const actualDigest = yield* hashFile(artifactPath, parsedDigest.algorithm);
-    if (actualDigest !== parsedDigest.value) {
-      return yield* Effect.fail(
-        new UpdateError({
-          message: `${logLabel} digest mismatch for ${parsedDigest.algorithm}`,
-          phase: 'verify-release-artifact',
-        })
-      );
-    }
-  });
-}
-
 function verifyPatchedArtifact(
   outputArtifact,
   newFile,
-  expectedArtifact,
+  expectedArtifact: ReleaseAsset,
   verifyLabel = 'Verifying patch',
   releaseTag
 ): Effect.Effect<void, UpdaterError> {
@@ -2526,33 +2156,7 @@ function verifyPatchedArtifact(
       blocks: newFile.checksums.length,
     });
 
-    const parsedDigest = parseDigest(expectedArtifact.digest);
-    if (!parsedDigest) {
-      yield* logger.info(
-        'No release digest available for final artifact verification',
-        {
-          outputArtifact,
-          releaseTag,
-        }
-      );
-      return;
-    }
-    const actualDigest = yield* hashFile(
-      outputArtifact,
-      parsedDigest.algorithm
-    );
-    if (actualDigest !== parsedDigest.value) {
-      return yield* Effect.fail(
-        new UpdateError({
-          message: `Patched artifact digest mismatch for ${parsedDigest.algorithm}`,
-        })
-      );
-    }
-    yield* logger.info('Completed final artifact digest verification', {
-      outputArtifact,
-      releaseTag,
-      algorithm: parsedDigest.algorithm,
-    });
+    yield* fromRelease(verifyAsset(outputArtifact, expectedArtifact));
   });
 }
 

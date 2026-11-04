@@ -24,7 +24,7 @@
   "overrides": {
     "@types/minimatch": "5.1.2",
     "@types/node": "^22.15.0",
-    "effect": "3.22.0",
+    "effect": "3.22.4",
     "yargs": "17.7.3"
   },
   "trustedDependencies": [
@@ -33,6 +33,6 @@
     "sharp"
   ],
   "dependencies": {
-    "effect": "3.22.0"
+    "effect": "3.22.4"
   }
 }

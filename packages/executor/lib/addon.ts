@@ -209,14 +209,27 @@ export class Addon {
     }).pipe(Effect.catchAll(() => killChild));
   }
 
-  private monitorProcess(child: ChildProcess): Effect.Effect<void, AddonError> {
+  private monitorProcess(
+    child: ChildProcess,
+    { stdio }: { stdio: 'pipe' | 'inherit' }
+  ): Effect.Effect<void, AddonError> {
     const name = this.config.name;
     return Effect.async<void, AddonError>((resume) => {
       let settled = false;
-      const onStdout = (data: Buffer): void =>
+      const onStdout = (data: Buffer): void => {
+        if (stdio === 'inherit') {
+          process.stdout.write(data);
+          return;
+        }
         logger.sync.info(`[${name}] ${data}`);
-      const onStderr = (data: Buffer): void =>
+      };
+      const onStderr = (data: Buffer): void => {
+        if (stdio === 'inherit') {
+          process.stderr.write(data);
+          return;
+        }
         logger.sync.error(`[${name}] ${data}`);
+      };
       const cleanup = (): void => {
         child.stdout?.off('data', onStdout);
         child.stderr?.off('data', onStderr);
@@ -254,7 +267,9 @@ export class Addon {
     });
   }
 
-  public start(): Effect.Effect<void, AddonLifecycleError> {
+  public start(
+    stdio: 'pipe' | 'inherit' = 'pipe'
+  ): Effect.Effect<void, AddonLifecycleError> {
     return Effect.gen(this, function* () {
       if (this.processScope) yield* this.stop();
       if (!this.config.scripts?.run) {
@@ -281,7 +296,7 @@ export class Addon {
                   this.childProcess = child;
                 }).pipe(
                   Effect.zipRight(Deferred.succeed(started, child)),
-                  Effect.zipRight(this.monitorProcess(child))
+                  Effect.zipRight(this.monitorProcess(child, { stdio }))
                 ),
               (child) => this.stopProcess(child).pipe(Effect.ignore)
             ).pipe(

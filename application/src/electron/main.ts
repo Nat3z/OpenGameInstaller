@@ -28,6 +28,7 @@ import { RendererEventReadiness } from '@/electron/lib/renderer-event-readiness.
 import {
   createSingleInstanceData,
   type LaunchForwardPayload,
+  LaunchHookArgs,
   parseGameIdArg,
   parseLaunchHookArgs,
   parseLaunchRequestFromArgv,
@@ -64,6 +65,7 @@ import {
 } from '@/electron/startup-runner.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
+const frontendLogger = createLogger(LOGGER_PREFIXES.frontend);
 
 // import steamworks from 'steamworks.js';
 
@@ -297,6 +299,7 @@ function registerClientReadyListener() {
 
 async function ensureAddonServerRunning() {
   if (isAddonServerListening) return;
+  if (hookArgs && hookArgs.noAddonServer) return;
 
   try {
     await runElectronEffect(startAddonServer());
@@ -315,7 +318,7 @@ async function ensureAddonServerRunning() {
 }
 
 async function startAddonRuntime() {
-  await ensureAddonServerRunning();
+  if (hookArgs && !hookArgs.noAddonServer) await ensureAddonServerRunning();
   sendNotification({
     message: 'Addons Starting...',
     id: Math.random().toString(36).substring(7),
@@ -447,6 +450,12 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
 
   mainWindow.on('closed', function () {
     mainWindow = null;
+  });
+
+  mainWindow.webContents.on('console-message', (_event, level, message) => {
+    if (level === 1) frontendLogger.info(message);
+    else if (level === 2) frontendLogger.warn(message);
+    else if (level === 3) frontendLogger.error(message);
   });
 
   // First ready-to-show: splash is ready; show window so user sees loading
@@ -709,6 +718,8 @@ if (!gotTheLock) {
   );
 }
 
+let hookArgs: LaunchHookArgs | undefined = undefined;
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -722,7 +733,7 @@ app.on('ready', async () => {
 
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
-  const hookArgs = parseLaunchHookArgs();
+  hookArgs = parseLaunchHookArgs();
   const wrapperCommand = parseWrapperAfterSeparator();
   if (gameIdToLaunch !== null) {
     logger.sync.info(

@@ -71,16 +71,20 @@ export function isGameSpecificLaunch(): boolean {
   return parseGameIdArg() !== null;
 }
 
+export type LaunchHookArgs = ReturnType<typeof parseLaunchHookArgs>;
+
 /** Parse the pre/post hook flags used by Steam shortcut launches. */
 export function parseLaunchHookArgs(argv: readonly string[] = process.argv): {
   noLaunch: boolean;
   runPre: boolean;
   runPost: boolean;
+  noAddonServer: boolean;
 } {
   return {
     noLaunch: argv.includes('--no-launch'),
     runPre: argv.includes('--pre'),
     runPost: argv.includes('--post'),
+    noAddonServer: argv.includes('--no-server'),
   };
 }
 

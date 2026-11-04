@@ -2,7 +2,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import '@/electron/lib/source-maps.js';
 import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { formatError } from '@ogi-sdk/errors';
-import { Effect } from 'effect';
+import { Duration, Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import { join } from 'path';
 import { closeDatabase, getOpenDatabase } from '@/electron/database/index.js';
@@ -790,7 +790,29 @@ app.on('window-all-closed', () => {
 // Cap on how long a launch flow may delay quitting; Steam force-kills the
 // session eventually anyway.
 const QUIT_HOLD_TIMEOUT_MS = 30_000;
+// Cap on each shutdown step and on Electron's own teardown after will-quit, so
+// one that stalls (seen on macOS while connected to `ogi dev`'s addon server)
+// is logged and skipped instead of leaving the process alive.
+const QUIT_STEP_TIMEOUT = Duration.seconds(5);
+const FORCE_EXIT_TIMEOUT_MS = 5_000;
 let shutdownState: 'idle' | 'running' | 'done' = 'idle';
+
+const quitStep = <A, E, R>(
+  name: string,
+  step: Effect.Effect<A, E, R>
+): Effect.Effect<void, never, R> =>
+  step.pipe(
+    // Disconnected so an uninterruptible step can't outlast its timeout.
+    Effect.disconnect,
+    Effect.timeout(QUIT_STEP_TIMEOUT),
+    Effect.timed,
+    Effect.flatMap(([elapsed]) =>
+      logger.info(
+        `[quit] ${name} took ${Math.round(Duration.toMillis(elapsed))}ms`
+      )
+    ),
+    Effect.catchAll((error) => logger.error(`[quit] ${name} failed:`, error))
+  );
 
 async function shutdown(): Promise<void> {
   if (isQuitHeld()) {
@@ -800,20 +822,21 @@ async function shutdown(): Promise<void> {
   await runElectronEffect(
     Effect.gen(function* () {
       releasePowerSaveBlock();
-      logger.sync.info('Stopping torrent client...');
-      yield* stopClient();
+      yield* quitStep('torrent client', stopClient());
       for (const instance of [...Addon.running.values()]) {
-        logger.sync.info(`Stopping addon ${instance.config.path}`);
-        yield* instance.stop().pipe(Effect.ignore);
+        yield* quitStep(`addon ${instance.config.path}`, instance.stop());
       }
       for (const interval of torrentIntervals) clearInterval(interval);
-      if (isAddonServerListening) yield* stopAddonServer();
-      yield* Effect.sync(closeDatabase);
-    }).pipe(
-      Effect.catchAll((error) => logger.error('Error during cleanup:', error))
-    )
+      if (isAddonServerListening) {
+        yield* quitStep('addon server', stopAddonServer());
+      }
+      yield* quitStep('database', Effect.sync(closeDatabase));
+    })
   );
-  await disposeElectronRuntime();
+  // The runtime is being disposed, so this step runs on the default one.
+  await Effect.runPromise(
+    quitStep('runtime', Effect.promise(disposeElectronRuntime))
+  );
 }
 
 // Every quit funnels through here: window close, app.quit(), and the
@@ -834,9 +857,17 @@ app.on('before-quit', (event) => {
 // A lazy game removal may still be deleting files; finish it before exiting so
 // no half-deleted directory is left behind with its library entry gone. Every
 // quit attempt re-checks, so a deletion started after a deferred quit is
-// still awaited by the retry.
+// still awaited by the retry. Once nothing is pending, Electron gets a short
+// window to exit on its own before it's forced.
 app.on('will-quit', (event) => {
-  if (!hasPendingFileDeletions()) return;
+  if (!hasPendingFileDeletions()) {
+    logger.sync.info('[quit] Cleanup finished, exiting');
+    setTimeout(() => {
+      logger.sync.warn('[quit] Electron did not exit in time, forcing exit');
+      app.exit(0);
+    }, FORCE_EXIT_TIMEOUT_MS);
+    return;
+  }
   event.preventDefault();
   logger.sync.info('Waiting for pending game file deletions before quitting');
   void awaitPendingFileDeletions().finally(() => app.quit());

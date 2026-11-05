@@ -74,6 +74,11 @@ jobs:
         if: inputs.nightly
         run: bun .github/workflows/js/nightly.ts stamp
 
+      # Only v* tags ship as releases, so other builds identify as nightlies.
+      - name: Stamp CI build versions
+        if: steps.check_changes.outputs.has_build_changes == 'true' && !inputs.nightly && !startsWith(github.ref, 'refs/tags/v')
+        run: bun .github/workflows/js/nightly.ts stamp-ci
+
       # macOS builds are unsigned (ad-hoc), so skip looking for a signing identity.
       - name: Build Release Client
         if: steps.check_changes.outputs.has_build_changes == 'true'

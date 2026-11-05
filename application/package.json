@@ -32,6 +32,10 @@
     },
     "mac": {
       "icon": "public/favicon-512x512.png",
+      "target": [
+        "zip"
+      ],
+      "identity": null,
       "artifactName": "${productName}-mac.${ext}"
     }
   },

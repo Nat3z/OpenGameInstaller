@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import {
   acceptsRelease,
   channelStatePath,
+  nightlyRelease,
   parseNightlyManifest,
+  platformAsset,
   resolveChannel,
   saveChannel,
   shouldUpdateApplication,
@@ -192,6 +194,20 @@ test('incomplete or foreign nightly manifests are rejected', () => {
     ]),
   };
   expect(parseNightlyManifest(manifest).build).toBe('100');
+  // mac builds ride in extraAssets so older clients' exact asset check passes
+  const withMac = {
+    ...manifest,
+    application: {
+      ...manifest.application,
+      extraAssets: build(['OpenGameInstaller-mac.zip']).assets,
+    },
+  };
+  const release = nightlyRelease(parseNightlyManifest(withMac), 'application');
+  expect(platformAsset(release, 'application', 'darwin')?.name).toBe(
+    'OpenGameInstaller-mac.zip'
+  );
+  withMac.application.extraAssets.pop();
+  expect(() => parseNightlyManifest(withMac)).toThrow();
   manifest.application.assets.unshift({
     name: 'extra-Portable.zip',
     size: 100,

@@ -116,6 +116,13 @@ jobs:
           path: assets
           merge-multiple: true
 
+      - name: Download macOS Assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mac-assets
+          path: assets
+          merge-multiple: true
+
       - name: Flatten assets structure
         run: |
           mkdir -p assets-flat
@@ -135,6 +142,8 @@ jobs:
           # How To Install
 
           For the simplest installation, download the OpenGameInstaller-Setup.exe file and run it. **If you're on Steam Deck, download the OpenGameInstaller-Setup.AppImage file.** It includes an auto-updater to keep OpenGameInstaller up-to-date.
+
+          OpenGameInstaller-mac.zip is an unsigned Apple Silicon build for addon development with `ogi dev`.
 
           ### Release Details
 
@@ -157,6 +166,8 @@ jobs:
             assets-flat/OpenGameInstaller-Setup.AppImage.blockmap \
             assets-flat/OpenGameInstaller-linux-pt.AppImage \
             assets-flat/OpenGameInstaller-linux-pt.AppImage.blockmap \
+            assets-flat/OpenGameInstaller-mac.zip \
+            assets-flat/OpenGameInstaller-mac.zip.blockmap \
             --title "$RELEASE_TITLE" \
             --notes-file release-notes.md \
             --prerelease \

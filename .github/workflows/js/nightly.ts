@@ -1,19 +1,20 @@
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import {
+  NIGHTLY_ASSETS,
   NIGHTLY_POINTER_TAG,
-  parseNightlyManifest,
   type NightlyManifest,
+  parseNightlyManifest,
   type ReleaseAsset,
 } from '../../../packages/update-channel/src/index.ts';
 
@@ -284,17 +285,7 @@ function collectFiles(directory: string): string[] {
   );
 }
 
-function assetsFor(
-  plan: Plan,
-  kind: 'application' | 'updater'
-): ReleaseAsset[] {
-  const names =
-    kind === 'application'
-      ? [
-          'OpenGameInstaller-Portable.zip',
-          'OpenGameInstaller-linux-pt.AppImage',
-        ]
-      : ['OpenGameInstaller-Setup.exe', 'OpenGameInstaller-Setup.AppImage'];
+function assetsFor(plan: Plan, names: readonly string[]): ReleaseAsset[] {
   const files = collectFiles(`${stateDirectory}/assets`);
   return names
     .flatMap((name) => [name, `${name}.blockmap`])
@@ -431,14 +422,15 @@ async function publish(plan: Plan): Promise<void> {
       version: plan.applicationVersion,
       tag: plan.tag,
       source: plan.source,
-      assets: assetsFor(plan, 'application'),
+      assets: assetsFor(plan, NIGHTLY_ASSETS.application.assets),
+      extraAssets: assetsFor(plan, NIGHTLY_ASSETS.application.extraAssets),
     },
     updater: plan.updater
       ? {
           version: plan.updaterVersion,
           tag: plan.tag,
           source: plan.source,
-          assets: assetsFor(plan, 'updater'),
+          assets: assetsFor(plan, NIGHTLY_ASSETS.updater.assets),
         }
       : plan.previous!.updater,
     packages: plan.packages,
@@ -551,6 +543,7 @@ async function publish(plan: Plan): Promise<void> {
   const localFiles = collectFiles(`${stateDirectory}/assets`);
   for (const asset of [
     ...manifest.application.assets,
+    ...(manifest.application.extraAssets ?? []),
     ...(plan.updater ? manifest.updater.assets : []),
   ]) {
     const existing = release.assets.find((item) => item.name === asset.name);

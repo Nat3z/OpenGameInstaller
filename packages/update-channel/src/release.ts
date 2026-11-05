@@ -61,6 +61,8 @@ export interface NightlyBuild {
   tag: string;
   source: string;
   assets: ReleaseAsset[];
+  /** Assets added after schema 1 shipped, kept out of `assets` since older clients expect exact names there. */
+  extraAssets?: ReleaseAsset[];
 }
 
 export interface NightlyManifest {
@@ -72,6 +74,24 @@ export interface NightlyManifest {
   updater: NightlyBuild;
   packages: Record<string, string>;
 }
+
+/**
+ * Artifact names each nightly build publishes. Clients check `assets` exactly,
+ * so assets added later go in `extraAssets` to keep older clients parsing.
+ */
+export const NIGHTLY_ASSETS = {
+  application: {
+    assets: [
+      'OpenGameInstaller-Portable.zip',
+      'OpenGameInstaller-linux-pt.AppImage',
+    ],
+    extraAssets: ['OpenGameInstaller-mac.zip'],
+  },
+  updater: {
+    assets: ['OpenGameInstaller-Setup.exe', 'OpenGameInstaller-Setup.AppImage'],
+    extraAssets: [],
+  },
+} as const;
 
 export function parseNightlyManifest(value: unknown): NightlyManifest {
   if (!value || typeof value !== 'object')
@@ -85,44 +105,22 @@ export function parseNightlyManifest(value: unknown): NightlyManifest {
   ) {
     throw new Error('Invalid nightly manifest identity');
   }
-  for (const [kind, names] of Object.entries({
-    application: [
-      'OpenGameInstaller-Portable.zip',
-      'OpenGameInstaller-linux-pt.AppImage',
-    ],
-    updater: [
-      'OpenGameInstaller-Setup.exe',
-      'OpenGameInstaller-Setup.AppImage',
-    ],
-  })) {
-    const build = manifest[kind as 'application' | 'updater'];
+  for (const kind of ['application', 'updater'] as const) {
+    const build = manifest[kind];
     if (
       !build ||
       !semver.valid(build.version) ||
       !build.version.includes('-nightly.') ||
       !/^nightly-\d+$/.test(build.tag) ||
-      !/^[a-f0-9]{40}$/.test(build.source) ||
-      !Array.isArray(build.assets)
+      !/^[a-f0-9]{40}$/.test(build.source)
     ) {
       throw new Error(`Invalid nightly ${kind} build`);
     }
-    const expectedNames = names.flatMap((name) => [name, `${name}.blockmap`]);
-    if (build.assets.length !== expectedNames.length)
-      throw new Error(`Unexpected nightly ${kind} assets`);
-    for (const name of expectedNames) {
-      const assets = build.assets.filter((asset) => asset.name === name);
-      const asset = assets[0];
-      if (
-        assets.length !== 1 ||
-        !asset ||
-        !(asset.size > 0) ||
-        !/^[a-f0-9]{64}$/.test(asset.sha256 ?? '') ||
-        asset.browser_download_url !==
-          `https://github.com/${REPO}/releases/download/${build.tag}/${name}`
-      ) {
-        throw new Error(`Invalid nightly asset: ${name}`);
-      }
-    }
+    const { assets, extraAssets } = NIGHTLY_ASSETS[kind];
+    validateNightlyAssets(build.tag, build.assets, assets, kind);
+    // Manifests from before extraAssets existed don't carry them.
+    if (build.extraAssets !== undefined)
+      validateNightlyAssets(build.tag, build.extraAssets, extraAssets, kind);
   }
   if (
     !manifest.packages ||
@@ -134,6 +132,34 @@ export function parseNightlyManifest(value: unknown): NightlyManifest {
     throw new Error('Invalid nightly SDK versions');
   }
   return manifest;
+}
+
+/** Requires exactly one checksummed asset and blockmap per name, hosted on the build's tag. */
+function validateNightlyAssets(
+  tag: string,
+  assets: unknown,
+  names: readonly string[],
+  kind: string
+): void {
+  const expectedNames = names.flatMap((name) => [name, `${name}.blockmap`]);
+  if (!Array.isArray(assets) || assets.length !== expectedNames.length)
+    throw new Error(`Unexpected nightly ${kind} assets`);
+  for (const name of expectedNames) {
+    const matches = (assets as ReleaseAsset[]).filter(
+      (asset) => asset.name === name
+    );
+    const asset = matches[0];
+    if (
+      matches.length !== 1 ||
+      !asset ||
+      !(asset.size > 0) ||
+      !/^[a-f0-9]{64}$/.test(asset.sha256 ?? '') ||
+      asset.browser_download_url !==
+        `https://github.com/${REPO}/releases/download/${tag}/${name}`
+    ) {
+      throw new Error(`Invalid nightly asset: ${name}`);
+    }
+  }
 }
 
 /** Presents one executable's nightly build as a regular release. */
@@ -148,7 +174,7 @@ export function nightlyRelease(
     published_at: manifest.publishedAt,
     created_at: manifest.publishedAt,
     body: `Setup Version: ${manifest.updater.version}\nApplication Version: ${manifest.application.version}`,
-    assets: build.assets.map((asset) => ({
+    assets: [...build.assets, ...(build.extraAssets ?? [])].map((asset) => ({
       ...asset,
       digest: `sha256:${asset.sha256}`,
     })),

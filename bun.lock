@@ -9,7 +9,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^2.5.2",
-        "electron": "^43.1.0",
+        "electron": "43.1.0",
         "typescript": "^5.9.3",
       },
     },
@@ -58,7 +58,7 @@
         "concurrently": "^7.6.0",
         "debug": "^4.4.3",
         "drizzle-kit": "^0.31.10",
-        "electron": "^43.1.0",
+        "electron": "43.1.0",
         "electron-builder": "^23.6.0",
         "electron-vite": "^5.0.0",
         "nodemon": "^3.1.11",
@@ -290,7 +290,7 @@
       "devDependencies": {
         "@types/node": "^22.15.0",
         "@types/yauzl": "^2.10.3",
-        "electron": "^43.1.0",
+        "electron": "43.1.0",
         "electron-builder": "^24.13.3",
         "typescript": "^5.9.3",
       },

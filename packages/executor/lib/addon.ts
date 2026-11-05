@@ -155,6 +155,18 @@ export class Addon {
     });
   }
 
+  /**
+   * Signals the child's whole process group, so wrappers like `bun ogi run`
+   * can't leave the real addon running. Posix spawns are detached to get their
+   * own group; falls back to the child alone if the group is already gone.
+   */
+  public static killProcessGroup(child: ChildProcess): void {
+    try {
+      if (child.pid) return void process.kill(-child.pid, 'SIGTERM');
+    } catch {}
+    child.kill();
+  }
+
   private spawnProcess({
     command,
     args,
@@ -172,6 +184,8 @@ export class Addon {
             ...(this.config.gameSpecificLaunch ? { OGI_GAME_LAUNCH: '1' } : {}),
           },
           stdio: ['ignore', 'pipe', 'pipe'],
+          // own process group, so stopProcess can kill the whole tree
+          detached: process.platform !== 'win32',
           windowsVerbatimArguments,
         }),
       catch: (cause) =>
@@ -184,7 +198,7 @@ export class Addon {
 
   private stopProcess(child: ChildProcess): Effect.Effect<void, AddonError> {
     const killChild = Effect.try({
-      try: () => void child.kill(),
+      try: () => Addon.killProcessGroup(child),
       catch: (cause) =>
         new AddonError({
           addonName: this.config.name,

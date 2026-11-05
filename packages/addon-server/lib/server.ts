@@ -33,6 +33,8 @@ export class AddonServer {
   private readonly connections = new Set<AddonConnection>();
   private readonly sdkConnections = new Set<ClientConnection>();
   private readonly clients = new Map<string, AddonConnection>();
+  // last config each addon accepted, replayed when it reconnects
+  private readonly lastConfigs = new Map<string, ConfigurationFile>();
   private readonly deferredTasksManager = new DeferredTasksManager();
   private readonly eventEmitter = new EventEmitter();
   private readonly boundaryFibers = new Set<
@@ -131,6 +133,10 @@ export class AddonServer {
   }
   public addClient(id: string, connection: AddonConnection): void {
     this.clients.set(id, connection);
+  }
+  /** Records the config an addon accepted, so a reconnect gets it back. */
+  public rememberConfig(id: string, config: ConfigurationFile): void {
+    this.lastConfigs.set(id, config);
   }
   public getDeferredTasksManager(): DeferredTasksManager {
     return this.deferredTasksManager;
@@ -237,6 +243,17 @@ export class AddonServer {
         this.eventEmitter.emit('disconnect', 'Failed to setup websocket');
       } else {
         this.eventEmitter.emit('connect', connection);
+        // a reconnecting addon (crash, dev reload) would otherwise wait until
+        // the frontend configures again, and its connect event never fires
+        const id: string | undefined = connection.addonInfo?.id;
+        const config = id ? this.lastConfigs.get(id) : undefined;
+        if (config)
+          yield* connection.configure(config).pipe(
+            Effect.tapError((error) =>
+              logger.error(`Failed to replay config for ${id}:`, error)
+            ),
+            Effect.ignore
+          );
       }
     }).pipe(
       Effect.catchAll((error) =>

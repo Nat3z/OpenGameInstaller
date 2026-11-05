@@ -207,6 +207,13 @@ export class ClientConnection {
           formatError(result.left)
         ).pipe(Effect.ignore);
       } else {
+        // the addon reports a rejected config as `success: false`, not an error
+        const accepted: boolean =
+          !result.right.statusError &&
+          (result.right.args as { success?: boolean } | undefined)?.success !==
+            false;
+        if (event === 'config-update' && accepted)
+          this.server.rememberConfig(addonId, args[0] as ConfigurationFile);
         yield* this.sendForwardResponse(
           message.id,
           addonId,

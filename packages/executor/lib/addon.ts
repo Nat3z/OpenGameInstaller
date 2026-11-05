@@ -235,9 +235,25 @@ export class Addon {
     const name = this.config.name;
     return Effect.async<void, AddonError>((resume) => {
       let settled = false;
+      // listeners run outside the fiber, so a throwing handler fails the addon
+      const forward = (data: Buffer): void => {
+        if (typeof stdio !== 'function') return;
+        try {
+          stdio(data);
+        } catch (cause) {
+          finish(
+            Effect.fail(
+              new AddonError({
+                addonName: name,
+                message: `Addon output handler failed: ${String(cause)}`,
+              })
+            )
+          );
+        }
+      };
       const onStdout = (data: Buffer): void => {
         if (typeof stdio === 'function') {
-          stdio(data);
+          forward(data);
           return;
         }
         if (stdio === 'inherit') {
@@ -248,7 +264,7 @@ export class Addon {
       };
       const onStderr = (data: Buffer): void => {
         if (typeof stdio === 'function') {
-          stdio(data);
+          forward(data);
           return;
         }
         if (stdio === 'inherit') {
@@ -285,7 +301,7 @@ export class Addon {
         const message = `[${name}] Exited with code ${code} and signal ${signal}`;
         // a handler owns the output, so the exit message goes there too
         if (typeof stdio === 'function') {
-          stdio(Buffer.from(`${message}\n`));
+          forward(Buffer.from(`${message}\n`));
           finish(Effect.void);
           return;
         }

@@ -48,7 +48,13 @@ function initialize(server: Connection): Effect.Effect<void, NetworkError> {
 }
 
 export function connectClientSdk() {
-  const url = settings.clientSdkUrl || 'ws://127.0.0.1:7654';
+  // a dev launch passes the port of the addon server it runs on
+  const devPort: string | null = new URLSearchParams(
+    window.location.search
+  ).get('addonServerPort');
+  const url = devPort
+    ? `ws://127.0.0.1:${devPort}`
+    : settings.clientSdkUrl || 'ws://127.0.0.1:7654';
 
   return Effect.tryPromise({
     try: () => Connection.make({ url }),
@@ -96,20 +102,25 @@ export function getAddonServerPromise(): Promise<Connection> {
   return runFrontendEffect(getAddonServer());
 }
 
-const mappedAddonUrls = new Map<string, string>();
+// icons are cached briefly, so lists don't refetch them but a reloaded addon's
+// new icon still shows up
+const ICON_CACHE_MS: number = 10_000;
+const mappedAddonUrls = new Map<string, { url: string; at: number }>();
 
 export function getAddonDataUrl(addonId: string) {
   return Effect.gen(function* () {
-    if (mappedAddonUrls.has(addonId)) {
-      return mappedAddonUrls.get(addonId);
-    }
+    const cached = mappedAddonUrls.get(addonId);
+    if (cached && Date.now() - cached.at < ICON_CACHE_MS) return cached.url;
     const connection = yield* getAddonServer();
     const response = yield* Effect.tryPromise(() =>
       connection.request('get-addon-icon', { addonId })
     );
     if (response.args.iconDataUrl) {
-      mappedAddonUrls.set(addonId, response.args.iconDataUrl);
-    }
+      mappedAddonUrls.set(addonId, {
+        url: response.args.iconDataUrl,
+        at: Date.now(),
+      });
+    } else mappedAddonUrls.delete(addonId);
     return response.args.iconDataUrl;
   });
 }

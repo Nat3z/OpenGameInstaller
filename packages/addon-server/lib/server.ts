@@ -22,7 +22,15 @@ export type AddonConfig = {
   securityCheck: boolean;
   port: number;
   secret?: string;
+  /** Refuses websocket upgrades from anything but this machine. */
+  localOnly?: boolean;
 };
+
+const isLoopback = (address: string | undefined): boolean =>
+  !!address &&
+  (address === '::1' ||
+    address.startsWith('127.') ||
+    address.startsWith('::ffff:127.'));
 
 export type AddonServerEventListeners =
   AddonServerHostEventListeners<AddonConnection>;
@@ -284,6 +292,8 @@ export class AddonServer {
       this.wss?.close();
       this.wss = new WebSocketServer({ noServer: true });
       this.upgradeListener = (req, socket, head) => {
+        if (this.config.localOnly && !isLoopback(req.socket.remoteAddress))
+          return void socket.destroy();
         this.wss!.handleUpgrade(req, socket, head, (ws) => {
           this.supervise(this.handleWebSocketConnection(ws, req));
         });

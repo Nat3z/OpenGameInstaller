@@ -56,6 +56,8 @@ const ICON_MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
   '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.bmp': 'image/bmp',
 };
 
 /** An addon's icon as a data url; nothing if it's missing, too big, or outside the addon. */
@@ -262,17 +264,29 @@ export class ClientConnection {
       eventMessage.id = taskID;
       const task = new DeferrableTask(
         () =>
-          addon
-            .sendEventMessage(eventMessage, event !== 'response')
-            .pipe(
-              Effect.flatMap((response) =>
-                response.statusError
-                  ? Effect.fail(
-                      new NetworkError({ message: response.statusError })
-                    )
-                  : Effect.succeed(response.args)
-              )
+          addon.sendEventMessage(eventMessage, event !== 'response').pipe(
+            Effect.flatMap((response) =>
+              response.statusError
+                ? Effect.fail(
+                    new NetworkError({ message: response.statusError })
+                  )
+                : Effect.succeed(response.args)
             ),
+            // same as a forwarded config-update, so a reconnect replays it
+            Effect.tap((result) =>
+              Effect.sync(() => {
+                if (
+                  event === 'config-update' &&
+                  (result as { success?: boolean } | undefined)?.success !==
+                    false
+                )
+                  this.server.rememberConfig(
+                    addonId,
+                    args[0] as ConfigurationFile
+                  );
+              })
+            )
+          ),
         addonId
       );
       task.id = taskID;

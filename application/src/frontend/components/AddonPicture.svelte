@@ -12,13 +12,16 @@ let image = $state<string | undefined>(undefined);
 $effect(() => {
   // Reset image when addonId changes
   image = undefined;
+  // a slower request for a previous addonId must not overwrite this one
+  let stale: boolean = false;
 
   logger.sync.info('Getting addon icon for: ' + addonId);
-  runFrontendEffect(getAddonDataUrl(addonId)).then(async (dataUrl) => {
-    if (dataUrl) {
-      image = dataUrl; // Set the image to the data URL
-    }
+  runFrontendEffect(getAddonDataUrl(addonId)).then((dataUrl) => {
+    if (dataUrl && !stale) image = dataUrl;
   });
+  return () => {
+    stale = true;
+  };
 });
 </script>
 

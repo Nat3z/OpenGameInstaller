@@ -139,8 +139,12 @@ onMount(async () => {
   // we create a popup with alert in the app on darwin to say that this is a
   // dev build and to not use this app
 
+  // the os only decides the alert, so a failed lookup shouldn't stop startup
+  const os: string | undefined = await runFrontendEffect(
+    electronRpc.app.getOS()
+  ).catch(() => undefined);
   if (
-    (await runFrontendEffect(electronRpc.app.getOS())) === 'darwin' &&
+    os === 'darwin' &&
     new URL(window.location.href).hostname !== 'localhost' &&
     !skipOOBE &&
     !noServer

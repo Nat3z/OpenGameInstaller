@@ -190,10 +190,14 @@ export function acceptsRelease(
   return channel === 'unstable' || !release.prerelease;
 }
 
-/** Newest first: by version when both tags are semver, otherwise by publish date. */
+/**
+ * Newest first: semver tags by version, then non-semver tags by publish date.
+ * Non-semver tags always sort last, so mixed feeds order consistently.
+ */
 export function compareReleases(a: ChannelRelease, b: ChannelRelease): number {
   const versionA = semver.clean(a.tag_name);
   const versionB = semver.clean(b.tag_name);
+  if (!versionA !== !versionB) return versionA ? -1 : 1;
   const order = versionA && versionB ? semver.compare(versionB, versionA) : 0;
   return (
     order ||
@@ -290,22 +294,23 @@ export function findSetupUpdate(
   installedVersion: string,
   channel: UpdateChannel
 ): SetupUpdate | undefined {
-  const installed = semver.valid(installedVersion.trim());
-  const target = releases.flatMap((release) => {
+  // the newest release may ship an older setup, so take the first eligible one
+  return releases.flatMap((release) => {
     const version = semver.valid(setupVersion(release));
-    return version && version !== installed ? [{ release, version }] : [];
+    return version && shouldUpdateSetup(installedVersion, version, channel)
+      ? [{ release, version }]
+      : [];
   })[0];
-  return target && shouldUpdateSetup(installedVersion, target.version, channel)
-    ? target
-    : undefined;
 }
 
-/** The artifact an executable installs from on this platform. */
+/** The artifact an executable installs from on this platform; macOS has no setup. */
 export function platformAsset(
   release: ChannelRelease,
   executable: ChannelExecutable,
   platform: NodeJS.Platform = process.platform
 ): ReleaseAsset | undefined {
+  if (executable === 'setup' && platform !== 'win32' && platform !== 'linux')
+    return undefined;
   const pattern =
     executable === 'setup'
       ? platform === 'win32'
@@ -347,17 +352,63 @@ function isRetryable(cause: unknown): boolean {
   );
 }
 
+export type ReleaseFetch = (
+  url: string,
+  init: RequestInit
+) => Promise<Response>;
+
+// Node's fetch ignores system and env proxies, so Electron swaps in net.fetch.
+let fetchImpl: ReleaseFetch = (url, init) => fetch(url, init);
+
+/** Routes feed and asset requests through another fetch, e.g. Electron's proxy-aware `net.fetch`. */
+export function setReleaseFetch(implementation: ReleaseFetch): void {
+  fetchImpl = implementation;
+}
+
 async function fetchOk(
   url: string,
   signal: AbortSignal,
   headers: Record<string, string> = {}
 ): Promise<Response> {
-  const response = await fetch(url, {
+  const response = await fetchImpl(url, {
     headers: { 'User-Agent': 'OpenGameInstaller', ...headers },
     signal,
   });
-  if (!response.ok) throw new HttpStatusError(response.status, url);
+  if (!response.ok) {
+    // an unread body holds its connection open until it's collected
+    await response.body?.cancel().catch(() => undefined);
+    throw new HttpStatusError(response.status, url);
+  }
   return response;
+}
+
+/** Fetches one release by tag, or nothing when the tag doesn't exist. */
+export function fetchRelease(
+  tag: string
+): Effect.Effect<ChannelRelease | undefined, ReleaseError> {
+  return Effect.tryPromise({
+    try: async (signal) => {
+      try {
+        const response = await fetchOk(
+          `https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`,
+          AbortSignal.any([signal, AbortSignal.timeout(FEED_TIMEOUT_MS)]),
+          API_HEADERS
+        );
+        return (await response.json()) as ChannelRelease;
+      } catch (cause) {
+        if (cause instanceof HttpStatusError && cause.status === 404)
+          return undefined;
+        throw cause;
+      }
+    },
+    catch: (cause) =>
+      new ReleaseError({
+        message: `Failed to fetch release ${tag}: ${describe(cause)}`,
+        phase: 'fetch-release',
+        retryable: isRetryable(cause),
+        cause,
+      }),
+  });
 }
 
 /**

@@ -64,6 +64,22 @@ test('setup updates skip releases shipping the installed setup', () => {
   expect(findSetupUpdate(feed, '2.0.0', 'stable')?.version).toBe('2.1.0');
   expect(findSetupUpdate(feed, '2.1.0', 'stable')).toBeUndefined();
   expect(findSetupUpdate(feed, '2.2.0', 'stable')).toBeUndefined();
+  // a newest release shipping an older setup doesn't hide a newer one
+  const rolledBack = [release('v4.5.0', '1.0.0'), ...feed];
+  expect(findSetupUpdate(rolledBack, '2.0.0', 'stable')?.version).toBe('2.1.0');
+});
+
+test('non-semver tags sort after semver releases', () => {
+  const feed = [
+    release('custom', '2.0.0', '2027-01-01T00:00:00Z'),
+    release('v4.3.0'),
+    release('v4.4.0'),
+  ].sort(compareReleases);
+  expect(feed.map((step) => step.tag_name)).toEqual([
+    'v4.4.0',
+    'v4.3.0',
+    'custom',
+  ]);
 });
 
 test('platform assets match each executable', () => {
@@ -80,6 +96,7 @@ test('platform assets match each executable', () => {
   expect(platformAsset(latest, 'setup', 'linux')?.name).toBe(
     'OpenGameInstaller-Setup.AppImage'
   );
+  expect(platformAsset(latest, 'setup', 'darwin')).toBeUndefined();
 });
 
 const directories: string[] = [];
@@ -136,3 +153,38 @@ test('downloads retry transient failures and reject tampered artifacts', async (
   }
   expect(existsSync(destination)).toBe(false);
 });
+
+test('downloads fail fast on 404 and stop retrying at the cap', async () => {
+  const requests: Record<string, number> = {};
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      requests[path] = (requests[path] ?? 0) + 1;
+      return new Response('nope', { status: path === '/busy' ? 503 : 404 });
+    },
+  });
+  const directory = mkdtempSync(join(tmpdir(), 'ogi-release-'));
+  directories.push(directory);
+  const download = (path: string) =>
+    Effect.runPromise(
+      Effect.flip(
+        downloadAsset(
+          {
+            name: 'artifact',
+            browser_download_url: `${server.url}${path}`,
+            size: 1,
+          },
+          join(directory, 'artifact')
+        )
+      )
+    );
+  try {
+    await download('missing');
+    expect(requests['/missing']).toBe(1);
+    await download('busy');
+    expect(requests['/busy']).toBe(4);
+  } finally {
+    server.stop(true);
+  }
+}, 20_000);

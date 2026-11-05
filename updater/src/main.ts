@@ -15,6 +15,7 @@ import {
   resolveChannel,
   saveChannel,
   selectChannel,
+  setReleaseFetch,
   type UpdateChannel,
   verifyAsset,
 } from '@ogi/update-channel';
@@ -1310,13 +1311,15 @@ function ensureCachedBlockmap(cacheDir: string, release: any, asset: any) {
   });
 }
 
+/** Downloads to a `.partial` file and renames it once verified, so cached paths only ever hold verified files. */
 function downloadToFile(
   asset: ReleaseAsset,
   destination: string,
   status: string
 ): Effect.Effect<void, UpdateError> {
+  const partial = `${destination}.partial`;
   return fromRelease(
-    downloadAsset(asset, destination, {
+    downloadAsset(asset, partial, {
       onProgress: ({ written, total, bytesPerSecond }) =>
         sendUpdaterStatus(
           status,
@@ -1338,6 +1341,10 @@ function downloadToFile(
         );
       },
     })
+  ).pipe(
+    Effect.zipRight(
+      tryUpdate('publish-download', () => fs.renameSync(partial, destination))
+    )
   );
 }
 
@@ -2384,6 +2391,8 @@ const unzip = (zipPath, unzipToDir): Effect.Effect<void, UpdaterError> =>
   });
 
 app.on('ready', () => {
+  // electron's fetch honors the system and env proxies, unlike node's
+  setReleaseFetch((url, init) => net.fetch(url, init));
   void runUpdater(createWindow()).catch((error) => {
     logger.sync.error('Updater workflow failed:', error);
     dialog.showErrorBox('OpenGameInstaller updater failed', error.message);

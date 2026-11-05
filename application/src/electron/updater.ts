@@ -12,6 +12,7 @@ import {
   type ReleaseError,
   resolveChannel,
   selectChannel,
+  setReleaseFetch,
   setupVersion,
   type UpdateChannel,
   verifyAsset,
@@ -21,7 +22,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { exec, spawn } from 'child_process';
 import { Effect } from 'effect';
-import { app } from 'electron';
+import { app, net } from 'electron';
 import {
   chmodSync,
   closeSync,
@@ -47,6 +48,10 @@ import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js'
 import { runElectronEffect } from '@/electron/runtime.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
+
+// electron's fetch honors the system and env proxies, unlike node's; it's
+// only called once the app is ready
+setReleaseFetch((url, init) => net.fetch(url, init));
 
 function isDev() {
   return !app.isPackaged;

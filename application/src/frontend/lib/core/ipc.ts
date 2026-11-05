@@ -96,6 +96,24 @@ export function getAddonServerPromise(): Promise<Connection> {
   return runFrontendEffect(getAddonServer());
 }
 
+const mappedAddonUrls = new Map<string, string>();
+
+export function getAddonDataUrl(addonId: string) {
+  return Effect.gen(function* () {
+    if (mappedAddonUrls.has(addonId)) {
+      return mappedAddonUrls.get(addonId);
+    }
+    const connection = yield* getAddonServer();
+    const response = yield* Effect.tryPromise(() =>
+      connection.request('get-addon-icon', { addonId })
+    );
+    if (response.args.iconDataUrl) {
+      mappedAddonUrls.set(addonId, response.args.iconDataUrl);
+    }
+    return response.args.iconDataUrl;
+  });
+}
+
 // Share reconnects so concurrent stale-socket recoveries never race.
 let reconnectInFlight: Effect.Effect<void, NetworkError> | null = null;
 

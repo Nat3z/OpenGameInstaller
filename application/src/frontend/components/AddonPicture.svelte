@@ -1,7 +1,7 @@
 <script lang="ts">
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import { getAddonDataUrl } from '@/frontend/lib/core/ipc';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
-import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -14,15 +14,11 @@ $effect(() => {
   image = undefined;
 
   logger.sync.info('Getting addon icon for: ' + addonId);
-  runFrontendEffect(electronRpc.app.getAddonIcon(addonId)).then(
-    async (iconPath) => {
-      if (iconPath) {
-        image =
-          (await runFrontendEffect(electronRpc.app.getLocalImage(iconPath))) ??
-          undefined;
-      }
+  runFrontendEffect(getAddonDataUrl(addonId)).then(async (dataUrl) => {
+    if (dataUrl) {
+      image = dataUrl; // Set the image to the data URL
     }
-  );
+  });
 });
 </script>
 

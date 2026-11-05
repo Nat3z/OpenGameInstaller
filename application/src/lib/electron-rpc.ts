@@ -171,11 +171,6 @@ export const ElectronRpc = {
       [Schema.String],
       Schema.NullOr(Schema.String)
     ),
-    getAddonIcon: rpc(
-      'app.getAddonIcon',
-      [Schema.String],
-      Schema.NullOr(Schema.String)
-    ),
     getLocalImage: rpc(
       'app.getLocalImage',
       [Schema.String],

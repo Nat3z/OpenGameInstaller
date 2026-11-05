@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import { extname, isAbsolute, join, relative } from 'node:path';
 import {
   type AddonClientSDKToServerIncomingMessage,
   type AddonClientSDKToServerWebsocketMessage,
@@ -46,6 +47,36 @@ const readAddonIconPaths = (
     catch: () => ({}),
   }).pipe(Effect.merge);
 };
+
+const ICON_MAX_BYTES: number = 512 * 1024;
+const ICON_MIME_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+};
+
+/** An addon's icon as a data url; nothing if it's missing, too big, or outside the addon. */
+const readIconDataUrl = (
+  addonPath: string,
+  iconPath: string
+): Effect.Effect<string | undefined> =>
+  Effect.tryPromise(async () => {
+    const mime: string | undefined =
+      ICON_MIME_TYPES[extname(iconPath).toLowerCase()];
+    if (!mime) return undefined;
+    // real paths, so `"icon": "../../x"` or a symlink can't escape the addon
+    const [root, file] = await Promise.all([
+      realpath(addonPath),
+      realpath(iconPath),
+    ]);
+    const rel: string = relative(root, file);
+    if (rel.startsWith('..') || isAbsolute(rel)) return undefined;
+    if ((await stat(file)).size > ICON_MAX_BYTES) return undefined;
+    return `data:${mime};base64,${(await readFile(file)).toString('base64')}`;
+  }).pipe(Effect.orElseSucceed(() => undefined));
 
 /** Effect-based SDK websocket connection. */
 export class ClientConnection {
@@ -96,6 +127,9 @@ export class ClientConnection {
       yield* this.transport.on('get-deferred-task', (message) =>
         this.handleDeferredTask(message)
       );
+      yield* this.transport.on('get-addon-icon', (message) =>
+        this.handleGetAddonIcon(message)
+      );
       const unbindLifecycle = yield* bindWebSocketLifecycle(
         this.socket,
         (effect) => this.transport.run(effect),
@@ -107,6 +141,30 @@ export class ClientConnection {
         }
       );
       yield* this.transport.addFinalizer(Effect.sync(unbindLifecycle));
+    });
+  }
+
+  private handleGetAddonIcon(
+    message: AddonClientSDKToServerIncomingMessage
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      if (!message.id) {
+        this.socket.close(1008, 'Query message missing ID');
+        return;
+      }
+      const { addonId } =
+        message.args as AddonClientSDKToServerWebsocketMessage<'get-addon-icon'>['args'];
+
+      const client = this.server.getClient(addonId);
+      const { iconPath } = yield* readAddonIconPaths(client);
+      const iconDataUrl: string | undefined =
+        iconPath && client?.filePath
+          ? yield* readIconDataUrl(client.filePath, iconPath)
+          : undefined;
+
+      yield* this.sendQueryResponse(message.id, { iconDataUrl }).pipe(
+        Effect.ignore
+      );
     });
   }
 

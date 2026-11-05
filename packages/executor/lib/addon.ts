@@ -43,6 +43,9 @@ export type ScriptSpawnCommand = {
 
 type AddonLifecycleError = AddonError | FileSystemError | ValidationError;
 
+/** Where addon output goes: the logger, ogi's stdio, or a handler. */
+export type AddonStdio = 'pipe' | 'inherit' | ((data: Buffer) => void);
+
 /** Effect-based addon process lifecycle. */
 export class Addon {
   public readonly setup: AddonSetup;
@@ -211,12 +214,16 @@ export class Addon {
 
   private monitorProcess(
     child: ChildProcess,
-    { stdio }: { stdio: 'pipe' | 'inherit' }
+    { stdio }: { stdio: AddonStdio }
   ): Effect.Effect<void, AddonError> {
     const name = this.config.name;
     return Effect.async<void, AddonError>((resume) => {
       let settled = false;
       const onStdout = (data: Buffer): void => {
+        if (typeof stdio === 'function') {
+          stdio(data);
+          return;
+        }
         if (stdio === 'inherit') {
           process.stdout.write(data);
           return;
@@ -224,6 +231,10 @@ export class Addon {
         logger.sync.info(`[${name}] ${data}`);
       };
       const onStderr = (data: Buffer): void => {
+        if (typeof stdio === 'function') {
+          stdio(data);
+          return;
+        }
         if (stdio === 'inherit') {
           process.stderr.write(data);
           return;
@@ -256,6 +267,12 @@ export class Addon {
         signal: NodeJS.Signals | null
       ): void => {
         const message = `[${name}] Exited with code ${code} and signal ${signal}`;
+        // a handler owns the output, so the exit message goes there too
+        if (typeof stdio === 'function') {
+          stdio(Buffer.from(`${message}\n`));
+          finish(Effect.void);
+          return;
+        }
         finish(code === 0 ? logger.info(message) : logger.error(message));
       };
 
@@ -268,7 +285,7 @@ export class Addon {
   }
 
   public start(
-    stdio: 'pipe' | 'inherit' = 'pipe'
+    stdio: AddonStdio = 'pipe'
   ): Effect.Effect<void, AddonLifecycleError> {
     return Effect.gen(this, function* () {
       if (this.processScope) yield* this.stop();

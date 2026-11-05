@@ -63,6 +63,12 @@ export function loadConfigurator(
       return yield* new LoadConfigError({
         message: `${path}: addons and ignoredWatchFiles must be string arrays`,
       });
+    // compiling writes the scripts into addon.json, so run must exist
+    const scripts = (config as { scripts?: { run?: unknown } }).scripts;
+    if (config.compile && typeof scripts?.run !== 'function')
+      return yield* new LoadConfigError({
+        message: `${path}: compile needs scripts.run to be a function`,
+      });
     return config as OGIConfig;
   });
 }

@@ -28,7 +28,7 @@ import { RendererEventReadiness } from '@/electron/lib/renderer-event-readiness.
 import {
   createSingleInstanceData,
   type LaunchForwardPayload,
-  LaunchHookArgs,
+  type LaunchHookArgs,
   parseGameIdArg,
   parseLaunchHookArgs,
   parseLaunchRequestFromArgv,
@@ -65,7 +65,6 @@ import {
 } from '@/electron/startup-runner.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
-const frontendLogger = createLogger(LOGGER_PREFIXES.frontend);
 
 // import steamworks from 'steamworks.js';
 
@@ -452,10 +451,11 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
     mainWindow = null;
   });
 
-  mainWindow.webContents.on('console-message', (_event, level, message) => {
-    if (level === 1) frontendLogger.info(message);
-    else if (level === 2) frontendLogger.warn(message);
-    else if (level === 3) frontendLogger.error(message);
+  // renderer messages already include the prefix and level, so forward as-is
+  mainWindow.webContents.on('console-message', ({ level, message }) => {
+    if (level === 'error') console.error(message);
+    else if (level === 'warning') console.warn(message);
+    else console.log(message);
   });
 
   // First ready-to-show: splash is ready; show window so user sees loading
@@ -488,15 +488,25 @@ async function startAppFlow(win: BrowserWindow) {
 
   // Load the main app into the same window (replaces splash)
   if (win && !win.isDestroyed()) {
+    const oobeQuery: string = hookArgs?.skipOOBE ? 'skipOOBE=true' : '';
+    const noServerQuery: string = hookArgs?.noAddonServer
+      ? 'noServer=true'
+      : '';
     if (isDev()) {
-      win.loadURL('http://localhost:8080');
+      win.loadURL(
+        'http://localhost:8080' +
+          (oobeQuery ? '?' + oobeQuery : '') +
+          (noServerQuery ? '&' + noServerQuery : '')
+      );
       logger.sync.info('Running in development');
     } else {
       win.loadURL(
         'file://' +
           join(app.getAppPath(), 'out', 'renderer', 'index.html') +
           '?secret=' +
-          getAddonServer().getSecret()
+          getAddonServer().getSecret() +
+          (oobeQuery ? '&' + oobeQuery : '') +
+          (noServerQuery ? '&' + noServerQuery : '')
       );
     }
     win.once('ready-to-show', onMainAppReady);

@@ -79,12 +79,14 @@ export function parseLaunchHookArgs(argv: readonly string[] = process.argv): {
   runPre: boolean;
   runPost: boolean;
   noAddonServer: boolean;
+  skipOOBE: boolean;
 } {
   return {
     noLaunch: argv.includes('--no-launch'),
     runPre: argv.includes('--pre'),
     runPost: argv.includes('--post'),
     noAddonServer: argv.includes('--no-server'),
+    skipOOBE: argv.includes('--skip-oobe'),
   };
 }
 

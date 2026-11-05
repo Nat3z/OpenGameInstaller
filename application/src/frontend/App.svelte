@@ -129,6 +129,28 @@ onMount(async () => {
   // Parse launch params first (before other initialization)
   parseLaunchParams();
 
+  // --skip-oobe goes straight to the app
+  const skipOOBE: boolean =
+    new URLSearchParams(window.location.search).get('skipOOBE') === 'true';
+  const noServer: boolean =
+    new URLSearchParams(window.location.search).get('noServer') === 'true';
+
+  // usually skipOOBE and noServer signifies that this is a dev launch. So,
+  // we create a popup with alert in the app on darwin to say that this is a
+  // dev build and to not use this app
+
+  if (
+    (await runFrontendEffect(electronRpc.app.getOS())) === 'darwin' &&
+    new URL(window.location.href).hostname !== 'localhost' &&
+    !skipOOBE &&
+    !noServer
+  ) {
+    alert(
+      'This is a dev build. OpenGameInstaller is not meant to be used on MacOS unless\n' +
+        'you are developing it yourself or using it for addon development purposes.'
+    );
+  }
+
   // Initialize notification side view state
   logger.sync.info('App mounted, initializing stores');
   showNotificationSideView.set(false);
@@ -145,7 +167,7 @@ onMount(async () => {
       message: 'Could not load your settings. Restart OpenGameInstaller.',
       type: 'error',
     });
-  } else if (!appState.installed) {
+  } else if (!appState.installed && !skipOOBE) {
     logger.sync.info('OOBE not finished');
     finishedOOBE = false;
   }

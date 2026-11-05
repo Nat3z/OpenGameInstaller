@@ -488,25 +488,18 @@ async function startAppFlow(win: BrowserWindow) {
 
   // Load the main app into the same window (replaces splash)
   if (win && !win.isDestroyed()) {
-    const oobeQuery: string = hookArgs?.skipOOBE ? 'skipOOBE=true' : '';
-    const noServerQuery: string = hookArgs?.noAddonServer
-      ? 'noServer=true'
-      : '';
+    const params = new URLSearchParams();
+    if (hookArgs?.skipOOBE) params.set('skipOOBE', 'true');
+    if (hookArgs?.noAddonServer) params.set('noServer', 'true');
     if (isDev()) {
-      win.loadURL(
-        'http://localhost:8080' +
-          (oobeQuery ? '?' + oobeQuery : '') +
-          (noServerQuery ? '&' + noServerQuery : '')
-      );
+      win.loadURL(`http://localhost:8080/?${params}`);
       logger.sync.info('Running in development');
     } else {
+      params.set('secret', getAddonServer().getSecret());
       win.loadURL(
         'file://' +
           join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-          '?secret=' +
-          getAddonServer().getSecret() +
-          (oobeQuery ? '&' + oobeQuery : '') +
-          (noServerQuery ? '&' + noServerQuery : '')
+          `?${params}`
       );
     }
     win.once('ready-to-show', onMainAppReady);

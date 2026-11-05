@@ -139,12 +139,8 @@ export class LaunchTool {
         return yield* new LaunchError({
           message: 'No local build installed, pass --from <build>',
         });
-      // The nightly feed only carries the current build; other tags are fetched directly.
-      const release = tag.startsWith('nightly-')
-        ? (yield* fetchReleases('nightly', 'application')).find(
-            (release) => release.tag_name === tag
-          )
-        : yield* fetchRelease(tag);
+      // every nightly keeps its own release, so older ones stay fetchable by tag
+      const release = yield* fetchRelease(tag);
       if (!release)
         return yield* new LaunchError({
           message: `No release found for ${tag}`,

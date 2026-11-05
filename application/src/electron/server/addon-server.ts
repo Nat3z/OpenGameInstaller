@@ -2,6 +2,7 @@ import { AddonServer } from '@ogi-sdk/addon-server';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { getDatabase } from '@/electron/database/index.js';
+import { parseLaunchHookArgs } from '@/electron/lib/single-instance-launch.js';
 import { attachAddonDownloadBridge } from '@/electron/server/addon-downloads.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -13,6 +14,10 @@ const devSecret: string | undefined =
   process.env.OGI_ADDON_SERVER_SECRET || undefined;
 
 export const port = Number.isInteger(devPort) && devPort > 0 ? devPort : 7654;
+
+// with --no-server something else (e.g. `ogi dev`) owns the port, so every
+// start, including restarts after installs and updates, leaves it alone
+const detached: boolean = parseLaunchHookArgs().noAddonServer;
 
 // Read from settings when the server starts, never at import or window
 // creation: the database must not be opened before `restoreBackup` has run.
@@ -64,7 +69,7 @@ export let isAddonServerListening = false;
 let starting: Effect.Effect<void, unknown> | undefined;
 
 export const startAddonServer = (): Effect.Effect<void, unknown> => {
-  if (isAddonServerListening) return Effect.void;
+  if (detached || isAddonServerListening) return Effect.void;
   if (starting) return starting;
   securityCheckEnabled = readSecurityCheck();
   if (!securityCheckEnabled) {

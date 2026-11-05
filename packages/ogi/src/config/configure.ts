@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Data, Effect } from 'effect';
@@ -37,10 +39,15 @@ export function loadConfigurator(
 ): Effect.Effect<OGIConfig, LoadConfigError> {
   return Effect.gen(function* () {
     // a file url, since import() reads a windows drive letter as a url scheme;
-    // the query skips the module cache, so watch mode reloads edits
-    const url: string = `${pathToFileURL(resolve(path)).href}?t=${Date.now()}`;
+    // the query busts node's module cache, while bun needs the require.cache
+    // entry (keyed by real path) dropped, so watch mode reloads edits on both
     const module = yield* Effect.tryPromise({
-      try: () => import(url) as Promise<{ default?: unknown }>,
+      try: () => {
+        const absolute: string = realpathSync(resolve(path));
+        delete createRequire(absolute).cache[absolute];
+        const url: string = `${pathToFileURL(absolute).href}?t=${Date.now()}`;
+        return import(url) as Promise<{ default?: unknown }>;
+      },
       catch: (cause) =>
         new LoadConfigError({ message: `Failed to load ${path}: ${cause}` }),
     });

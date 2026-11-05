@@ -57,16 +57,6 @@ export default function DevCommand({
       process.exit(1);
     }
 
-    // validated against the executor's schema, so scripts.run is guaranteed
-    const addonJson: AddonFileConfiguration =
-      yield* Addon.Setup.loadAddonConfig(currentDir).pipe(
-        Effect.catchAll((error) =>
-          Console.error(error.message).pipe(
-            Effect.andThen(Effect.sync(() => process.exit(1)))
-          )
-        )
-      );
-
     // check if a configurator for builds with dev exists
     const configuratorPath = `${currentDir}/ogi.config.js`;
 
@@ -101,6 +91,16 @@ export default function DevCommand({
         extraInfo.ignoredWatchFiles = loadedConfig.ignoredWatchFiles;
       }
     }
+
+    // read after compiling so it's fresh; the executor's schema guarantees scripts.run
+    const addonJson: AddonFileConfiguration =
+      yield* Addon.Setup.loadAddonConfig(currentDir).pipe(
+        Effect.catchAll((error) =>
+          Console.error(error.message).pipe(
+            Effect.andThen(Effect.sync(() => process.exit(1)))
+          )
+        )
+      );
 
     // a fresh secret each run, so nothing else can claim a reloading addon's id
     const secret: string = securityKey || randomUUID();

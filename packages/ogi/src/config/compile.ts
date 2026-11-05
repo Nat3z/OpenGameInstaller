@@ -28,9 +28,10 @@ export class CompileAddonJSON {
       const scripts: AddonFileConfiguration['scripts'] = {
         // the app appends --addonPort/--addonSecret, which `--` passes through to the script
         run: 'bun ogi run launch --',
+        // setup runs preSetup first, and `bun ogi` needs ogi-kit installed
         preSetup: this.ogiConfig.scripts.preSetup
-          ? 'bun ogi run preSetup'
-          : undefined,
+          ? 'bun install && bun ogi run preSetup'
+          : 'bun install',
         postSetup: this.ogiConfig.scripts.postSetup
           ? 'bun ogi run postSetup'
           : undefined,

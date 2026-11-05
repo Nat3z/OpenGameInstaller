@@ -29,6 +29,8 @@ export class AddonConnection {
   public addonInfo: OGIAddonConfiguration | undefined;
   public configTemplate: ConfigurationFile | undefined;
   public filePath: string | undefined;
+  /** The secret the addon authenticated with. */
+  public secret: string | undefined;
   public addonLink: string | undefined;
   public eventsAvailable: OGIAddonSDKEventListener[] = [];
   public readonly events: SendEventProxy;

@@ -102,7 +102,8 @@ export default function DevCommand({
     const addonName = packageJson.name || basename(currentDir);
     const addon = new Addon({
       port,
-      secret,
+      // each addon gets its own secret, so its connection maps back to it
+      secret: randomUUID(),
       name: addonName,
       path: currentDir,
       scripts: addonJson.scripts,
@@ -209,7 +210,7 @@ export default function DevCommand({
             path: addonPath,
             port,
             scripts,
-            secret,
+            secret: randomUUID(),
           })
         );
       })
@@ -234,34 +235,28 @@ export default function DevCommand({
     // finalizers run in reverse, so on ctrl+c this runs after the gui closes
     yield* Effect.addFinalizer(() => stopAll);
 
-    // addons start one at a time, so unknown connections arrive in claim order
-    type Claim = { path: string; connected: Deferred.Deferred<void> };
-    let claims: Claim[] = [];
-    // addon id -> path, so a reconnect doesn't take another addon's claim
+    // addon secret -> path, so the gui can read each addon's addon.json (e.g. the icon)
     const addonPaths = new Map<string, string>();
-    const dropClaim = (claim: Claim): void => {
-      claims = claims.filter((other) => other !== claim);
-    };
+    // addon secret -> its pending connection
+    const connections = new Map<string, Deferred.Deferred<void>>();
 
     /**
-     * Claims the next addon connection for `path`, so the gui can read its
-     * addon.json (e.g. the icon). Wait on the result once the addon spawns.
+     * Registers an addon's secret and path before it spawns. Wait on the
+     * result once it spawns to hold until it connects.
      */
     function claimConnection(
-      path: string
+      addon: Addon
     ): Effect.Effect<(child: ChildProcess) => Effect.Effect<void>> {
       return Effect.gen(function* () {
-        const claim: Claim = { path, connected: yield* Deferred.make<void>() };
-        claims.push(claim);
+        const { secret, path } = addon.config;
+        const connected = yield* Deferred.make<void>();
+        server.allowSecret(secret);
+        addonPaths.set(secret, path);
+        connections.set(secret, connected);
         return (child: ChildProcess) => {
-          // the claim lasts until the addon exits, so one that connects late
-          // still takes its own path instead of the next addon's
-          child.once('exit', () => {
-            dropClaim(claim);
-            Deferred.unsafeDone(claim.connected, Exit.void);
-          });
-          // a slow addon shouldn't hold up dev
-          return Deferred.await(claim.connected).pipe(
+          // an addon that exits or never connects shouldn't hold up dev
+          child.once('exit', () => Deferred.unsafeDone(connected, Exit.void));
+          return Deferred.await(connected).pipe(
             Effect.timeout(Duration.seconds(10)),
             Effect.ignore
           );
@@ -273,7 +268,7 @@ export default function DevCommand({
     function startAddon(): Effect.Effect<AbortController, Error> {
       return Effect.gen(function* () {
         const aborter = new AbortController();
-        const connected = yield* claimConnection(addon.config.path);
+        const connected = yield* claimConnection(addon);
         // start() resolves once the process spawns, so keep ogi alive until the
         // addon exits
         yield* addon.start((data) => views.write('addon', data));
@@ -344,19 +339,13 @@ export default function DevCommand({
       ogiBuilder.start(port, true, secret, true)
     );
     server.on('connect', (connection) => {
-      const id: string | undefined = connection.addonInfo?.id;
-      const known: string | undefined = id ? addonPaths.get(id) : undefined;
-      const claim: Claim | undefined = known
-        ? claims.find((claim) => claim.path === known)
-        : claims[0];
-      const path: string | undefined = known ?? claim?.path;
-      if (!path) return;
+      const secret: string | undefined = connection.secret;
+      const path: string | undefined = secret && addonPaths.get(secret);
+      if (!secret || !path) return;
       connection.filePath = path;
-      if (id) addonPaths.set(id, path);
-      if (claim) {
-        dropClaim(claim);
-        Deferred.unsafeDone(claim.connected, Exit.void);
-      }
+      const connected = connections.get(secret);
+      connections.delete(secret);
+      if (connected) Deferred.unsafeDone(connected, Exit.void);
     });
     views.show('addon');
     // closing the gui stops the addon and ends dev; interrupting it kills the gui
@@ -527,7 +516,7 @@ export default function DevCommand({
       stagedAddons,
       (prereq) =>
         Effect.gen(function* () {
-          const connected = yield* claimConnection(prereq.config.path);
+          const connected = yield* claimConnection(prereq);
           const prefix: string = styleText(
             ['gray'],
             `[${prereq.config.name}] `

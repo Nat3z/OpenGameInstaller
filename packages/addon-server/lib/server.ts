@@ -43,6 +43,8 @@ export class AddonServer {
   private readonly clients = new Map<string, AddonConnection>();
   // last config each addon accepted, replayed when it reconnects
   private readonly lastConfigs = new Map<string, ConfigurationFile>();
+  // per-addon secrets accepted besides the shared one
+  private readonly extraSecrets = new Set<string>();
   private readonly deferredTasksManager = new DeferredTasksManager();
   private readonly eventEmitter = new EventEmitter();
   private readonly boundaryFibers = new Set<
@@ -170,6 +172,18 @@ export class AddonServer {
 
   public getSecret(): string {
     return this.config.secret ?? '';
+  }
+
+  /** Accepts another secret, e.g. one per addon so a host can tell connections apart. */
+  public allowSecret(secret: string): void {
+    this.extraSecrets.add(secret);
+  }
+
+  public acceptsSecret(secret: string | undefined): boolean {
+    return (
+      !!secret &&
+      (secret === this.config.secret || this.extraSecrets.has(secret))
+    );
   }
 
   public stop(): Effect.Effect<void, NetworkError> {

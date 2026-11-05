@@ -102,25 +102,13 @@ export function getAddonServerPromise(): Promise<Connection> {
   return runFrontendEffect(getAddonServer());
 }
 
-// icons are cached briefly, so lists don't refetch them but a reloaded addon's
-// new icon still shows up
-const ICON_CACHE_MS: number = 10_000;
-const mappedAddonUrls = new Map<string, { url: string; at: number }>();
-
+// not cached, so a reloaded addon's new icon shows up the next time it's drawn
 export function getAddonDataUrl(addonId: string) {
   return Effect.gen(function* () {
-    const cached = mappedAddonUrls.get(addonId);
-    if (cached && Date.now() - cached.at < ICON_CACHE_MS) return cached.url;
     const connection = yield* getAddonServer();
     const response = yield* Effect.tryPromise(() =>
       connection.request('get-addon-icon', { addonId })
     );
-    if (response.args.iconDataUrl) {
-      mappedAddonUrls.set(addonId, {
-        url: response.args.iconDataUrl,
-        at: Date.now(),
-      });
-    } else mappedAddonUrls.delete(addonId);
     return response.args.iconDataUrl;
   });
 }

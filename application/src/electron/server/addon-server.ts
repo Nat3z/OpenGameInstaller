@@ -6,7 +6,13 @@ import { attachAddonDownloadBridge } from '@/electron/server/addon-downloads.js'
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
-export const port = 7654;
+// `ogi dev` hosts the addon server itself and hands the gui its port and
+// secret, so addons the gui starts can still authenticate against it
+const devPort: number = Number(process.env.OGI_ADDON_SERVER_PORT);
+const devSecret: string | undefined =
+  process.env.OGI_ADDON_SERVER_SECRET || undefined;
+
+export const port = Number.isInteger(devPort) && devPort > 0 ? devPort : 7654;
 
 // Read from settings when the server starts, never at import or window
 // creation: the database must not be opened before `restoreBackup` has run.
@@ -52,7 +58,7 @@ let server: AddonServer | undefined;
 
 /** The addon server; only its secret is needed before startup finishes. */
 export const getAddonServer = (): AddonServer =>
-  (server ??= createAddonServer());
+  (server ??= createAddonServer(devSecret));
 
 export let isAddonServerListening = false;
 let starting: Effect.Effect<void, unknown> | undefined;

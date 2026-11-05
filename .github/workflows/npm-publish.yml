@@ -334,6 +334,45 @@ jobs:
         if: steps.version-check.outputs.changed == 'true'
         run: bun run build
 
+      # Matrix packages publish in parallel, so wait for sibling packages this one
+      # depends on (e.g. ogi-kit on @ogi-sdk/executor) to reach npm first.
+      - name: Wait for workspace dependencies on npm
+        if: steps.version-check.outputs.changed == 'true'
+        env:
+          PACKAGE_DIR: ${{ matrix.package.dir }}
+        run: |
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { readdirSync, readFileSync, existsSync } = require('node:fs');
+          const read = (dir) => JSON.parse(readFileSync(`${dir}/package.json`, 'utf8'));
+          const workspace = new Map(
+            readdirSync('packages')
+              .filter((dir) => existsSync(`packages/${dir}/package.json`))
+              .map((dir) => read(`packages/${dir}`))
+              .filter((manifest) => !manifest.private)
+              .map((manifest) => [manifest.name, manifest.version])
+          );
+          const { dependencies = {} } = read(process.env.PACKAGE_DIR);
+          const wanted = Object.keys(dependencies).filter((name) => workspace.has(name));
+          const published = (name, version) => {
+            try {
+              execFileSync('npm', ['view', `${name}@${version}`, 'version'], { stdio: 'ignore' });
+              return true;
+            } catch {
+              return false;
+            }
+          };
+          const deadline = Date.now() + 20 * 60 * 1000;
+          for (const name of wanted) {
+            const version = workspace.get(name);
+            while (!published(name, version)) {
+              if (Date.now() > deadline) throw new Error(`${name}@${version} never reached npm`);
+              console.log(`Waiting for ${name}@${version}...`);
+              execFileSync('sleep', ['15']);
+            }
+          }
+          NODE
+
       - name: Publish to npm
         if: steps.version-check.outputs.changed == 'true'
         working-directory: ${{ matrix.package.dir }}

@@ -124,6 +124,8 @@ export class LogViews {
         stdin.on('data', onData);
         return Effect.sync(() => stdin.off('data', onData));
       }).pipe(
+        // one chunk can hold several keys, e.g. a paste or `\t` then ctrl+c
+        Stream.mapConcat((chunk) => [...chunk]),
         Stream.takeWhile((key) => key !== CTRL_C),
         Stream.runForEach((key) =>
           Effect.sync(() => {

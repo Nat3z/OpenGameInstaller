@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import { cwd } from 'node:process';
@@ -96,7 +96,8 @@ export default function DevCommand({
       }
     }
 
-    const secret: string = securityKey || 'f';
+    // a fresh secret each run, so nothing else can claim a reloading addon's id
+    const secret: string = securityKey || randomUUID();
     // get name of the parent directory for the addon
     const addonName = packageJson.name || basename(currentDir);
     const addon = new Addon({
@@ -128,13 +129,31 @@ export default function DevCommand({
     let stagedAddons = yield* Effect.forEach(extraInfo.addons, (addonUrl) =>
       Effect.gen(function* () {
         const addonName: string = basename(addonUrl, '.git');
-        const addonPath: string = join(addonsDirectory, addonName);
+        // keyed by url too, so `a/addon` and `b/addon` don't share a checkout
+        const urlHash: string = createHash('sha256')
+          .update(addonUrl)
+          .digest('hex')
+          .slice(0, 8);
+        const addonPath: string = join(
+          addonsDirectory,
+          `${addonName}-${urlHash}`
+        );
 
         const addonSetupTool = new Addon.Git({
           path: addonPath,
         });
 
         let needsReSetup = false;
+
+        // an interrupted clone leaves a directory without a commit, so redo it
+        if (
+          (yield* fs.exists(addonPath)) &&
+          !(yield* addonSetupTool.getCurrentHash().pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false)
+          ))
+        )
+          yield* fs.remove(addonPath, { recursive: true });
 
         if (!(yield* fs.exists(addonPath))) {
           yield* Console.log(
@@ -215,10 +234,14 @@ export default function DevCommand({
     // finalizers run in reverse, so on ctrl+c this runs after the gui closes
     yield* Effect.addFinalizer(() => stopAll);
 
-    // addons start one at a time, so the next connection is the one just started
-    let pendingConnection:
-      | { path: string; connected: Deferred.Deferred<void> }
-      | undefined;
+    // addons start one at a time, so unknown connections arrive in claim order
+    type Claim = { path: string; connected: Deferred.Deferred<void> };
+    let claims: Claim[] = [];
+    // addon id -> path, so a reconnect doesn't take another addon's claim
+    const addonPaths = new Map<string, string>();
+    const dropClaim = (claim: Claim): void => {
+      claims = claims.filter((other) => other !== claim);
+    };
 
     /**
      * Claims the next addon connection for `path`, so the gui can read its
@@ -228,20 +251,19 @@ export default function DevCommand({
       path: string
     ): Effect.Effect<(child: ChildProcess) => Effect.Effect<void>> {
       return Effect.gen(function* () {
-        const connected = yield* Deferred.make<void>();
-        pendingConnection = { path, connected };
+        const claim: Claim = { path, connected: yield* Deferred.make<void>() };
+        claims.push(claim);
         return (child: ChildProcess) => {
-          // an addon that exits or never connects shouldn't hold up dev
-          child.once('exit', () => Deferred.unsafeDone(connected, Exit.void));
-          return Deferred.await(connected).pipe(
+          // the claim lasts until the addon exits, so one that connects late
+          // still takes its own path instead of the next addon's
+          child.once('exit', () => {
+            dropClaim(claim);
+            Deferred.unsafeDone(claim.connected, Exit.void);
+          });
+          // a slow addon shouldn't hold up dev
+          return Deferred.await(claim.connected).pipe(
             Effect.timeout(Duration.seconds(10)),
-            Effect.ignore,
-            Effect.ensuring(
-              Effect.sync(() => {
-                if (pendingConnection?.connected === connected)
-                  pendingConnection = undefined;
-              })
-            )
+            Effect.ignore
           );
         };
       });
@@ -259,8 +281,9 @@ export default function DevCommand({
         if (!child)
           return yield* Effect.fail(new Error('Missing child process'));
 
+        // the next start() or stopAddon stops the process through the executor,
+        // which also takes down the shell wrapping it on windows
         aborter.signal.addEventListener('abort', () => {
-          Addon.killProcessGroup(child);
           server.emit('notification', {
             message: 'Restarting Addon...',
             id: 'restart-addon-hmr',
@@ -268,15 +291,18 @@ export default function DevCommand({
           });
         });
 
-        child.on('exit', (code, signal) => {
-          if (aborter.signal.aborted) return;
+        // a missing executable only fails after spawn, as an error with no exit
+        let ended: boolean = false;
+        const onEnd = (reason: string, code: number): void => {
+          if (ended || aborter.signal.aborted) return;
+          ended = true;
           // in watch mode, the next change restarts it
           if (watch) {
             views.write(
               'addon',
               styleText(
                 ['red'],
-                `Addon exited (${code ?? signal}), waiting for changes...\n`
+                `Addon exited (${reason}), waiting for changes...\n`
               )
             );
             return;
@@ -286,11 +312,16 @@ export default function DevCommand({
             Effect.suspend(() =>
               gui ? Fiber.interrupt(gui) : Effect.void
             ).pipe(
+              Effect.andThen(Console.error(`Addon exited (${reason})`)),
               Effect.andThen(stopAll),
-              Effect.andThen(Effect.sync(() => process.exit(code ?? 1)))
+              Effect.andThen(Effect.sync(() => process.exit(code)))
             )
           );
-        });
+        };
+        child.on('exit', (code, signal) =>
+          onEnd(String(code ?? signal), code ?? 1)
+        );
+        child.on('error', (error) => onEnd(error.message, 1));
 
         yield* connected(child);
         return yield* Effect.succeed(aborter);
@@ -308,14 +339,24 @@ export default function DevCommand({
 
     // host the addon server for the gui, listening before the addon connects
     const ogiBuilder = new OgiMaker();
+    // only this machine's gui and addons should reach a dev server
     const server = yield* Effect.promise(() =>
-      ogiBuilder.start(port, false, secret)
+      ogiBuilder.start(port, true, secret, true)
     );
     server.on('connect', (connection) => {
-      if (!pendingConnection) return;
-      connection.filePath = pendingConnection.path;
-      Deferred.unsafeDone(pendingConnection.connected, Exit.void);
-      pendingConnection = undefined;
+      const id: string | undefined = connection.addonInfo?.id;
+      const known: string | undefined = id ? addonPaths.get(id) : undefined;
+      const claim: Claim | undefined = known
+        ? claims.find((claim) => claim.path === known)
+        : claims[0];
+      const path: string | undefined = known ?? claim?.path;
+      if (!path) return;
+      connection.filePath = path;
+      if (id) addonPaths.set(id, path);
+      if (claim) {
+        dropClaim(claim);
+        Deferred.unsafeDone(claim.connected, Exit.void);
+      }
     });
     views.show('addon');
     // closing the gui stops the addon and ends dev; interrupting it kills the gui
@@ -325,7 +366,7 @@ export default function DevCommand({
         false, // no self-run server
         true, // online is enabled
         true, // skip OOBE
-        true, // load in dev mode
+        { port, secret }, // load in dev mode against this server
         (data) => views.write('app', data)
       )
       .pipe(
@@ -361,11 +402,28 @@ export default function DevCommand({
           const changes: `${'+' | '~' | '-'}${string}`[] = [];
 
           const files: Record<string, number> = {};
+          // real paths scanned, so a symlink to an ancestor isn't followed forever
+          const visited = new Set<string>();
+          // entries removed mid-scan are skipped instead of ending watch mode
+          const unlessRemoved = <A>(
+            effect: Effect.Effect<A, PlatformError>
+          ): Effect.Effect<A | undefined, PlatformError> =>
+            effect.pipe(
+              Effect.catchIf(
+                (error) =>
+                  error._tag === 'SystemError' && error.reason === 'NotFound',
+                () => Effect.succeed(undefined)
+              )
+            );
           function nest(
             dir: string
           ): Effect.Effect<void, PlatformError, Scope> {
             return Effect.gen(function* () {
-              const entries = yield* fs.readDirectory(dir);
+              const real = yield* unlessRemoved(fs.realPath(dir));
+              if (real === undefined || visited.has(real)) return;
+              visited.add(real);
+              const entries =
+                (yield* unlessRemoved(fs.readDirectory(dir))) ?? [];
               for (const entry of entries) {
                 const key = `${dir}/${entry}`;
                 if (
@@ -375,7 +433,8 @@ export default function DevCommand({
                 )
                   continue;
 
-                const stat = yield* fs.stat(key);
+                const stat = yield* unlessRemoved(fs.stat(key));
+                if (stat === undefined) continue;
                 // check if is directory
                 if (stat.type === 'Directory') yield* nest(key);
 
@@ -469,17 +528,21 @@ export default function DevCommand({
       (prereq) =>
         Effect.gen(function* () {
           const connected = yield* claimConnection(prereq.config.path);
-          yield* prereq.start((data) =>
-            views.write(
-              'prereqs',
-              data
-                .toString()
-                .replace(
-                  /^(?=.)/gm,
-                  styleText(['gray'], `[${prereq.config.name}] `)
-                )
-            )
+          const prefix: string = styleText(
+            ['gray'],
+            `[${prereq.config.name}] `
           );
+          // chunks can end mid-line, so hold the partial line for the next one
+          let partial: string = '';
+          yield* prereq.start((data) => {
+            const lines: string[] = (partial + data.toString()).split('\n');
+            partial = lines.pop()!;
+            if (lines.length === 0) return;
+            return views.write(
+              'prereqs',
+              lines.map((line) => `${prefix}${line}\n`).join('')
+            );
+          });
           const child = prereq.getChildProcess();
           if (child) yield* connected(child);
         }),

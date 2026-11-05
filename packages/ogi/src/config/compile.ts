@@ -1,4 +1,3 @@
-import { FileSystem } from '@effect/platform';
 import type { AddonFileConfiguration } from '@ogi-sdk/executor';
 import { Data, Effect } from 'effect';
 import { OGIConfig } from './configure';
@@ -17,9 +16,9 @@ export class CompileAddonJSON {
     this.ogiConfig = ogiConfig;
   }
 
-  compile(allowedWriting: boolean) {
+  // `--write` is reserved for writing files besides addon.json, which nothing does yet
+  compile(_allowedWriting: boolean) {
     return Effect.gen(this, function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
       if (!this.ogiConfig.compile)
         return yield* Effect.fail(
           new CompilerError('ogi.config.js does not declare compile.')

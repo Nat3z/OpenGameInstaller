@@ -6,7 +6,8 @@ export default class OgiMaker {
   start(
     port: number,
     enforceSecurity: boolean,
-    securityKey: string
+    securityKey: string,
+    localOnly: boolean = false
   ): Promise<AddonServer> {
     return Effect.gen(function* () {
       yield* Console.log(
@@ -17,6 +18,7 @@ export default class OgiMaker {
         port,
         securityCheck: enforceSecurity,
         secret: securityKey,
+        localOnly,
       });
       yield* addon.start();
       yield* Console.log('Server started');

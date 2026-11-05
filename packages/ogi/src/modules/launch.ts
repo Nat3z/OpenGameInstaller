@@ -5,6 +5,7 @@ import type { PlatformError } from '@effect/platform/Error';
 import {
   type ChannelRelease,
   downloadAsset,
+  fetchRelease,
   fetchReleases,
   formatBytes,
   platformAsset,
@@ -26,6 +27,12 @@ const EXECUTABLE: string =
     : process.platform === 'darwin'
       ? join('OpenGameInstaller.app', 'Contents', 'MacOS', 'OpenGameInstaller')
       : 'OpenGameInstaller.AppImage';
+
+/** The addon server a dev launch connects to instead of starting its own. */
+export interface DevServer {
+  port: number;
+  secret: string;
+}
 
 /** Tag that local builds installed with `fromBuild` live under. */
 export const LOCAL_TAG = 'local';
@@ -132,12 +139,12 @@ export class LaunchTool {
         return yield* new LaunchError({
           message: 'No local build installed, pass --from <build>',
         });
-      // The nightly feed only carries the current build; every other release is on unstable.
-      const releases = yield* fetchReleases(
-        tag.startsWith('nightly-') ? 'nightly' : 'unstable',
-        'application'
-      );
-      const release = releases.find((release) => release.tag_name === tag);
+      // The nightly feed only carries the current build; other tags are fetched directly.
+      const release = tag.startsWith('nightly-')
+        ? (yield* fetchReleases('nightly', 'application')).find(
+            (release) => release.tag_name === tag
+          )
+        : yield* fetchRelease(tag);
       if (!release)
         return yield* new LaunchError({
           message: `No release found for ${tag}`,
@@ -211,14 +218,18 @@ export class LaunchTool {
     });
   }
 
-  /** Fills `<tag>.download` with an archive, unpacks it, then moves it into place; failures leave nothing behind. */
+  /**
+   * Fills a staging directory with an archive, unpacks it, then moves it into
+   * place; failures leave nothing behind. Staging is per process, so two
+   * installs of one tag can't delete each other's downloads.
+   */
   private stage(
     tag: string,
     name: string,
     fetch: (archive: string) => Effect.Effect<void, Failure, Services>
   ): Effect.Effect<string, Failure, Services> {
     return Effect.flatMap(FileSystem.FileSystem, (fs) => {
-      const staging = `${this.directory(tag)}.download`;
+      const staging = `${this.directory(tag)}.${process.pid}.download`;
       return this.unpack(tag, name, staging, fetch).pipe(
         Effect.onError(() =>
           Effect.ignore(fs.remove(staging, { recursive: true, force: true }))
@@ -262,22 +273,38 @@ export class LaunchTool {
           message: `${name} doesn't contain ${EXECUTABLE}`,
         });
 
-      yield* fs.remove(this.directory(tag), { recursive: true, force: true });
-      yield* fs.rename(staging, this.directory(tag));
+      // keep the old install until the new one is in place, so a failed
+      // rename restores it instead of leaving nothing
+      const target = this.directory(tag);
+      const previous = `${target}.${process.pid}.old`;
+      const replacing = yield* fs.exists(target);
+      if (replacing) yield* fs.rename(target, previous);
+      yield* fs
+        .rename(staging, target)
+        .pipe(
+          Effect.tapError(() =>
+            replacing ? Effect.ignore(fs.rename(previous, target)) : Effect.void
+          )
+        );
+      if (replacing)
+        yield* Effect.ignore(
+          fs.remove(previous, { recursive: true, force: true })
+        );
       return tag;
     });
   }
 
   /**
    * Runs an installed tag in the foreground and resolves with its exit code.
-   * Output goes to the terminal unless an `output` handler takes it.
+   * Output goes to the terminal unless an `output` handler takes it. A `dev`
+   * server points the gui at that addon server, with its own data directory.
    */
   launch(
     tag: string,
     useServer: boolean = true,
     online: boolean = true,
     skipOOBE: boolean = false,
-    loadInDev: boolean = false,
+    dev?: DevServer,
     output?: (data: Uint8Array) => void
   ): Effect.Effect<number, LaunchError | PlatformError, Services> {
     return Effect.gen(this, function* () {
@@ -292,9 +319,13 @@ export class LaunchTool {
       let command = Command.make(`./${EXECUTABLE}`, ...args).pipe(
         Command.workingDirectory(this.directory(tag))
       );
-      if (loadInDev)
+      if (dev)
         command = command.pipe(
-          Command.env({ OGI_DIRECTORY: join(homedir(), '.ogi', 'dev') })
+          Command.env({
+            OGI_DIRECTORY: join(homedir(), '.ogi', 'dev'),
+            OGI_ADDON_SERVER_PORT: String(dev.port),
+            OGI_ADDON_SERVER_SECRET: dev.secret,
+          })
         );
 
       if (!output)

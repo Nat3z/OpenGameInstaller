@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Data, Effect } from 'effect';
 
 export type OGIConfig = {
@@ -23,17 +24,37 @@ export function defineConfig(config: OGIConfig) {
   return config;
 }
 
-export class LoadConfigError extends Data.TaggedError('LoadConfigError') {}
+export class LoadConfigError extends Data.TaggedError('LoadConfigError')<{
+  readonly message: string;
+}> {}
+
+const isStringArray = (value: unknown): boolean =>
+  value === undefined ||
+  (Array.isArray(value) && value.every((item) => typeof item === 'string'));
 
 export function loadConfigurator(
   path: string
 ): Effect.Effect<OGIConfig, LoadConfigError> {
   return Effect.gen(function* () {
-    const resolvedPath = resolve(path);
-    const config = yield* Effect.tryPromise({
-      try: () => import(resolvedPath),
-      catch: () => new LoadConfigError(),
+    // a file url, since import() reads a windows drive letter as a url scheme
+    const url: string = pathToFileURL(resolve(path)).href;
+    const module = yield* Effect.tryPromise({
+      try: () => import(url) as Promise<{ default?: unknown }>,
+      catch: (cause) =>
+        new LoadConfigError({ message: `Failed to load ${path}: ${cause}` }),
     });
-    return config.default as OGIConfig;
+    const config = module.default as Partial<OGIConfig> | null | undefined;
+    if (!config || typeof config !== 'object')
+      return yield* new LoadConfigError({
+        message: `${path} must default export a config`,
+      });
+    if (
+      !isStringArray(config.addons) ||
+      !isStringArray(config.ignoredWatchFiles)
+    )
+      return yield* new LoadConfigError({
+        message: `${path}: addons and ignoredWatchFiles must be string arrays`,
+      });
+    return config as OGIConfig;
   });
 }

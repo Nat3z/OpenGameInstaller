@@ -11,7 +11,7 @@ import {
   type ReleaseChannel,
   type ReleaseError,
 } from '@ogi/update-channel';
-import { Console, Data, Effect } from 'effect';
+import { Console, Data, Effect, Stream } from 'effect';
 
 export class LaunchError extends Data.TaggedError('LaunchError')<{
   readonly message: string;
@@ -268,11 +268,17 @@ export class LaunchTool {
     });
   }
 
-  /** Runs an installed tag in the foreground and resolves with its exit code. */
+  /**
+   * Runs an installed tag in the foreground and resolves with its exit code.
+   * Output goes to the terminal unless an `output` handler takes it.
+   */
   launch(
     tag: string,
     useServer: boolean = true,
-    online: boolean = true
+    online: boolean = true,
+    skipOOBE: boolean = false,
+    loadInDev: boolean = false,
+    output?: (data: Uint8Array) => void
   ): Effect.Effect<number, LaunchError | PlatformError, Services> {
     return Effect.gen(this, function* () {
       yield* this.supported();
@@ -282,12 +288,33 @@ export class LaunchTool {
       const args = [`--online=${online}`];
       if (!useServer) args.push(`--no-server`);
       if (process.platform === 'linux') args.push('--no-sandbox');
-      return yield* Command.make(`./${EXECUTABLE}`, ...args).pipe(
-        Command.workingDirectory(this.directory(tag)),
-        Command.stdin('inherit'),
-        Command.stdout('inherit'),
-        Command.stderr('inherit'),
-        Command.exitCode
+      if (skipOOBE) args.push('--skip-oobe');
+      let command = Command.make(`./${EXECUTABLE}`, ...args).pipe(
+        Command.workingDirectory(this.directory(tag))
+      );
+      if (loadInDev)
+        command = command.pipe(
+          Command.env({ OGI_DIRECTORY: join(homedir(), '.ogi', 'dev') })
+        );
+
+      if (!output)
+        return yield* command.pipe(
+          Command.stdin('inherit'),
+          Command.stdout('inherit'),
+          Command.stderr('inherit'),
+          Command.exitCode
+        );
+
+      // closing the scope kills the gui if the launch is interrupted
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const gui = yield* Command.start(command);
+          yield* Stream.merge(gui.stdout, gui.stderr).pipe(
+            Stream.runForEach((data) => Effect.sync(() => output(data))),
+            Effect.forkScoped
+          );
+          return yield* gui.exitCode;
+        })
       );
     });
   }

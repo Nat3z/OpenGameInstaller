@@ -2,7 +2,12 @@ import { AddonServer } from '@ogi-sdk/addon-server';
 import { Console, Effect } from 'effect';
 
 export default class OgiMaker {
-  start(port: number, enforceSecurity: boolean, securityKey: string) {
+  /** Starts an addon server and resolves with it once it's listening. */
+  start(
+    port: number,
+    enforceSecurity: boolean,
+    securityKey: string
+  ): Promise<AddonServer> {
     return Effect.gen(function* () {
       yield* Console.log(
         `Server starting on port ${port} with security ${enforceSecurity ? 'enabled' : 'disabled'}`
@@ -15,6 +20,7 @@ export default class OgiMaker {
       });
       yield* addon.start();
       yield* Console.log('Server started');
+      return addon;
     }).pipe(Effect.runPromise);
   }
 }

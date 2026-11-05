@@ -17,6 +17,14 @@ const from = Options.file('from', { exists: 'yes' }).pipe(
   ),
   Options.optional
 );
+const channel = Options.choice('channel', [
+  'stable',
+  'unstable',
+  'nightly',
+]).pipe(
+  Options.withDescription('Channel to update from when no version is given'),
+  Options.withDefault('stable')
+);
 const watch = Options.boolean('watch').pipe(
   Options.withAlias('w'),
   Options.withDefault(false)
@@ -30,14 +38,29 @@ const entranceMessage = (sub: string) =>
 // ogi dev
 const devStart = Command.make(
   'dev',
-  { securityKey, port, watch, from },
-  ({ securityKey, port, watch, from }) =>
+  {
+    securityKey,
+    port,
+    watch,
+    from,
+    channel,
+    // --version is taken by @effect/cli's built-in version flag
+    release: Options.text('release').pipe(
+      Options.withDescription(
+        'Release tag to launch, e.g. 4.3.4, nightly-<id> or local'
+      ),
+      Options.optional
+    ),
+  },
+  ({ securityKey, port, watch, from, channel, release }) =>
     dev({
       securityKey,
       port,
       entranceMessage,
       watch,
       from: Option.getOrUndefined(from),
+      version: Option.getOrUndefined(release),
+      channel,
     })
 );
 
@@ -63,12 +86,7 @@ const launch = Command.make(
       Args.withDescription('Release tag to launch, e.g. 4.3.4 or nightly-<id>'),
       Args.optional
     ),
-    channel: Options.choice('channel', ['stable', 'unstable', 'nightly']).pipe(
-      Options.withDescription(
-        'Channel to update from when no version is given'
-      ),
-      Options.withDefault('stable')
-    ),
+    channel,
     offline: Options.boolean('offline').pipe(
       Options.withDescription('Skip the update check and launch offline')
     ),

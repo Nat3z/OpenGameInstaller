@@ -28,10 +28,11 @@ export class CompileAddonJSON {
       const scripts: AddonFileConfiguration['scripts'] = {
         // the app appends --addonPort/--addonSecret, which `--` passes through to the script
         run: 'bun ogi run launch --',
-        // setup runs preSetup first, and `bun ogi` needs ogi-kit installed
+        // `bun ogi` needs ogi-kit installed before preSetup, the first step;
+        // frozen so a stale lockfile fails setup instead of being rewritten
         preSetup: this.ogiConfig.scripts.preSetup
-          ? 'bun install && bun ogi run preSetup'
-          : 'bun install',
+          ? 'bun install --frozen-lockfile && bun ogi run preSetup'
+          : 'bun install --frozen-lockfile',
         postSetup: this.ogiConfig.scripts.postSetup
           ? 'bun ogi run postSetup'
           : undefined,

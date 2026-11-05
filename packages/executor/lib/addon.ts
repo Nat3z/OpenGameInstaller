@@ -12,6 +12,8 @@ const logger = createLogger(LOGGER_PREFIXES.executor);
 
 export const AddonFileConfigurationSchema = Schema.Struct({
   author: Schema.String,
+  /** Path to the addon's icon, relative to the addon. */
+  icon: Schema.optional(Schema.String),
   scripts: Schema.Struct({
     setup: Schema.optional(Schema.String),
     run: Schema.String,
@@ -42,6 +44,9 @@ export type ScriptSpawnCommand = {
 };
 
 type AddonLifecycleError = AddonError | FileSystemError | ValidationError;
+
+/** Where addon output goes: the logger, ogi's stdio, or a handler. */
+export type AddonStdio = 'pipe' | 'inherit' | ((data: Buffer) => void);
 
 /** Effect-based addon process lifecycle. */
 export class Addon {
@@ -152,6 +157,18 @@ export class Addon {
     });
   }
 
+  /**
+   * Signals the child's whole process group, so wrappers like `bun ogi run`
+   * can't leave the real addon running. Posix spawns are detached to get their
+   * own group; falls back to the child alone if the group is already gone.
+   */
+  public static killProcessGroup(child: ChildProcess): void {
+    try {
+      if (child.pid) return void process.kill(-child.pid, 'SIGTERM');
+    } catch {}
+    child.kill();
+  }
+
   private spawnProcess({
     command,
     args,
@@ -169,6 +186,8 @@ export class Addon {
             ...(this.config.gameSpecificLaunch ? { OGI_GAME_LAUNCH: '1' } : {}),
           },
           stdio: ['ignore', 'pipe', 'pipe'],
+          // own process group, so stopProcess can kill the whole tree
+          detached: process.platform !== 'win32',
           windowsVerbatimArguments,
         }),
       catch: (cause) =>
@@ -181,7 +200,7 @@ export class Addon {
 
   private stopProcess(child: ChildProcess): Effect.Effect<void, AddonError> {
     const killChild = Effect.try({
-      try: () => void child.kill(),
+      try: () => Addon.killProcessGroup(child),
       catch: (cause) =>
         new AddonError({
           addonName: this.config.name,
@@ -209,14 +228,51 @@ export class Addon {
     }).pipe(Effect.catchAll(() => killChild));
   }
 
-  private monitorProcess(child: ChildProcess): Effect.Effect<void, AddonError> {
+  private monitorProcess(
+    child: ChildProcess,
+    { stdio }: { stdio: AddonStdio }
+  ): Effect.Effect<void, AddonError> {
     const name = this.config.name;
     return Effect.async<void, AddonError>((resume) => {
       let settled = false;
-      const onStdout = (data: Buffer): void =>
+      // listeners run outside the fiber, so a throwing handler fails the addon
+      const forward = (data: Buffer): void => {
+        if (typeof stdio !== 'function') return;
+        try {
+          stdio(data);
+        } catch (cause) {
+          finish(
+            Effect.fail(
+              new AddonError({
+                addonName: name,
+                message: `Addon output handler failed: ${String(cause)}`,
+              })
+            )
+          );
+        }
+      };
+      const onStdout = (data: Buffer): void => {
+        if (typeof stdio === 'function') {
+          forward(data);
+          return;
+        }
+        if (stdio === 'inherit') {
+          process.stdout.write(data);
+          return;
+        }
         logger.sync.info(`[${name}] ${data}`);
-      const onStderr = (data: Buffer): void =>
+      };
+      const onStderr = (data: Buffer): void => {
+        if (typeof stdio === 'function') {
+          forward(data);
+          return;
+        }
+        if (stdio === 'inherit') {
+          process.stderr.write(data);
+          return;
+        }
         logger.sync.error(`[${name}] ${data}`);
+      };
       const cleanup = (): void => {
         child.stdout?.off('data', onStdout);
         child.stderr?.off('data', onStderr);
@@ -243,6 +299,12 @@ export class Addon {
         signal: NodeJS.Signals | null
       ): void => {
         const message = `[${name}] Exited with code ${code} and signal ${signal}`;
+        // a handler owns the output, so the exit message goes there too
+        if (typeof stdio === 'function') {
+          forward(Buffer.from(`${message}\n`));
+          finish(Effect.void);
+          return;
+        }
         finish(code === 0 ? logger.info(message) : logger.error(message));
       };
 
@@ -254,7 +316,9 @@ export class Addon {
     });
   }
 
-  public start(): Effect.Effect<void, AddonLifecycleError> {
+  public start(
+    stdio: AddonStdio = 'pipe'
+  ): Effect.Effect<void, AddonLifecycleError> {
     return Effect.gen(this, function* () {
       if (this.processScope) yield* this.stop();
       if (!this.config.scripts?.run) {
@@ -281,7 +345,7 @@ export class Addon {
                   this.childProcess = child;
                 }).pipe(
                   Effect.zipRight(Deferred.succeed(started, child)),
-                  Effect.zipRight(this.monitorProcess(child))
+                  Effect.zipRight(this.monitorProcess(child, { stdio }))
                 ),
               (child) => this.stopProcess(child).pipe(Effect.ignore)
             ).pipe(

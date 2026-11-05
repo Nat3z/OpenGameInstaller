@@ -18,13 +18,13 @@
   ],
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",
-    "electron": "^43.1.0",
+    "electron": "43.1.0",
     "typescript": "^5.9.3"
   },
   "overrides": {
     "@types/minimatch": "5.1.2",
     "@types/node": "^22.15.0",
-    "effect": "3.22.0",
+    "effect": "3.22.4",
     "yargs": "17.7.3"
   },
   "trustedDependencies": [
@@ -33,6 +33,6 @@
     "sharp"
   ],
   "dependencies": {
-    "effect": "3.22.0"
+    "effect": "3.22.4"
   }
 }

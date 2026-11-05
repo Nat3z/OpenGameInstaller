@@ -48,7 +48,13 @@ function initialize(server: Connection): Effect.Effect<void, NetworkError> {
 }
 
 export function connectClientSdk() {
-  const url = settings.clientSdkUrl || 'ws://127.0.0.1:7654';
+  // a dev launch passes the port of the addon server it runs on
+  const devPort: string | null = new URLSearchParams(
+    window.location.search
+  ).get('addonServerPort');
+  const url = devPort
+    ? `ws://127.0.0.1:${devPort}`
+    : settings.clientSdkUrl || 'ws://127.0.0.1:7654';
 
   return Effect.tryPromise({
     try: () => Connection.make({ url }),
@@ -94,6 +100,17 @@ export function getAddonServer(): Effect.Effect<Connection, NetworkError> {
 
 export function getAddonServerPromise(): Promise<Connection> {
   return runFrontendEffect(getAddonServer());
+}
+
+// not cached, so a reloaded addon's new icon shows up the next time it's drawn
+export function getAddonDataUrl(addonId: string) {
+  return Effect.gen(function* () {
+    const connection = yield* getAddonServer();
+    const response = yield* Effect.tryPromise(() =>
+      connection.request('get-addon-icon', { addonId })
+    );
+    return response.args.iconDataUrl;
+  });
 }
 
 // Share reconnects so concurrent stale-socket recoveries never race.

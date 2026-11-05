@@ -28,6 +28,7 @@ import { RendererEventReadiness } from '@/electron/lib/renderer-event-readiness.
 import {
   createSingleInstanceData,
   type LaunchForwardPayload,
+  type LaunchHookArgs,
   parseGameIdArg,
   parseLaunchHookArgs,
   parseLaunchRequestFromArgv,
@@ -67,6 +68,16 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
 
 // import steamworks from 'steamworks.js';
 
+/** Renderer flags every launch carries, from the cli args and addon server. */
+function launchParams(): URLSearchParams {
+  const params = new URLSearchParams();
+  if (hookArgs?.skipOOBE) params.set('skipOOBE', 'true');
+  if (hookArgs?.noAddonServer) params.set('noServer', 'true');
+  // the default port leaves the developer's clientSdkUrl setting in charge
+  if (port !== 7654) params.set('addonServerPort', String(port));
+  return params;
+}
+
 /**
  * Handle launch hooks (pre/post) for games
  * This runs addon events without actually launching the game
@@ -98,7 +109,7 @@ async function handleLaunchHooks(
       : `file://${join(app.getAppPath(), 'out', 'renderer', 'index.html')}`;
 
     // Add flags to indicate this is a hook-only launch
-    const launchUrl = `${baseUrl}?launchGameId=${gameId}&hookType=${hookType}&noLaunch=true`;
+    const launchUrl = `${baseUrl}?launchGameId=${gameId}&hookType=${hookType}&noLaunch=true&${launchParams()}`;
 
     await mainWindow.loadURL(launchUrl);
 
@@ -142,7 +153,7 @@ async function launchGameById(gameId: number, wrapperCommand?: string | null) {
     const wrapperQuery = wrapperCommand
       ? `&wrapperCommand=${encodeURIComponent(wrapperCommand)}`
       : '';
-    const launchUrl = `${baseUrl}?launchGameId=${gameId}${wrapperQuery}`;
+    const launchUrl = `${baseUrl}?launchGameId=${gameId}${wrapperQuery}&${launchParams()}`;
 
     await mainWindow.loadURL(launchUrl);
 
@@ -297,6 +308,7 @@ function registerClientReadyListener() {
 
 async function ensureAddonServerRunning() {
   if (isAddonServerListening) return;
+  if (hookArgs && hookArgs.noAddonServer) return;
 
   try {
     await runElectronEffect(startAddonServer());
@@ -315,7 +327,7 @@ async function ensureAddonServerRunning() {
 }
 
 async function startAddonRuntime() {
-  await ensureAddonServerRunning();
+  if (hookArgs && !hookArgs.noAddonServer) await ensureAddonServerRunning();
   sendNotification({
     message: 'Addons Starting...',
     id: Math.random().toString(36).substring(7),
@@ -449,6 +461,13 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
     mainWindow = null;
   });
 
+  // renderer messages already include the prefix and level, so forward as-is
+  mainWindow.webContents.on('console-message', ({ level, message }) => {
+    if (level === 'error') console.error(message);
+    else if (level === 'warning') console.warn(message);
+    else console.log(message);
+  });
+
   // First ready-to-show: splash is ready; show window so user sees loading
   mainWindow.once('ready-to-show', () => {
     if (gameLaunchMode && mainWindow && !mainWindow.isDestroyed()) {
@@ -479,15 +498,16 @@ async function startAppFlow(win: BrowserWindow) {
 
   // Load the main app into the same window (replaces splash)
   if (win && !win.isDestroyed()) {
+    const params = launchParams();
     if (isDev()) {
-      win.loadURL('http://localhost:8080');
+      win.loadURL(`http://localhost:8080/?${params}`);
       logger.sync.info('Running in development');
     } else {
+      params.set('secret', getAddonServer().getSecret());
       win.loadURL(
         'file://' +
           join(app.getAppPath(), 'out', 'renderer', 'index.html') +
-          '?secret=' +
-          getAddonServer().getSecret()
+          `?${params}`
       );
     }
     win.once('ready-to-show', onMainAppReady);
@@ -667,6 +687,10 @@ async function handleRemoteLaunchRequest(
   return launchResult;
 }
 
+// the lock is scoped to userData, so a separate data directory (e.g. `ogi dev`)
+// gets its own instead of quitting into an installed OpenGameInstaller
+if (process.env.OGI_DIRECTORY)
+  app.setPath('userData', join(process.env.OGI_DIRECTORY, 'electron'));
 const gotTheLock = app.requestSingleInstanceLock(createSingleInstanceData());
 
 if (!gotTheLock) {
@@ -709,6 +733,8 @@ if (!gotTheLock) {
   );
 }
 
+let hookArgs: LaunchHookArgs | undefined = undefined;
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -722,7 +748,7 @@ app.on('ready', async () => {
 
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
-  const hookArgs = parseLaunchHookArgs();
+  hookArgs = parseLaunchHookArgs();
   const wrapperCommand = parseWrapperAfterSeparator();
   if (gameIdToLaunch !== null) {
     logger.sync.info(

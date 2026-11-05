@@ -24,6 +24,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "effect": "^3.22.0",
     "semver": "^7.7.3"
   },
   "devDependencies": {

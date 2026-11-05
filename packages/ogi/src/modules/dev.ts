@@ -78,8 +78,15 @@ export default function DevCommand({
       let loadedConfig = yield* loadConfigurator(configuratorPath);
       // compile with compiler first if 'compile' is set true
       if (loadedConfig.compile) {
+        yield* Console.log(styleText('bold', 'Compiling addon.json...'));
         const compiler = new CompileAddonJSON(loadedConfig);
-        yield* compiler.compile(false);
+        yield* compiler
+          .compile(false)
+          .pipe(
+            Effect.andThen((s) =>
+              fs.writeFileString(`${currentDir}/addon.json`, s)
+            )
+          );
       }
       if (loadedConfig.addons) {
         extraInfo.addons = loadedConfig.addons;

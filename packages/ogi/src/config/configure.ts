@@ -36,8 +36,9 @@ export function loadConfigurator(
   path: string
 ): Effect.Effect<OGIConfig, LoadConfigError> {
   return Effect.gen(function* () {
-    // a file url, since import() reads a windows drive letter as a url scheme
-    const url: string = pathToFileURL(resolve(path)).href;
+    // a file url, since import() reads a windows drive letter as a url scheme;
+    // the query skips the module cache, so watch mode reloads edits
+    const url: string = `${pathToFileURL(resolve(path)).href}?t=${Date.now()}`;
     const module = yield* Effect.tryPromise({
       try: () => import(url) as Promise<{ default?: unknown }>,
       catch: (cause) =>

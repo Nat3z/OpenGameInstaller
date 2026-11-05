@@ -75,7 +75,13 @@ export default function DevCommand({
       ignoredWatchFiles: [] as string[],
     };
     if (yield* fs.exists(configuratorPath)) {
-      let loadedConfig = yield* loadConfigurator(configuratorPath);
+      const loadedConfig = yield* loadConfigurator(configuratorPath).pipe(
+        Effect.catchAll((error) =>
+          Console.error(styleText(['red'], error.message)).pipe(
+            Effect.andThen(Effect.sync(() => process.exit(1)))
+          )
+        )
+      );
       // compile with compiler first if 'compile' is set true
       if (loadedConfig.compile) {
         yield* Console.log(styleText('bold', 'Compiling addon.json...'));
@@ -487,16 +493,32 @@ export default function DevCommand({
                   'addon',
                   styleText(['green'], 'Recompiling ogi.config.js...\n')
                 );
-                // recompile on changes to ogi.config.js
-                const loadedConfig = yield* loadConfigurator(configuratorPath);
-                const compiler = new CompileAddonJSON(loadedConfig);
-                yield* compiler
-                  .compile(false)
-                  .pipe(
-                    Effect.andThen((s) =>
-                      fs.writeFileString(`${currentDir}/addon.json`, s)
+                // recompile on changes to ogi.config.js; a broken config
+                // mid-edit is reported and watching carries on
+                yield* loadConfigurator(configuratorPath).pipe(
+                  Effect.flatMap((loadedConfig) =>
+                    loadedConfig.compile
+                      ? new CompileAddonJSON(loadedConfig)
+                          .compile(false)
+                          .pipe(
+                            Effect.flatMap((s) =>
+                              fs.writeFileString(`${currentDir}/addon.json`, s)
+                            )
+                          )
+                      : Effect.void
+                  ),
+                  Effect.catchAll((error) =>
+                    Effect.sync(() =>
+                      views.write(
+                        'addon',
+                        styleText(
+                          ['red'],
+                          `Recompile failed: ${error.message}\n`
+                        )
+                      )
                     )
-                  );
+                  )
+                );
               }
             }
             controller.abort('changes staged');

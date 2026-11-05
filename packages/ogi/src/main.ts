@@ -171,13 +171,20 @@ const buildCommand = Command.make(
     return Effect.gen(function* () {
       yield* entranceMessage('build');
       const fs = yield* FileSystem.FileSystem;
-      if (!fs.exists(config)) {
+      if (!(yield* fs.exists(config))) {
         yield* Console.log(
           styleText(['red'], `Configuration file not found: ${config}`)
         );
         process.exit(1);
       }
-      let ogiConfig = yield* loadConfigurator(config);
+      // runMain doesn't report errors, so print why the config didn't load
+      const ogiConfig = yield* loadConfigurator(config).pipe(
+        Effect.catchAll((error) =>
+          Console.error(styleText(['red'], error.message)).pipe(
+            Effect.andThen(Effect.sync(() => process.exit(1)))
+          )
+        )
+      );
       const compiler = new CompileAddonJSON(ogiConfig);
       return yield* compiler.compile(allowedWriting).pipe(
         Effect.andThen((result) => fs.writeFileString('addon.json', result)),

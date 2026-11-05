@@ -12,6 +12,8 @@ const logger = createLogger(LOGGER_PREFIXES.executor);
 
 export const AddonFileConfigurationSchema = Schema.Struct({
   author: Schema.String,
+  /** Path to the addon's icon, relative to the addon. */
+  icon: Schema.optional(Schema.String),
   scripts: Schema.Struct({
     setup: Schema.optional(Schema.String),
     run: Schema.String,

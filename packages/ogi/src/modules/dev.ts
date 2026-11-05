@@ -1,28 +1,21 @@
 import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
-import { basename, dirname, join, relative, sep } from 'node:path';
+import { basename, join, relative, sep } from 'node:path';
 import { cwd } from 'node:process';
 import { styleText } from 'node:util';
 import { FileSystem } from '@effect/platform';
 import { PlatformError } from '@effect/platform/Error';
 import type { ReleaseChannel } from '@ogi/update-channel';
-import { Addon } from '@ogi-sdk/executor';
+import { Addon, type AddonFileConfiguration } from '@ogi-sdk/executor';
 import { Console, Deferred, Duration, Effect, Exit, Fiber } from 'effect';
 import { Scope } from 'effect/Scope';
-import { loadConfigurator } from '../configure';
+import { CompileAddonJSON } from 'src/config/compile';
+import { loadConfigurator } from '../config/configure';
 import OgiMaker from '../lib';
 import { LaunchTool } from './launch';
 import { LogViews } from './log-views';
 
-type AddonJson = {
-  scripts?: {
-    preSetup?: string;
-    postSetup?: string;
-    setup?: string;
-    run: string;
-  };
-};
 export default function DevCommand({
   securityKey,
   port,
@@ -48,13 +41,6 @@ export default function DevCommand({
     const fs = yield* FileSystem.FileSystem;
     const currentDir = cwd();
 
-    // check first if the addon.json file exists
-    const addonJsonPath = `${currentDir}/addon.json`;
-    if (!(yield* fs.exists(addonJsonPath))) {
-      yield* Console.error('Missing addon.json for addon entrypoint.');
-      process.exit(1);
-    }
-
     const packageJsonPath = `${currentDir}/package.json`;
     const packageJsonContent = yield* fs.readFileString(packageJsonPath);
     const packageJson = yield* Effect.try({
@@ -71,26 +57,15 @@ export default function DevCommand({
       process.exit(1);
     }
 
-    const addonJsonContent = yield* fs.readFileString(addonJsonPath);
-    const addonJson = yield* Effect.try({
-      try: () => JSON.parse(addonJsonContent) as AddonJson,
-      catch: (error) => String(error),
-    }).pipe(
-      Effect.catchAll((error) =>
-        Console.error('Failed to parse addon.json:', error).pipe(
-          Effect.as(undefined)
+    // validated against the executor's schema, so scripts.run is guaranteed
+    const addonJson: AddonFileConfiguration =
+      yield* Addon.Setup.loadAddonConfig(currentDir).pipe(
+        Effect.catchAll((error) =>
+          Console.error(error.message).pipe(
+            Effect.andThen(Effect.sync(() => process.exit(1)))
+          )
         )
-      )
-    );
-    if (addonJson === undefined) {
-      process.exit(1);
-    }
-
-    const run = addonJson.scripts?.run;
-    if (!run) {
-      yield* Console.error('addon.json is missing scripts.run.');
-      process.exit(1);
-    }
+      );
 
     // check if a configurator for builds with dev exists
     const configuratorPath = `${currentDir}/ogi.config.js`;
@@ -101,6 +76,11 @@ export default function DevCommand({
     };
     if (yield* fs.exists(configuratorPath)) {
       let loadedConfig = yield* loadConfigurator(configuratorPath);
+      // compile with compiler first if 'compile' is set true
+      if (loadedConfig.compile) {
+        const compiler = new CompileAddonJSON(loadedConfig);
+        yield* compiler.compile(false);
+      }
       if (loadedConfig.addons) {
         extraInfo.addons = loadedConfig.addons;
       }
@@ -110,16 +90,14 @@ export default function DevCommand({
     }
 
     const secret: string = securityKey || 'f';
-    // get the dirname to dictate name
-    const addonName = packageJson.name || dirname(currentDir);
+    // get name of the parent directory for the addon
+    const addonName = packageJson.name || basename(currentDir);
     const addon = new Addon({
       port,
       secret,
       name: addonName,
       path: currentDir,
-      scripts: {
-        run,
-      },
+      scripts: addonJson.scripts,
     });
 
     // pre-requisites get their own view so they don't bury the addon's logs
@@ -274,8 +252,8 @@ export default function DevCommand({
         if (!child)
           return yield* Effect.fail(new Error('Missing child process'));
 
-        aborter.signal.addEventListener('abort', (a) => {
-          child.kill();
+        aborter.signal.addEventListener('abort', () => {
+          Addon.killProcessGroup(child);
           server.emit('notification', {
             message: 'Restarting Addon...',
             id: 'restart-addon-hmr',
@@ -448,6 +426,23 @@ export default function DevCommand({
                   ticker + ' ' + str
                 ) + '\n'
               );
+
+              if (str === 'ogi.config.js') {
+                views.write(
+                  'addon',
+                  styleText(['green'], 'Recompiling ogi.config.js...\n')
+                );
+                // recompile on changes to ogi.config.js
+                const loadedConfig = yield* loadConfigurator(configuratorPath);
+                const compiler = new CompileAddonJSON(loadedConfig);
+                yield* compiler
+                  .compile(false)
+                  .pipe(
+                    Effect.andThen((s) =>
+                      fs.writeFileString(`${currentDir}/addon.json`, s)
+                    )
+                  );
+              }
             }
             controller.abort('changes staged');
           }

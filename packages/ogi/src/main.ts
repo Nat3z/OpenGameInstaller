@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 import { styleText } from 'node:util';
 import { Args, Command, Options } from '@effect/cli';
+import { FileSystem } from '@effect/platform';
 import { NodeContext, NodeRuntime } from '@effect/platform-node';
 import { Console, Effect, Option } from 'effect';
 import { version } from '../package.json';
+import { CompileAddonJSON } from './config/compile';
+import { loadConfigurator } from './config/configure';
 import OgiMaker from './lib';
 import dev from './modules/dev';
 import { LaunchTool } from './modules/launch';
+import run from './modules/run';
 
 const port = Options.integer('port').pipe(Options.withDefault(7654));
 const enforceSecurity = Options.boolean('enforce-security');
@@ -116,16 +120,94 @@ const launch = Command.make(
     )
 );
 
+// ogi run <script>
+const runCommand = Command.make(
+  'run',
+  {
+    script: Args.text({ name: 'script' }).pipe(
+      Args.withDescription('The script to run')
+    ),
+    // anything after `--`, e.g. the --addonPort/--addonSecret the app appends
+    args: Args.text({ name: 'args' }).pipe(
+      Args.withDescription('Arguments forwarded to the script'),
+      Args.repeated
+    ),
+  },
+  ({ script, args }) =>
+    Effect.gen(function* () {
+      yield* entranceMessage('run');
+      yield* run({ script, args }).pipe(
+        Effect.andThen(() => {
+          process.exit(0);
+        }),
+        Effect.catchAll((error) => {
+          process.exitCode = 1;
+          console.error(styleText(['red'], (error as unknown as Error).stack!));
+          return Effect.void;
+        })
+      );
+    })
+);
+
+// ogi build
+const buildCommand = Command.make(
+  'build',
+  {
+    config: Options.file('config').pipe(
+      Options.withDefault('ogi.config.js'),
+      Options.withDescription(
+        'The build configuration file (defaults to ogi.config.js)'
+      )
+    ),
+    allowedWriting: Options.boolean('write').pipe(
+      Options.withDefault(false),
+      Options.withDescription(
+        'Allow writing to other files than the output addon.json'
+      ),
+      Options.withAlias('w')
+    ),
+  },
+  ({ config, allowedWriting }) => {
+    return Effect.gen(function* () {
+      yield* entranceMessage('build');
+      const fs = yield* FileSystem.FileSystem;
+      if (!fs.exists(config)) {
+        yield* Console.log(
+          styleText(['red'], `Configuration file not found: ${config}`)
+        );
+        process.exit(1);
+      }
+      let ogiConfig = yield* loadConfigurator(config);
+      const compiler = new CompileAddonJSON(ogiConfig);
+      return yield* compiler.compile(allowedWriting).pipe(
+        Effect.andThen((result) => fs.writeFileString('addon.json', result)),
+        Effect.catchAll((error) =>
+          Console.error(styleText(['red'], error.stack!)).pipe(
+            Effect.andThen(() => process.exit(1))
+          )
+        )
+      );
+    });
+  }
+);
+
 const server = Command.make('server').pipe(
   Command.withSubcommands([serverStart])
 );
 const ogi = Command.make('ogi').pipe(
   // ogi dev, ogi server start, ogi start, ogi launch
-  Command.withSubcommands([server, devStart, serverStart, launch])
+  Command.withSubcommands([
+    server,
+    devStart,
+    serverStart,
+    launch,
+    runCommand,
+    buildCommand,
+  ])
 );
 
 Command.run(ogi, { name: 'ogi', version })(process.argv).pipe(
   Effect.provide(NodeContext.layer),
   // @ogi-sdk/logger already prints logs, so skip effect's pretty logger
-  NodeRuntime.runMain({ disablePrettyLogger: true })
+  NodeRuntime.runMain({ disableErrorReporting: true })
 );

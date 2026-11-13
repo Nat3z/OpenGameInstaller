@@ -52,6 +52,12 @@ export type LibraryShape = {
   /** Report a running game's lifecycle to subscribers. */
   readonly notifyLaunched: (appID: number) => Effect.Effect<void>;
   readonly notifyExited: (appID: number) => Effect.Effect<void>;
+  /** Live changes only, from now on. Needs no database read. */
+  readonly changes: Effect.Effect<
+    Stream.Stream<LibraryChange>,
+    never,
+    Scope.Scope
+  >;
   /**
    * Snapshot then live changes. Subscribes before reading, so nothing that
    * happens between the read and the first update is lost.
@@ -113,6 +119,7 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
           ),
         notifyLaunched: (appID) => publish({ _tag: 'Launched', appID }),
         notifyExited: (appID) => publish({ _tag: 'Exited', appID }),
+        changes: PubSub.subscribe(changes).pipe(Effect.map(Stream.fromQueue)),
         watch: Effect.gen(function* () {
           const subscription = yield* PubSub.subscribe(changes);
           const snapshot = yield* store.list;

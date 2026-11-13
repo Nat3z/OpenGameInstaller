@@ -3,7 +3,7 @@ import { OGIClient } from '@ogi-sdk/client-kit';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { ProtocolError } from '@ogi-sdk/protocol';
 import { Effect, Exit, Layer, ManagedRuntime, Scope } from 'effect';
-import { EventsHandlers, EventsLive } from '../events/events';
+import { Events, EventsHandlers, EventsLive } from '../events/events';
 import { LibraryHandlers } from '../library/handlers';
 import { Library, LibraryLive, LibraryStore } from '../library/library';
 import { OGIServer } from './server';
@@ -142,6 +142,31 @@ describe('OGIServer <-> OGIClient', () => {
     );
     await changeSeen.promise;
     expect(events).toEqual(['snapshot:1', 'Saved', 'Removed']);
+    stop();
+    await client.close();
+  });
+
+  test('events.watch delivers published events in order', async () => {
+    const client = await OGIClient.connect({ url, token: TOKEN });
+    const seen: string[] = [];
+    const subscribed = Promise.withResolvers<void>();
+    const done = Promise.withResolvers<void>();
+    const stop = client.events.watch((event) => {
+      if (event._tag === 'Snapshot') return subscribed.resolve();
+      seen.push(event.value._tag);
+      if (seen.length === 2) done.resolve();
+    });
+    await subscribed.promise;
+    await runtime.runPromise(
+      Effect.flatMap(Events, (events) =>
+        Effect.andThen(
+          events.publish({ _tag: 'AddonsStarted' }),
+          events.publish({ _tag: 'ShowChangelog', version: '5.0.0' })
+        )
+      )
+    );
+    await done.promise;
+    expect(seen).toEqual(['AddonsStarted', 'ShowChangelog']);
     stop();
     await client.close();
   });

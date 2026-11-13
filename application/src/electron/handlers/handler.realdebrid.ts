@@ -11,6 +11,7 @@ import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
+import { emitDownload } from '@/electron/server/downloads-bridge.js';
 import { type AppServices, Settings } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
@@ -84,7 +85,7 @@ const downloadTorrent = (url: string, path: string) =>
     });
   });
 
-export default function handler(mainWindow: Electron.BrowserWindow) {
+export default function handler() {
   return router(
     procedure(ElectronRpc.realdebrid.setKey, (key: string) =>
       run(
@@ -153,7 +154,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         }).pipe(
           Effect.tapError((error) =>
             Effect.sync(() => {
-              mainWindow?.webContents?.send('ddl:download-error', {
+              emitDownload('ddl:download-error', {
                 id: Math.random().toString(36).slice(2),
                 error: formatError(error),
               });

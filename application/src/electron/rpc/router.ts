@@ -16,16 +16,17 @@ import { mergeRouters, procedure, router } from '@/electron/rpc/router-core.js';
 import { registerDownloadHandshakeHandlers } from '@/lib/download-handshake.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
-export function createElectronRouter(mainWindow: BrowserWindow) {
+/** `mainWindow` is null in `--headless`; only window controls depend on it. */
+export function createElectronRouter(mainWindow: BrowserWindow | null) {
   return mergeRouters(
     AppEventHandler(mainWindow),
     FSEventHandler(),
     SetupHandler(),
     StateHandler(),
-    RealdDebridHandler(mainWindow),
-    AllDebridHandler(mainWindow),
+    RealdDebridHandler(),
+    AllDebridHandler(),
     TorrentHandler(),
-    DirectDownloadHandler(mainWindow),
+    DirectDownloadHandler(),
     AddonManagerHandler(),
     OOBEHandler(),
     registerUmuHandlers(),

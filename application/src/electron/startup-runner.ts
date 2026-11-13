@@ -61,6 +61,7 @@ let splashTargetWindow: BrowserWindow | null = null;
  * @param subtext - Optional secondary text (e.g., download speed, file name)
  */
 function updateSplashStatus(text: string, subtext?: string) {
+  logger.sync.info(`[startup] ${text}${subtext ? ` (${subtext})` : ''}`);
   if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {
     splashTargetWindow.webContents.send('splash-status', text, subtext);
   }
@@ -118,7 +119,9 @@ export type StartupTasksResult = {
  * @param mainWindow - Optional. When provided, use this window for splash UI instead of creating a separate splash window.
  */
 export function runStartupTasks(
-  mainWindow?: BrowserWindow | null
+  mainWindow?: BrowserWindow | null,
+  /** False for `--headless`: progress goes to the log, not a splash window. */
+  showSplash = true
 ): Effect.Effect<StartupTasksResult, never, AppServices> {
   let shutdownPending = false;
 
@@ -126,6 +129,7 @@ export function runStartupTasks(
     Effect.gen(function* () {
       yield* Effect.acquireRelease(
         Effect.sync(() => {
+          if (!showSplash) return;
           if (mainWindow && !mainWindow.isDestroyed()) {
             splashTargetWindow = mainWindow;
           } else {

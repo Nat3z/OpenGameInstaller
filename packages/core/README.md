@@ -211,11 +211,28 @@ to `OGIClient`. Addon install/update/remove (`executor`,
 `checkForAddonUpdates`) stays in the host for now, since no client needs it
 over the protocol yet.
 
-### headless
+### Done: headless
 
-`application/` gains `--headless`: no window, same host. A bun host
-(`hosts/bun/`) becomes possible once the sqlite adapter has a `bun:sqlite`
-version.
+`electron . --headless` runs the whole backend with no window: startup tasks
+(logged instead of a splash), the addon server, addons, and the `/client`
+socket. A Deck UI, CLI, or script drives it with `OGIClient` using
+`client.json`. SIGTERM / SIGINT quit it cleanly through the usual shutdown.
+
+To get there, nothing below the window needs one anymore: the direct-download,
+torrent, and debrid routers dropped `mainWindow`, and direct downloads shut down
+from app quit instead of from the window's `closed` event.
+
+### Next: pipeline
+
+See the downloads section above: `DownloadSource` adapters plus the setup
+pipeline implement `downloads.enqueue`. After that, the renderer can move to
+`OGIClient`, and the IPC bridges (events, prompts, downloads) get deleted.
+
+### Later: a bun host
+
+A host without Electron needs a `bun:sqlite` `LibraryStore` and replacements for
+the few Electron APIs still used in startup (`app.getAppPath`, dialogs). Core
+itself is already runtime-agnostic.
 
 ## Migration map
 

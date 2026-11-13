@@ -3,6 +3,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AddonServer } from '@ogi-sdk/addon-server';
 import {
+  AddonsHandlers,
   DownloadsHandlers,
   EventsHandlers,
   fromWs,
@@ -17,6 +18,7 @@ import { Effect, Exit, Layer, Scope } from 'effect';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import { port } from '@/electron/server/addon-server.js';
+import { AddonsFromAddonServer } from '@/electron/server/addons-adapter.js';
 import { DownloadControlFromEngines } from '@/electron/server/downloads-bridge.js';
 import {
   GameRunnerFromLibrary,
@@ -64,9 +66,11 @@ export const startClientServer = (addonServer: AddonServer): Promise<void> =>
           EventsHandlers,
           PromptsHandlers,
           DownloadsHandlers,
+          AddonsHandlers,
         ],
       }).pipe(
         Effect.provide(launcher),
+        Effect.provide(AddonsFromAddonServer),
         Effect.provide(DownloadControlFromEngines),
         Scope.extend(serverScope)
       );

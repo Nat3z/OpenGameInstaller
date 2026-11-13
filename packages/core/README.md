@@ -198,11 +198,18 @@ download completes. Moving it implements `downloads.enqueue` / `retrySetup`:
 Then delete `DownloadStatusAndInfo` bookkeeping from the renderer and have it
 render `downloads.watch`.
 
-### addons
+### Done: addons
 
-Core starts proxying addon calls (`addons.*`) through the in-process addon
-server, so a frontend needs one socket. Move `executor` usage and
-`checkForAddonUpdates` here.
+`addons.list / search / gameDetails / catalog` are proxied through core, so a
+frontend needs one socket. The `Addons` adapter talks to the host's
+in-process addon server (`application/.../server/addons-adapter.ts`); core
+checks the addon is running and supports the event before forwarding, so a
+call fails fast instead of hanging.
+
+Still direct: the renderer keeps its own client-kit `Connection` until it moves
+to `OGIClient`. Addon install/update/remove (`executor`,
+`checkForAddonUpdates`) stays in the host for now, since no client needs it
+over the protocol yet.
 
 ### headless
 

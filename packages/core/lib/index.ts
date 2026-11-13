@@ -20,6 +20,14 @@ export {
   type StagedRemoval,
 } from './library/library';
 export * from './library/manifest';
+// Prompts
+export {
+  type PromptRequest,
+  Prompts,
+  PromptsHandlers,
+  PromptsLive,
+  type PromptsShape,
+} from './prompts/prompts';
 export {
   type CallHandler,
   type Handlers,

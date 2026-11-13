@@ -115,15 +115,24 @@ owns it, onto that group's `watch`, not onto `Events`:
 | `input-asked`                             | prompts    | `prompts.watch`         |
 | `splash-*`                                | stays      | host-only (splash UI)   |
 
-### prompts
+### Done: prompts
 
-Add a `Prompts` service: `open(prompt) -> Effect<Answer>` backed by a
-`Deferred` per prompt and a change feed for `prompts.watch`. First answer wins.
-Then move these onto it:
+`Prompts.ask(request)` waits for a human; every client sees it and the first
+`prompts.reply` wins. An interrupted ask closes the prompt for everyone.
 
-- `confirmSteamClose` in `handlers/handler.steam.ts` (`dialog.showMessageBox`)
-- `sendAskForInput` + `screenInputCallbacks` in `main.ts` (addon `input-asked`)
-- `RootPasswordGranter.svelte` (redistributables)
+- Steam close confirmation (`confirmSteamClose`) asks a `Confirm` prompt, so
+  `runSteamMutationWithConfirmation`, `addUmuGameToSteam`,
+  `addDeckGameToSteam`, `launchGameFromLibrary`, and the steam/library/redist
+  routers no longer take `mainWindow`
+- addon `input-asked` goes through `AddonServer({ askInput })` to an `Input`
+  prompt; `sendAskForInput`, `currentScreens`, and `screenInputCallbacks` are gone
+- `showPromptsInWindow` (`application/.../server/prompts-bridge.ts`) shows
+  prompts in the desktop UI: `Input` on the existing modal, `Confirm` as the
+  same native dialog. Deleted once the renderer uses `prompts.watch`.
+
+Not moved: the root password prompt. `app.grantRootPassword` was never
+implemented (it throws), so there is no flow to port yet. When one exists, add
+a `Secret` prompt.
 
 ### launch
 

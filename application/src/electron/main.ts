@@ -1,6 +1,5 @@
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import '@/electron/lib/source-maps.js';
-import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { formatError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
@@ -62,6 +61,7 @@ import {
   forwardEventsToRenderer,
   publishEvent,
 } from '@/electron/server/events-bridge.js';
+import { showPromptsInWindow } from '@/electron/server/prompts-bridge.js';
 import { Library } from '@/electron/services/index.js';
 import {
   checkForAddonUpdates,
@@ -261,37 +261,6 @@ export async function sendIPCMessage(channel: string, ...args: any[]) {
   mainWindow?.webContents.send(channel, ...args);
 }
 
-export let currentScreens = new Map<
-  string,
-  { [key: string]: string | boolean | number } | undefined
->();
-
-export let screenInputCallbacks = new Map<string, (result: any) => void>();
-
-export function sendAskForInput(
-  id: string,
-  config: ConfigurationFile,
-  name: string,
-  description: string,
-  callback: (result: any) => void
-) {
-  if (!mainWindow) {
-    logger.sync.error(
-      'Main window is not ready yet. Cannot send ask for input.'
-    );
-    return;
-  }
-  if (!mainWindow.webContents) {
-    logger.sync.error(
-      'Main window web contents is not ready yet. Cannot send ask for input.'
-    );
-    return;
-  }
-  mainWindow.webContents.send('input-asked', { id, config, name, description });
-  currentScreens.set(id, undefined);
-  screenInputCallbacks.set(id, callback);
-}
-
 /**
  * Single-window flow for Steam Deck / Game Mode: one BrowserWindow shows splash first, then the main app.
  * This avoids Steam focusing a separate splash window and leaving the main window black.
@@ -319,6 +288,7 @@ function registerClientReadyListener() {
     rendererEventReadiness.markReady();
   });
   forwardEventsToRenderer(sendIPCMessage);
+  showPromptsInWindow(() => mainWindow, sendIPCMessage);
 }
 
 async function ensureAddonServerRunning() {
@@ -684,7 +654,7 @@ async function handleRemoteLaunchRequest(
   }
 
   const launchResult = await runElectronEffect(
-    launchGameFromLibrary(payload.gameId, mainWindow, payload.launchEnv)
+    launchGameFromLibrary(payload.gameId, payload.launchEnv)
   );
 
   if (!launchResult.success) {

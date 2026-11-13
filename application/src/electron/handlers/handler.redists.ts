@@ -1,7 +1,6 @@
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { formatError, LibraryError, PlatformError } from '@ogi-sdk/errors';
 import { Effect } from 'effect';
-import { type BrowserWindow } from 'electron';
 import {
   addDeckGameToSteam,
   findSteamAppIdForGame,
@@ -18,11 +17,7 @@ import { runEffectBoundary } from '@/electron/runtime.js';
 import { Library } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
-const installRedistributables = (
-  mainWindow: BrowserWindow,
-  appID: number,
-  downloadId?: string
-) =>
+const installRedistributables = (appID: number, downloadId?: string) =>
   Effect.gen(function* () {
     const emitProgress = (progress: RedistributableInstallProgress): void => {
       sendIPCMessage('app:redistributable-progress', {
@@ -105,7 +100,7 @@ const installRedistributables = (
 
     const result = yield* installRedistributablesWithUmu(appID, emitProgress);
 
-    yield* Effect.forkDaemon(addDeckGameToSteam(mainWindow, appID));
+    yield* Effect.forkDaemon(addDeckGameToSteam(appID));
 
     // Redistributable failures are non-fatal: each failure already emitted
     // progress + a warning notification, and the game itself is installed.
@@ -117,13 +112,13 @@ const installRedistributables = (
     return result;
   });
 
-export function registerRedistributableHandlers(mainWindow: BrowserWindow) {
+export function registerRedistributableHandlers() {
   return router(
     ipcProcedure(
       ElectronRpc.app.installRedistributables,
       (_, appID: number, downloadId?: string) =>
         runEffectBoundary(
-          installRedistributables(mainWindow, appID, downloadId).pipe(
+          installRedistributables(appID, downloadId).pipe(
             Effect.catchTags({
               DatabaseError: () => Effect.succeed('failed' as const),
               PlatformError: () => Effect.succeed('failed' as const),

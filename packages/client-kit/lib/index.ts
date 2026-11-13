@@ -8,5 +8,6 @@ export type {
   EffectAddonProxy,
 } from './_generated/addon-proxy';
 export * from './connection';
+export * from './ogi-client';
 export * from './promise';
 export * from './types';

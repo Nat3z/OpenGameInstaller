@@ -24,7 +24,7 @@ export function createElectronRouter(mainWindow: BrowserWindow) {
     StateHandler(),
     RealdDebridHandler(mainWindow),
     AllDebridHandler(mainWindow),
-    TorrentHandler(mainWindow),
+    TorrentHandler(),
     DirectDownloadHandler(mainWindow),
     AddonManagerHandler(),
     OOBEHandler(),

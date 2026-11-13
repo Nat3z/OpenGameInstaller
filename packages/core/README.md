@@ -160,20 +160,43 @@ their own launch + hooks for desktop launches. They switch to `library.launch`
 when the renderer moves to `OGIClient`. The Steam `--game-id` flow in `main.ts`
 also keeps its own hooks, because the wrapper command runs between them.
 
-### downloads
+### Done: download state
 
-The largest pass. It moves the renderer's orchestration into core:
+Core owns what every client sees about downloads; engines no longer hold a
+window.
 
-- `frontend/lib/downloads/services/*` -> `DownloadSource` adapters
-- `frontend/lib/downloads/{lifecycle,persistence,restart,pause-resume}.ts`
-  -> `lib/downloads/queue.ts` + persistence through a `DownloadStore` adapter
-- `frontend/lib/setup/*` + `DownloadManager.svelte` completion handler
-  -> `lib/setup/pipeline.ts`
-- `frontend/lib/recovery/failedSetups.ts` -> `downloads.retrySetup`
-- `frontend/lib/downloads/sleep-lock.ts` -> `SleepLock` adapter
-- `electron/handlers/handler.{ddl,torrent,realdebrid,alldebrid}.ts`
+```
+engine (ddl / torrent / setup / redist / addon card)
+  └─ emitDownload(channel, data)          application/.../downloads-bridge.ts
+       ├─ toPatch → Downloads.report/remove/log   (core: downloads.watch, logs)
+       └─ sendIPCMessage(channel, data)           (renderer, unchanged)
+```
 
-Then implement every method in the `downloads` group.
+- `Downloads` merges partial reports, so each source sends only what it
+  knows (engines: progress; the addon card: name/appID; setup: status).
+- `downloads.pause/resume/cancel` go through the `DownloadControl` adapter,
+  which finds the engine that owns the id (or the queue, if it hasn't started).
+- `Download` / `TorrentDownload` constructors and the ddl/torrent routers no
+  longer take `mainWindow`.
+
+### Next: pipeline
+
+What's left in the renderer is the orchestration: picking a source (direct,
+torrent, RD/AD/Torbox/Premiumize), creating the card, and running setup when a
+download completes. Moving it implements `downloads.enqueue` / `retrySetup`:
+
+- `frontend/lib/downloads/services/*` → core `DownloadSource` adapters (one per
+  service). Debrid clients already live in `packages/real-debrid` and
+  `packages/all-debrid`; Torbox/Premiumize need small HTTP clients.
+- `DownloadManager.svelte` completion handler + `frontend/lib/setup/*` →
+  `core/setup/pipeline.ts` (extract → addon `setup` → `Library.save` → Steam)
+- `frontend/lib/downloads/{persistence,restart}.ts` +
+  `frontend/lib/recovery/failedSetups.ts` → core, persisted through a
+  `DownloadStore` adapter (the app already has `database.downloads`)
+- `frontend/lib/downloads/sleep-lock.ts` → `SleepLock` adapter
+
+Then delete `DownloadStatusAndInfo` bookkeeping from the renderer and have it
+render `downloads.watch`.
 
 ### addons
 

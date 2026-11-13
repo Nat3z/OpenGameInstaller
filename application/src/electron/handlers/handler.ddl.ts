@@ -22,7 +22,6 @@ import {
   Scope,
   Stream,
 } from 'effect';
-import { BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import { rm as rmAsync } from 'fs/promises';
 import * as http from 'http';
@@ -3000,8 +2999,15 @@ export const DownloadServiceLive: Layer.Layer<DownloadService> = Layer.scoped(
   )
 );
 
-export default function handler(mainWindow: BrowserWindow) {
+let activeService: DownloadServiceShape | undefined;
+
+/** Stops every direct download; called once on app quit. */
+export const shutdownDirectDownloads = (): Effect.Effect<void> =>
+  activeService?.shutdown ?? Effect.void;
+
+export default function handler() {
   const service = Effect.runSync(makeDownloadService());
+  activeService = service;
   setAddonDownloadContext(service);
   registerDownloadEngine({
     pause: service.pause,
@@ -3013,10 +3019,6 @@ export default function handler(mainWindow: BrowserWindow) {
   const layer = Layer.succeed(DownloadService, service);
   const run = <A, E>(effect: Effect.Effect<A, E, DownloadService | Settings>) =>
     runServiceBoundary(effect.pipe(Effect.provide(layer)));
-
-  mainWindow.once('closed', () => {
-    void runEffectBoundary(service.shutdown);
-  });
 
   return router(
     procedure(ElectronRpc.ddl.download, (jobs: DownloadJob[], part?: number) =>

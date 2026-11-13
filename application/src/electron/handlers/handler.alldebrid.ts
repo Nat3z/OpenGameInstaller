@@ -83,7 +83,7 @@ const downloadTorrent = (url: string, path: string) =>
 const run = <A, E>(effect: Effect.Effect<A, E, AppServices>, message: string) =>
   runEffectBoundary(notifyFailure(effect, message));
 
-export default function handler(_mainWindow: Electron.BrowserWindow) {
+export default function handler() {
   return router(
     procedure(ElectronRpc.alldebrid.setKey, (key: string) =>
       run(

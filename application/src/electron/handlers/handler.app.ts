@@ -93,7 +93,7 @@ const updateChannelEffect = <A>(
     catch: (cause) => new UpdateError({ message: formatError(cause), cause }),
   });
 
-export default function handler(mainWindow: Electron.BrowserWindow) {
+export default function handler(mainWindow: Electron.BrowserWindow | null) {
   const appRouter = router(
     procedure(ElectronRpc.app.close, () => {
       setQuitHold(false);

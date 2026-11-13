@@ -1,0 +1,59 @@
+{
+  "name": "@ogi-sdk/core",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "The OpenGameInstaller engine: protocol server, library, and (over time) the download, setup, and launch pipeline. Hosts plug in adapters and mount it on a socket.",
+  "license": "MIT",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/core"
+  },
+  "module": "./build/index.mjs",
+  "main": "./build/index.cjs",
+  "types": "./build/index.d.mts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./build/index.d.mts",
+        "default": "./build/index.mjs"
+      },
+      "require": {
+        "types": "./build/index.d.cts",
+        "default": "./build/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsdown --config tsdown.config.js",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "release": "bun run build && npm publish --access public",
+    "release-beta": "bun run build && npm publish --access public --tag future"
+  },
+  "dependencies": {
+    "@ogi-sdk/connect": "^1.2.0",
+    "@ogi-sdk/errors": "^1.1.0",
+    "@ogi-sdk/logger": "^1.0.0",
+    "@ogi-sdk/protocol": "^0.1.0",
+    "effect": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsdown": "^0.21.10",
+    "@ogi-sdk/client-kit": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

@@ -5,15 +5,15 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import { LibraryEntry } from '@ogi-sdk/protocol';
 import { Deferred, Effect, Queue, Schema } from 'effect';
-import { LibraryInfoSchema } from 'ogi-addon';
 import {
   filesystemRoot,
   normalizeDeletePath,
   sharesDirectoryWithOtherGames,
-} from '@/electron/lib/delete-guards.js';
+} from './delete-guards';
 
-const logger = createLogger(LOGGER_PREFIXES.electron);
+const logger = createLogger(LOGGER_PREFIXES.core);
 
 /**
  * Every installed game keeps a copy of its library entry in its folder so the
@@ -33,7 +33,7 @@ const SKIPPED_DIRS = new Set(['old_files', 'node_modules']);
 
 const ManifestSchema = Schema.Struct({
   version: Schema.Literal(1),
-  game: LibraryInfoSchema,
+  game: LibraryEntry,
 });
 
 export type FoundManifest = { path: string; game: LibraryInfo };

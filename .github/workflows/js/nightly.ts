@@ -25,8 +25,10 @@ const packageDirectories = [
   'errors',
   'logger',
   'connection',
+  'protocol',
   'ogi-addon',
   'addon-server',
+  'core',
   'client-kit',
   'executor',
 ].map((name) => `packages/${name}`);

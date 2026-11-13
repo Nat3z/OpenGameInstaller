@@ -1,0 +1,54 @@
+{
+  "name": "@ogi-sdk/protocol",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Client protocol for OpenGameInstaller: schemas, wire envelope, and method groups shared by every frontend and backend.",
+  "license": "MIT",
+  "author": {
+    "name": "Nat3z",
+    "email": "me@nat3z.com",
+    "url": "https://nat3z.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nat3z/OpenGameInstaller",
+    "directory": "packages/protocol"
+  },
+  "module": "./build/index.mjs",
+  "main": "./build/index.cjs",
+  "types": "./build/index.d.mts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./build/index.d.mts",
+        "default": "./build/index.mjs"
+      },
+      "require": {
+        "types": "./build/index.d.cts",
+        "default": "./build/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsdown --config tsdown.config.js",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "release": "bun run build && npm publish --access public",
+    "release-beta": "bun run build && npm publish --access public --tag future"
+  },
+  "dependencies": {
+    "effect": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsdown": "^0.21.10"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

@@ -86,7 +86,10 @@ runDetached(
 );
 
 document.addEventListener('game:exit', async (event: Event) => {
-  const appID = (event as CustomEvent).detail.id;
+  const { id: appID, managed } = (event as CustomEvent).detail as {
+    id: number;
+    managed?: boolean;
+  };
   const isShortcutLaunch = isShortcutLaunchForGame(appID);
   gamesExiting.update((games) => new Set(games).add(appID));
 
@@ -103,7 +106,10 @@ document.addEventListener('game:exit', async (event: Event) => {
       return;
     }
 
-    await runFrontendEffect(runLaunchAppAddons(libraryInfo, 'post'));
+    // Core already runs post hooks for sessions started by `library.launch`.
+    if (!managed) {
+      await runFrontendEffect(runLaunchAppAddons(libraryInfo, 'post'));
+    }
   } catch (error) {
     logger.sync.error(error);
   } finally {

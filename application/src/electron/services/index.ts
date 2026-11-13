@@ -1,4 +1,4 @@
-import { Events, EventsLive } from '@ogi-sdk/core';
+import { Events, EventsLive, Prompts, PromptsLive } from '@ogi-sdk/core';
 import { Layer } from 'effect';
 import {
   type Database,
@@ -12,7 +12,7 @@ import {
 } from '@/electron/services/library.js';
 import { type Settings, SettingsLive } from '@/electron/services/settings.js';
 
-export { Events } from '@ogi-sdk/core';
+export { Events, Prompts } from '@ogi-sdk/core';
 export {
   Database,
   DatabaseTest,
@@ -22,11 +22,12 @@ export { Library, LibraryLive } from '@/electron/services/library.js';
 export { Settings, SettingsLive } from '@/electron/services/settings.js';
 
 /** Everything the main process runtime provides to application effects. */
-export type AppServices = Database | Settings | Library | Events;
+export type AppServices = Database | Settings | Library | Events | Prompts;
 
 export const AppServicesLive: Layer.Layer<AppServices> = Layer.mergeAll(
   DatabaseLive,
   EventsLive,
+  PromptsLive,
   SettingsLive.pipe(Layer.provide(DatabaseLive)),
   LibraryLive.pipe(
     Layer.provide(LibraryStoreFromDatabase),
@@ -42,6 +43,7 @@ export const AppServicesTest = (
   return Layer.mergeAll(
     databaseLayer,
     EventsLive,
+    PromptsLive,
     SettingsLive.pipe(Layer.provide(databaseLayer)),
     LibraryLive.pipe(
       Layer.provide(LibraryStoreFromDatabase),

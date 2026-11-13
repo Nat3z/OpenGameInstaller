@@ -3,7 +3,9 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
 import { getDatabase } from '@/electron/database/index.js';
 import { parseLaunchHookArgs } from '@/electron/lib/single-instance-launch.js';
+import { runElectronEffect } from '@/electron/runtime.js';
 import { attachAddonDownloadBridge } from '@/electron/server/addon-downloads.js';
+import { Prompts } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -44,6 +46,17 @@ const createAddonServer = (secret?: string): AddonServer => {
     port,
     securityCheck: securityCheckEnabled,
     secret,
+    // Addon input goes through core Prompts, so any client can answer it.
+    askInput: (title, description, config) =>
+      Effect.promise(() =>
+        runElectronEffect(
+          Effect.flatMap(Prompts, (prompts) =>
+            prompts.ask({ _tag: 'Input', title, description, config })
+          )
+        )
+      ).pipe(
+        Effect.map((answer) => (answer._tag === 'Input' ? answer.values : {}))
+      ),
   });
   for (const [path, handler] of upgradeRoutes)
     instance.routeUpgrade(path, handler);

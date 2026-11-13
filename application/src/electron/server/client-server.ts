@@ -6,6 +6,7 @@ import {
   fromWs,
   LibraryHandlers,
   OGIServer,
+  PromptsHandlers,
 } from '@ogi-sdk/core';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Exit, Scope } from 'effect';
@@ -39,7 +40,7 @@ export const startClientServer = (): Promise<void> =>
       scope = serverScope;
       const server = yield* OGIServer.make({
         token,
-        implementations: [LibraryHandlers, EventsHandlers],
+        implementations: [LibraryHandlers, EventsHandlers, PromptsHandlers],
       }).pipe(Scope.extend(serverScope));
       routeUpgrade(CLIENT_PATH, (ws) => server.serve(fromWs(ws)));
       const file = join(dataDirectory, CLIENT_FILE);

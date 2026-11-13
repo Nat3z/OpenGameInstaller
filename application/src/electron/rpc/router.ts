@@ -26,7 +26,7 @@ export function createElectronRouter(mainWindow: BrowserWindow) {
     AllDebridHandler(mainWindow),
     TorrentHandler(mainWindow),
     DirectDownloadHandler(mainWindow),
-    AddonManagerHandler(mainWindow),
+    AddonManagerHandler(),
     OOBEHandler(),
     registerUmuHandlers(),
     registerPowerSaveHandlers(),

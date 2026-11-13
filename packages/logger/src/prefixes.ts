@@ -4,6 +4,7 @@ export const LOGGER_PREFIXES = {
   updater: 'updater',
   addonServer: 'addon-server',
   clientKit: 'client-kit',
+  core: 'core',
   connection: 'connection',
   errors: 'errors',
   executor: 'executor',

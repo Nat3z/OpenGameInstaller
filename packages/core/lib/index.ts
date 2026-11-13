@@ -1,5 +1,7 @@
 // Server
 
+// Addons
+export { Addons, AddonsHandlers, type AddonsShape } from './addons/addons';
 // Downloads
 export {
   DownloadControl,

@@ -4,15 +4,22 @@ import { join } from 'node:path';
 import {
   EventsHandlers,
   fromWs,
+  LaunchHandlers,
+  LaunchLive,
   LibraryHandlers,
   OGIServer,
   PromptsHandlers,
 } from '@ogi-sdk/core';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect, Exit, Scope } from 'effect';
+import { Effect, Exit, Layer, Scope } from 'effect';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import { port, routeUpgrade } from '@/electron/server/addon-server.js';
+import {
+  GameRunnerFromLibrary,
+  LaunchHooksFromAddonServer,
+} from '@/electron/server/launch-adapters.js';
+import { Library } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -38,10 +45,29 @@ export const startClientServer = (): Promise<void> =>
       const serverScope = yield* Scope.make();
       // Owned from the start, so a failure below still leaves it closable.
       scope = serverScope;
+      // The launcher lives with the server: its post-hook watcher stops when
+      // the protocol does.
+      const launcher = yield* Layer.buildWithScope(
+        LaunchLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(Library, yield* Library),
+              LaunchHooksFromAddonServer,
+              GameRunnerFromLibrary
+            )
+          )
+        ),
+        serverScope
+      );
       const server = yield* OGIServer.make({
         token,
-        implementations: [LibraryHandlers, EventsHandlers, PromptsHandlers],
-      }).pipe(Scope.extend(serverScope));
+        implementations: [
+          LibraryHandlers,
+          LaunchHandlers,
+          EventsHandlers,
+          PromptsHandlers,
+        ],
+      }).pipe(Effect.provide(launcher), Scope.extend(serverScope));
       routeUpgrade(CLIENT_PATH, (ws) => server.serve(fromWs(ws)));
       const file = join(dataDirectory, CLIENT_FILE);
       writeFileSync(

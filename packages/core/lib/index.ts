@@ -1,5 +1,15 @@
 // Server
 
+// Downloads
+export {
+  DownloadControl,
+  type DownloadControlShape,
+  type DownloadPatch,
+  Downloads,
+  DownloadsHandlers,
+  DownloadsLive,
+  type DownloadsShape,
+} from './downloads/downloads';
 // Events
 export {
   Events,

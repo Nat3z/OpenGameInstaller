@@ -37,8 +37,15 @@ import {
   removeQueueCancel,
 } from '@/electron/rpc/queue-cancel.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
-import { runEffectBoundary as runServiceBoundary } from '@/electron/runtime.js';
+import {
+  runElectronEffect,
+  runEffectBoundary as runServiceBoundary,
+} from '@/electron/runtime.js';
 import { setAddonDownloadContext } from '@/electron/server/addon-downloads.js';
+import {
+  emitDownload,
+  registerDownloadEngine,
+} from '@/electron/server/downloads-bridge.js';
 import { Settings } from '@/electron/services/index.js';
 import {
   clearDownloadHandshake,
@@ -295,7 +302,6 @@ export class Download {
     this.lifecycle.onStatusChange(newStatus);
   }
 
-  private mainWindow: BrowserWindow;
   private jobs: DownloadJob[];
   private totalParts: number;
   private currentPart: number = 0;
@@ -325,13 +331,11 @@ export class Download {
   private multiPartStartTime: number = 0;
 
   constructor(
-    mainWindow: BrowserWindow,
     jobs: DownloadJob[],
     startPart: number = 1,
     private readonly lifecycle: DownloadLifecycle = standaloneDownloadLifecycle
   ) {
     this.id = Math.random().toString(36).substring(7);
-    this.mainWindow = mainWindow;
     this.jobs = jobs;
     this.totalParts = jobs.length;
     this.currentPart = startPart || 1;
@@ -2780,9 +2784,7 @@ export class Download {
   }
 
   private sendIpc(channel: string, data: Record<string, unknown>) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data);
-    }
+    emitDownload(channel, data);
   }
 
   /**
@@ -2845,6 +2847,7 @@ export interface DownloadServiceShape {
     id: string
   ) => Effect.Effect<void, DownloadError | DownloadNotActive, Settings>;
   readonly abort: (id: string) => Effect.Effect<void, DownloadNotActive>;
+  readonly has: (id: string) => boolean;
   readonly statuses: Stream.Stream<
     ReadonlyArray<{ id: string; status: DownloadStatus }>
   >;
@@ -2856,9 +2859,7 @@ export class DownloadService extends Context.Tag('DownloadService')<
   DownloadServiceShape
 >() {}
 
-const makeDownloadService = (
-  mainWindow: BrowserWindow
-): Effect.Effect<DownloadServiceShape> =>
+const makeDownloadService = (): Effect.Effect<DownloadServiceShape> =>
   Effect.gen(function* () {
     const scope = yield* Scope.make();
     const activeDownloads = new Map<string, ActiveDownload>();
@@ -2889,7 +2890,7 @@ const makeDownloadService = (
               activeDownloads.delete(id);
             },
           };
-          const download = new Download(mainWindow, jobs, part, {
+          const download = new Download(jobs, part, {
             runEffect: baseLifecycle.runEffect,
             onStatusChange: (status) => {
               baseLifecycle.onStatusChange(status);
@@ -2975,6 +2976,7 @@ const makeDownloadService = (
           )
         );
       },
+      has: (id) => activeDownloads.has(id),
       statuses: Stream.repeatEffect(Effect.sync(snapshot)).pipe(
         Stream.schedule(Schedule.spaced('1 second'))
       ),
@@ -2991,19 +2993,23 @@ const makeDownloadService = (
     return service;
   });
 
-export const DownloadServiceLive = (
-  mainWindow: BrowserWindow
-): Layer.Layer<DownloadService> =>
-  Layer.scoped(
-    DownloadService,
-    makeDownloadService(mainWindow).pipe(
-      Effect.tap((service) => Effect.addFinalizer(() => service.shutdown))
-    )
-  );
+export const DownloadServiceLive: Layer.Layer<DownloadService> = Layer.scoped(
+  DownloadService,
+  makeDownloadService().pipe(
+    Effect.tap((service) => Effect.addFinalizer(() => service.shutdown))
+  )
+);
 
 export default function handler(mainWindow: BrowserWindow) {
-  const service = Effect.runSync(makeDownloadService(mainWindow));
-  setAddonDownloadContext(service, mainWindow);
+  const service = Effect.runSync(makeDownloadService());
+  setAddonDownloadContext(service);
+  registerDownloadEngine({
+    pause: service.pause,
+    // Resume re-reads chunk settings, so it runs on the app runtime.
+    resume: (id) => Effect.promise(() => runElectronEffect(service.resume(id))),
+    abort: service.abort,
+    has: (id) => service.has(id),
+  });
   const layer = Layer.succeed(DownloadService, service);
   const run = <A, E>(effect: Effect.Effect<A, E, DownloadService | Settings>) =>
     runServiceBoundary(effect.pipe(Effect.provide(layer)));

@@ -10,7 +10,6 @@ import type {
 import { formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Cause, Effect } from 'effect';
-import type { BrowserWindow } from 'electron';
 import type {
   DownloadJob,
   DownloadServiceShape,
@@ -18,6 +17,7 @@ import type {
 } from '@/electron/handlers/handler.ddl.js';
 import { cancelQueuedDownload } from '@/electron/rpc/queue-cancel.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
+import { emitDownload } from '@/electron/server/downloads-bridge.js';
 import { Library, Settings } from '@/electron/services/index.js';
 import { consumeDownloadReplayEvents } from '@/lib/download-handshake.js';
 
@@ -39,7 +39,6 @@ export type AddonDownloadCardPayload = {
 
 type AddonDownloadContext = {
   service: DownloadServiceShape;
-  mainWindow: BrowserWindow;
 };
 
 type PendingRequest = { disconnected: boolean };
@@ -47,11 +46,8 @@ type PendingRequest = { disconnected: boolean };
 let context: AddonDownloadContext | undefined;
 const ownedDownloads = new Map<string, Set<string>>();
 
-export function setAddonDownloadContext(
-  service: DownloadServiceShape,
-  mainWindow: BrowserWindow
-): void {
-  context = { service, mainWindow };
+export function setAddonDownloadContext(service: DownloadServiceShape): void {
+  context = { service };
 }
 
 function sanitizePathSegment(segment: string): string {
@@ -194,9 +190,9 @@ function handleDownloadRequest(
   let cardAnnounced = false;
   const drainReplayEvents = (id: string, forward: boolean): void => {
     const events = consumeDownloadReplayEvents(id);
-    if (!forward || activeContext.mainWindow.isDestroyed()) return;
+    if (!forward) return;
     for (const event of events) {
-      activeContext.mainWindow.webContents.send(event.channel, event.data);
+      emitDownload(event.channel, event.data as Record<string, unknown>);
     }
   };
   const sendDedupedStatus = (
@@ -331,12 +327,7 @@ function handleDownloadRequest(
       queuePosition: handshake.queuePosition,
       totalParts: jobs.length,
     };
-    if (!activeContext.mainWindow.isDestroyed()) {
-      activeContext.mainWindow.webContents.send(
-        'ddl:addon-download-created',
-        payload
-      );
-    }
+    emitDownload('ddl:addon-download-created', payload);
     cardAnnounced = true;
     drainReplayEvents(handshake.id, true);
     yield* replyWith(reply, {

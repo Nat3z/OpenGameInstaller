@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  DownloadsHandlers,
   EventsHandlers,
   fromWs,
   Launcher,
@@ -16,6 +17,7 @@ import { Context, type Duration, Effect, Exit, Layer, Scope } from 'effect';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import { port, routeUpgrade } from '@/electron/server/addon-server.js';
+import { DownloadControlFromEngines } from '@/electron/server/downloads-bridge.js';
 import {
   GameRunnerFromLibrary,
   LaunchHooksFromAddonServer,
@@ -73,8 +75,13 @@ export const startClientServer = (): Promise<void> =>
           LaunchHandlers,
           EventsHandlers,
           PromptsHandlers,
+          DownloadsHandlers,
         ],
-      }).pipe(Effect.provide(launcher), Scope.extend(serverScope));
+      }).pipe(
+        Effect.provide(launcher),
+        Effect.provide(DownloadControlFromEngines),
+        Scope.extend(serverScope)
+      );
       routeUpgrade(CLIENT_PATH, (ws) => server.serve(fromWs(ws)));
       const file = join(dataDirectory, CLIENT_FILE);
       writeFileSync(

@@ -70,6 +70,14 @@ mock.module('@/electron/lib/online.js', () => ({
 mock.module('@/electron/main.js', () => ({
   sendNotification: mock(() => {}),
 }));
+// Engines emit through the downloads bridge; record what they send.
+const emitted: Array<{ channel: string; data: Record<string, unknown> }> = [];
+mock.module('@/electron/server/downloads-bridge.js', () => ({
+  emitDownload: (channel: string, data: Record<string, unknown>) => {
+    emitted.push({ channel, data });
+  },
+  registerDownloadEngine: () => {},
+}));
 // better-sqlite3 is an Electron-side N-API addon that aborts the bun process
 // when loaded, so opening the real database here must fail like a missing
 // driver instead.
@@ -158,11 +166,7 @@ describe('download resume coordination', () => {
       });
     });
 
-    const procedures = registerDdlHandler({
-      once: () => {},
-      isDestroyed: () => false,
-      webContents: { send: () => {} },
-    } as never);
+    const procedures = registerDdlHandler({ once: () => {} } as never);
     const getHandler = (
       rpc: (typeof ElectronRpc.ddl)[keyof typeof ElectronRpc.ddl]
     ) => procedures.find((procedure) => procedure.rpc === rpc)?.handler;
@@ -236,13 +240,7 @@ describe('OGI-Parallel-Limit response handling', () => {
       link: 'https://example.test/file',
       path: join(tmpdir(), 'unused-download.bin'),
     };
-    const download = new Download(
-      {
-        isDestroyed: () => false,
-        webContents: { send: () => {} },
-      } as never,
-      [job]
-    );
+    const download = new Download([job]);
     const abortController = new AbortController();
 
     const info = await Effect.runPromise(
@@ -270,13 +268,7 @@ describe('OGI-Parallel-Limit response handling', () => {
     testDirectories.push(directory);
     const path = join(directory, 'download.bin');
     const job = { link: 'https://example.test/file', path };
-    const download = new Download(
-      {
-        isDestroyed: () => false,
-        webContents: { send: () => {} },
-      } as never,
-      [job]
-    );
+    const download = new Download([job]);
     download.status = 'downloading';
 
     await Effect.runPromise(
@@ -306,13 +298,7 @@ describe('OGI-Parallel-Limit response handling', () => {
     testDirectories.push(directory);
     const path = join(directory, 'download.bin');
     const job = { link: 'https://example.test/file', path };
-    const download = new Download(
-      {
-        isDestroyed: () => false,
-        webContents: { send: () => {} },
-      } as never,
-      [job]
-    );
+    const download = new Download([job]);
     download.status = 'downloading';
 
     const result = await Effect.runPromise(
@@ -358,13 +344,7 @@ describe('OGI-Parallel-Limit response handling', () => {
     testDirectories.push(directory);
     const path = join(directory, 'download.bin');
     const job = { link: 'https://example.test/file', path };
-    const download = new Download(
-      {
-        isDestroyed: () => false,
-        webContents: { send: () => {} },
-      } as never,
-      [job]
-    );
+    const download = new Download([job]);
     const part = {
       index: 0,
       job,
@@ -428,13 +408,7 @@ describe('parallel chunk persistence', () => {
     writeFileSync(`${path}.chunk0`, 'partial');
     writeFileSync(`${path}.chunk1`, 'partial');
 
-    const download = new Download(
-      {
-        isDestroyed: () => false,
-        webContents: { send: () => {} },
-      } as never,
-      [job]
-    );
+    const download = new Download([job]);
     const internals = download as unknown as {
       parallelLimit?: number;
       downloadChunk(): Effect.Effect<void, DownloadAborted>;
@@ -460,18 +434,10 @@ describe('parallel chunk persistence', () => {
 
 describe('parallel chunk merging', () => {
   test('stops reporting download progress while chunks are merging', async () => {
-    const progressEvents: Array<Record<string, unknown>> = [];
-    const download = new Download(
-      {
-        isDestroyed: () => false,
-        webContents: {
-          send: (channel: string, data: Record<string, unknown>) => {
-            if (channel === 'ddl:download-progress') progressEvents.push(data);
-          },
-        },
-      } as never,
-      [{ link: 'https://example.test/file', path: 'download.bin' }]
-    );
+    emitted.length = 0;
+    const download = new Download([
+      { link: 'https://example.test/file', path: 'download.bin' },
+    ]);
     const internals = download as unknown as {
       useParallel: boolean;
       parallelTotalSize: number;
@@ -487,7 +453,9 @@ describe('parallel chunk merging', () => {
       Effect.race(internals.trackProgress(), Effect.sleep('550 millis'))
     );
 
-    expect(progressEvents).toEqual([]);
+    expect(
+      emitted.filter(({ channel }) => channel === 'ddl:download-progress')
+    ).toEqual([]);
   });
 
   test('waits for a part that is still merging before resolving', async () => {
@@ -498,13 +466,7 @@ describe('parallel chunk merging', () => {
       path: join(directory, 'download.bin'),
       headers: { 'OGI-Parallel-Limit': '1' },
     };
-    const download = new Download(
-      {
-        isDestroyed: () => false,
-        webContents: { send: () => {} },
-      } as never,
-      [job]
-    );
+    const download = new Download([job]);
     const part = {
       index: 0,
       job,
@@ -553,13 +515,7 @@ describe('parallel chunk merging', () => {
     writeFileSync(`${path}.chunk0`, 'too-long');
     writeFileSync(`${path}.chunk1`, 'def');
     const job = { link: 'https://example.test/file', path };
-    const download = new Download(
-      {
-        isDestroyed: () => false,
-        webContents: { send: () => {} },
-      } as never,
-      [job]
-    );
+    const download = new Download([job]);
     const part = {
       index: 0,
       job,

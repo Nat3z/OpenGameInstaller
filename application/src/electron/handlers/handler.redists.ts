@@ -13,18 +13,29 @@ import {
 import { isLinux } from '@/electron/handlers/helpers.app/platform.js';
 import { sendIPCMessage } from '@/electron/main.js';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
-import { runEffectBoundary } from '@/electron/runtime.js';
-import { Library } from '@/electron/services/index.js';
+import { runEffectBoundary, runElectronSync } from '@/electron/runtime.js';
+import { Downloads, Library } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const installRedistributables = (appID: number, downloadId?: string) =>
   Effect.gen(function* () {
     const emitProgress = (progress: RedistributableInstallProgress): void => {
-      sendIPCMessage('app:redistributable-progress', {
-        appID,
-        downloadId,
-        ...progress,
-      });
+      const payload = { appID, downloadId, ...progress };
+      void sendIPCMessage('app:redistributable-progress', payload);
+      if (!downloadId) return;
+      // Protocol clients see it as the download's status.
+      runElectronSync(
+        Effect.flatMap(Downloads, (downloads) =>
+          downloads.report(downloadId, {
+            status:
+              progress.kind === 'done'
+                ? 'completed'
+                : 'installing-redistributables',
+            progress: progress.overallProgress / 100,
+            speed: 0,
+          })
+        )
+      );
     };
     if (!isLinux()) {
       emitProgress({

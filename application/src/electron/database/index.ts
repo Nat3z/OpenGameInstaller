@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { isAbsolute, join, resolve } from 'node:path';
+import { isUnsafeDownloadLocation } from '@ogi-sdk/core';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import type BetterSqlite3 from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { app } from 'electron';
-import { isUnsafeDownloadLocation } from '@/electron/lib/delete-guards.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { AppDatabase } from './database.js';
 import { importLegacyState } from './legacy-import.js';

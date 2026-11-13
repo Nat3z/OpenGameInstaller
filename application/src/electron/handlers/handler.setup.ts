@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as fsAsync from 'node:fs/promises';
 import { join } from 'node:path';
+import { isProtectedDeletePath, isUnsafeDownloadLocation } from '@ogi-sdk/core';
 import {
   type DatabaseError,
   FileSystemError,
@@ -14,10 +15,6 @@ import {
   fsTryPromise,
   requireAbsolute,
 } from '@/electron/handlers/handler.fs.js';
-import {
-  isProtectedDeletePath,
-  isUnsafeDownloadLocation,
-} from '@/electron/lib/delete-guards.js';
 import {
   getPersistedFilePaths,
   sessionDownloadLocations,

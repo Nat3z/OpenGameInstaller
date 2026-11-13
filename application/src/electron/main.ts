@@ -42,6 +42,7 @@ import { createElectronRouter } from '@/electron/rpc/router.js';
 import { registerElectronRpcHandlers } from '@/electron/rpc/server.js';
 import {
   disposeElectronRuntime,
+  forkElectronEffect,
   runElectronEffect,
 } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
@@ -53,7 +54,11 @@ import {
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
-import { Library } from '@/electron/services/index.js';
+import {
+  startClientServer,
+  stopClientServer,
+} from '@/electron/server/client-server.js';
+import { Events, Library } from '@/electron/services/index.js';
 import {
   checkForAddonUpdates,
   IS_NIXOS,
@@ -222,6 +227,17 @@ interface Notification {
 }
 export function sendNotification(notification: Notification) {
   sendIPCMessage('notification', notification);
+  // Protocol clients get it too; the renderer still uses IPC until it moves.
+  forkElectronEffect(
+    Effect.flatMap(Events, (events) =>
+      events.publish({
+        _tag: 'Notification',
+        id: notification.id,
+        level: notification.type,
+        message: notification.message,
+      })
+    )
+  );
 }
 
 let clientReadyListenerRegistered = false;
@@ -327,7 +343,8 @@ async function ensureAddonServerRunning() {
 }
 
 async function startAddonRuntime() {
-  if (hookArgs && !hookArgs.noAddonServer) await ensureAddonServerRunning();
+  if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
+  if (isAddonServerListening) await startClientServer(getAddonServer());
   sendNotification({
     message: 'Addons Starting...',
     id: Math.random().toString(36).substring(7),
@@ -822,6 +839,7 @@ async function shutdown(): Promise<void> {
         yield* instance.stop().pipe(Effect.ignore);
       }
       for (const interval of torrentIntervals) clearInterval(interval);
+      stopClientServer();
       if (isAddonServerListening) yield* stopAddonServer();
       yield* Effect.sync(closeDatabase);
     }).pipe(

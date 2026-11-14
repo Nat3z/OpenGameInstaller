@@ -344,7 +344,7 @@ async function ensureAddonServerRunning() {
 
 async function startAddonRuntime() {
   if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
-  if (isAddonServerListening) await startClientServer(getAddonServer());
+  if (isAddonServerListening) await startClientServer();
   sendNotification({
     message: 'Addons Starting...',
     id: Math.random().toString(36).substring(7),

@@ -26,6 +26,17 @@ let securityCheckEnabled = true;
 /** Whether addons must present the shared secret. Defaults to on. */
 export const isSecurityCheckEnabled = (): boolean => securityCheckEnabled;
 
+type UpgradeHandler = Parameters<AddonServer['routeUpgrade']>[1];
+
+// Routes outlive the instance: restarts build a new server and remount them.
+const upgradeRoutes = new Map<string, UpgradeHandler>();
+
+/** Serves another WebSocket protocol on `path`, across addon server restarts. */
+export const routeUpgrade = (path: string, handler: UpgradeHandler): void => {
+  upgradeRoutes.set(path, handler);
+  getAddonServer().routeUpgrade(path, handler);
+};
+
 // The secret is minted once and carried across restarts so the URL the
 // window was loaded with keeps matching the listening server.
 const createAddonServer = (secret?: string): AddonServer => {
@@ -34,6 +45,8 @@ const createAddonServer = (secret?: string): AddonServer => {
     securityCheck: securityCheckEnabled,
     secret,
   });
+  for (const [path, handler] of upgradeRoutes)
+    instance.routeUpgrade(path, handler);
   instance.on('disconnect', (reason) => {
     instance.emit('notification', {
       type: 'error',

@@ -87,6 +87,8 @@ export class EffectOGIClient {
   readonly addons: GroupClient<Groups['addons']>;
 
   private nextId = 0;
+  /** Why the socket closed; set once, then every send fails. */
+  private closed: string | undefined;
   private readonly pending = new Map<number, Pending>();
 
   private constructor(
@@ -181,15 +183,16 @@ export class EffectOGIClient {
   ): Effect.Effect<unknown, ProtocolError> {
     return Effect.gen(this, function* () {
       const id = this.nextId++;
+      const encoded = yield* encodeParams(def.params, params);
       const deferred = yield* Deferred.make<unknown, ProtocolError>();
       this.pending.set(id, { kind: 'call', deferred });
-      yield* this.send({
+      const raw = yield* this.send({
         _tag: 'call',
         id,
         method,
-        params: yield* encodeParams(def.params, params),
-      });
-      const raw = yield* Deferred.await(deferred).pipe(
+        params: encoded,
+      }).pipe(
+        Effect.zipRight(Deferred.await(deferred)),
         Effect.ensuring(Effect.sync(() => this.pending.delete(id)))
       );
       return yield* decodePayload(def.result, raw);
@@ -233,6 +236,14 @@ export class EffectOGIClient {
   }
 
   private send(message: ClientMessage): Effect.Effect<void, ProtocolError> {
+    // Closed sockets drop sends silently, so a late call would wait forever.
+    if (this.closed !== undefined)
+      return Effect.fail(
+        new ProtocolError({
+          tag: ProtocolErrorTags.Disconnected,
+          message: this.closed,
+        })
+      );
     return Effect.try({
       try: () => this.socket.send(encodeClient(message)),
       catch: () =>
@@ -289,6 +300,7 @@ export class EffectOGIClient {
   }
 
   private failAll(reason: string): void {
+    this.closed ??= reason;
     const error = new ProtocolError({
       tag: ProtocolErrorTags.Disconnected,
       message: reason,

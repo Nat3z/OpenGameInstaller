@@ -218,6 +218,8 @@ export class AddonServer {
 
       if (this.wss) {
         const wss = this.wss;
+        // Routed sockets (e.g. /client) aren't in `connections`; close them too.
+        for (const ws of wss.clients) ws.close();
         yield* Effect.async<void, NetworkError>((resume) => {
           wss.close((error) =>
             resume(

@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AddonServer } from '@ogi-sdk/addon-server';
 import {
   EventsHandlers,
   fromWs,
@@ -12,7 +11,7 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Exit, Scope } from 'effect';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
-import { port } from '@/electron/server/addon-server.js';
+import { port, routeUpgrade } from '@/electron/server/addon-server.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -27,7 +26,7 @@ let scope: Scope.CloseableScope | undefined;
  * written to `client.json` (owner-only) on each start; any process that can
  * read the user's data directory can connect, nothing else can.
  */
-export const startClientServer = (addonServer: AddonServer): Promise<void> =>
+export const startClientServer = (): Promise<void> =>
   runElectronEffect(
     Effect.gen(function* () {
       const token = randomBytes(32).toString('hex');
@@ -36,7 +35,7 @@ export const startClientServer = (addonServer: AddonServer): Promise<void> =>
         token,
         implementations: [LibraryHandlers, EventsHandlers],
       }).pipe(Scope.extend(serverScope));
-      addonServer.routeUpgrade(CLIENT_PATH, (ws) => server.serve(fromWs(ws)));
+      routeUpgrade(CLIENT_PATH, (ws) => server.serve(fromWs(ws)));
       writeFileSync(
         join(dataDirectory, CLIENT_FILE),
         JSON.stringify({ url: `ws://127.0.0.1:${port}${CLIENT_PATH}`, token }),

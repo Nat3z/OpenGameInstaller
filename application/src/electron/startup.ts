@@ -6,7 +6,7 @@ import type {
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { exec } from 'child_process';
 import { Effect } from 'effect';
-import { app, BrowserWindow } from 'electron';
+import { app } from 'electron';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import {
@@ -29,6 +29,7 @@ import { isNixOSCommandResult } from '@/electron/lib/nix-detection.js';
 import { sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { publishEvent } from '@/electron/server/events-bridge.js';
 import { Settings } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -711,9 +712,11 @@ function isGitRepository(repoPath: string): boolean {
   return false;
 }
 
-export function checkForAddonUpdates(
-  mainWindow: BrowserWindow
-): Effect.Effect<void, AddonError | FileSystemError | DatabaseError, Settings> {
+export function checkForAddonUpdates(): Effect.Effect<
+  void,
+  AddonError | FileSystemError | DatabaseError,
+  Settings
+> {
   return Effect.gen(function* () {
     if (!fs.existsSync(join(__dirname, 'addons'))) {
       return;
@@ -801,10 +804,10 @@ export function checkForAddonUpdates(
           id: Math.random().toString(36).substring(7),
           type: 'info',
         });
-        mainWindow?.webContents.send(
-          'addon:update-available',
-          addonWithMarketplaceUrl
-        );
+        publishEvent({
+          _tag: 'AddonUpdateAvailable',
+          addon: addonWithMarketplaceUrl,
+        });
         logger.sync.info(`Addon ${addonName} has updates.`);
       } else {
         logger.sync.info(`Addon ${addonName} is up to date.`);

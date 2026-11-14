@@ -3,7 +3,6 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { exec } from 'child_process';
 import { Effect, Schedule } from 'effect';
-import { BrowserWindow } from 'electron';
 import fs from 'fs';
 import { dirname, isAbsolute, join, resolve } from 'path';
 import {
@@ -12,7 +11,7 @@ import {
   replaceAddonLink,
 } from '@/electron/lib/addon-links.js';
 import { AddonMarketplace } from '@/electron/lib/marketplace.js';
-import { sendIPCMessage, sendNotification } from '@/electron/main.js';
+import { sendNotification } from '@/electron/main.js';
 import { Addon } from '@/electron/manager/manager.addon.js';
 import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
@@ -24,6 +23,7 @@ import {
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
+import { publishEvent } from '@/electron/server/events-bridge.js';
 import { Settings } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
@@ -199,13 +199,7 @@ export function restartAddonServer(): Effect.Effect<
       )
     );
     yield* waitForAddonManifests();
-    yield* Effect.tryPromise({
-      try: () => sendIPCMessage('addon-manifests-ready'),
-      catch: (cause) =>
-        new AddonError({
-          message: `Failed to notify renderer: ${String(cause)}`,
-        }),
-    });
+    yield* Effect.sync(() => publishEvent({ _tag: 'AddonManifestsReady' }));
 
     sendNotification({
       message: 'Addon server restarted successfully.',
@@ -243,7 +237,7 @@ export function loadMarketplace(
   });
 }
 
-export default function AddonManagerHandler(mainWindow: BrowserWindow) {
+export default function AddonManagerHandler() {
   const installAddons = ipcProcedure(
     ElectronRpc.installAddons,
     ipcServiceBoundary((_, addons: string[]) =>
@@ -882,10 +876,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                     id: Math.random().toString(36).substring(7),
                     type: 'info',
                   });
-                  mainWindow.webContents.send(
-                    'addon:updated',
-                    addonWithMarketplace
-                  );
+                  publishEvent({
+                    _tag: 'AddonUpdated',
+                    addon: addonWithMarketplace,
+                  });
                   return;
                 }
 
@@ -901,10 +895,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   id: Math.random().toString(36).substring(7),
                   type: 'info',
                 });
-                mainWindow.webContents.send(
-                  'addon:updated',
-                  addonWithMarketplace
-                );
+                publishEvent({
+                  _tag: 'AddonUpdated',
+                  addon: addonWithMarketplace,
+                });
                 return;
               } else {
                 yield* addonSetup.git.pull();
@@ -956,10 +950,10 @@ export default function AddonManagerHandler(mainWindow: BrowserWindow) {
                   id: Math.random().toString(36).substring(7),
                   type: 'info',
                 });
-                mainWindow.webContents.send(
-                  'addon:updated',
-                  addonWithMarketplace
-                );
+                publishEvent({
+                  _tag: 'AddonUpdated',
+                  addon: addonWithMarketplace,
+                });
                 logger.sync.info(
                   `Addon ${addonName} updated and setup successfully.`
                 );

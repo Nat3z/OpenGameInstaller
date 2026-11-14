@@ -13,17 +13,18 @@ import axios from 'axios';
 import { Effect } from 'effect';
 import { getBunSetupAction } from '@/electron/lib/bun-setup.js';
 import { writeSteamGridDbKey } from '@/electron/lib/steam-grid-db.js';
-import { sendIPCMessage, sendNotification } from '@/electron/main.js';
+import { sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary } from '@/electron/runtime.js';
+import { publishEvent } from '@/electron/server/events-bridge.js';
 import { IS_NIXOS } from '@/electron/startup.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
 const log = (content: string): void => {
-  sendIPCMessage('oobe:log', content);
+  publishEvent({ _tag: 'OobeLog', line: content });
   logger.sync.info(`[oobe]${content}`);
 };
 

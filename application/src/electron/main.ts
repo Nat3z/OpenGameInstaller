@@ -42,8 +42,8 @@ import { createElectronRouter } from '@/electron/rpc/router.js';
 import { registerElectronRpcHandlers } from '@/electron/rpc/server.js';
 import {
   disposeElectronRuntime,
-  forkElectronEffect,
   runElectronEffect,
+  runElectronSync,
 } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 import {
@@ -58,7 +58,11 @@ import {
   startClientServer,
   stopClientServer,
 } from '@/electron/server/client-server.js';
-import { Events, Library } from '@/electron/services/index.js';
+import {
+  forwardEventsToRenderer,
+  publishEvent,
+} from '@/electron/server/events-bridge.js';
+import { Library } from '@/electron/services/index.js';
 import {
   checkForAddonUpdates,
   IS_NIXOS,
@@ -226,18 +230,12 @@ interface Notification {
   type: 'info' | 'error' | 'success' | 'warning';
 }
 export function sendNotification(notification: Notification) {
-  sendIPCMessage('notification', notification);
-  // Protocol clients get it too; the renderer still uses IPC until it moves.
-  forkElectronEffect(
-    Effect.flatMap(Events, (events) =>
-      events.publish({
-        _tag: 'Notification',
-        id: notification.id,
-        level: notification.type,
-        message: notification.message,
-      })
-    )
-  );
+  publishEvent({
+    _tag: 'Notification',
+    id: notification.id,
+    level: notification.type,
+    message: notification.message,
+  });
 }
 
 let clientReadyListenerRegistered = false;
@@ -320,6 +318,7 @@ function registerClientReadyListener() {
   ipcMain.on('client-ready-for-events', () => {
     rendererEventReadiness.markReady();
   });
+  forwardEventsToRenderer(sendIPCMessage);
 }
 
 async function ensureAddonServerRunning() {
@@ -357,14 +356,12 @@ async function onMainAppReady() {
   closeSplashWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // Run addon update check first so addon:update-available is sent before all-addons-started.
-  // That way the frontend receives updates in addonUpdates before the handler runs and can auto-update.
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    await runElectronEffect(checkForAddonUpdates(mainWindow));
-  }
-  await sendIPCMessage('all-addons-started');
+  // Run addon update check first so AddonUpdateAvailable is published before
+  // AddonsStarted; the renderer collects updates, then auto-updates on start.
+  await runElectronEffect(checkForAddonUpdates());
+  publishEvent({ _tag: 'AddonsStarted' });
   await runElectronEffect(waitForAddonManifests());
-  await sendIPCMessage('addon-manifests-ready');
+  publishEvent({ _tag: 'AddonManifestsReady' });
 
   // Register process-wide listeners only once
   if (!listenersRegistered) {
@@ -554,24 +551,17 @@ function focusMainWindow(): boolean {
 }
 
 function sendLaunchRequestedToRenderer(gameId: number) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-  mainWindow.webContents.send('game:launch-requested', { id: gameId });
+  publishEvent({ _tag: 'GameLaunchRequested', appID: gameId });
 }
 
 function sendLaunchErrorToRenderer(gameId: number) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-  mainWindow.webContents.send('game:launch-error', { id: gameId });
+  publishEvent({ _tag: 'GameLaunchFailed', appID: gameId });
 }
 
 function sendGameExitToRenderer(gameId: number) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-  mainWindow.webContents.send('game:exit', { id: gameId });
+  runElectronSync(
+    Effect.flatMap(Library, (library) => library.notifyExited(gameId))
+  );
 }
 
 async function runAddonLaunchEvent(

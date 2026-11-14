@@ -89,13 +89,31 @@ desktop app must behave the same after every pass.
 - `Events` service; `sendNotification` publishes to it
 - game launch/exit published as `library.watch` updates
 
-### Next: events
+### Done: events
 
-Move every remaining `webContents.send` / `sendIPCMessage` onto `Events` (or
-the owning group's `watch` when it is state, not a notice). There are about 30
-send sites; grep `sendIPCMessage\(|webContents.send\(` in
-`application/src/electron`. The renderer keeps its IPC listener by having the
-host forward `Events` to IPC, so no Svelte changes are needed yet.
+Notices go through core `Events`; nothing outside the bridge talks to a window.
+
+- `publishEvent(...)` in `application/src/electron/server/events-bridge.ts` is
+  the only way to emit: notifications, addon started/updated/manifests,
+  launch requested/failed, migrations, changelog, OOBE log
+- game launch/exit are `Library.notifyLaunched/Exited`, delivered on
+  `library.watch`
+- `forwardEventsToRenderer` maps each event back to its old IPC channel, so the
+  Svelte app is unchanged. It is deleted once the renderer subscribes over the
+  protocol.
+- `checkForAddonUpdates` and `AddonManagerHandler` no longer take `mainWindow`
+
+Still on IPC, on purpose. These are **state**, so each moves with the pass that
+owns it, onto that group's `watch`, not onto `Events`:
+
+| Channel                                   | Moves with | Becomes                 |
+| ----------------------------------------- | ---------- | ----------------------- |
+| `ddl:*`, `torrent:*`, `addon-downloads`   | downloads  | `downloads.watch`       |
+| `setup:log`, `processing:progress`        | downloads  | `downloads.logs/watch`  |
+| `app:redistributable-progress`            | downloads  | `downloads.watch`       |
+| `game:removal-progress`                   | launch     | `library.watch`         |
+| `input-asked`                             | prompts    | `prompts.watch`         |
+| `splash-*`                                | stays      | host-only (splash UI)   |
 
 ### prompts
 
@@ -150,7 +168,7 @@ in `application/` as an adapter or Electron glue.
 | `lib/library-manifest.ts`             | `core/library/manifest.ts`       | done       |
 | `lib/delete-guards.ts`                | `core/library/delete-guards.ts`  | done       |
 | `services/library.ts`                 | core `Library` (host: store)     | done       |
-| `main.ts` `sendIPCMessage` sites      | core `Events`                    | events     |
+| `main.ts` `sendIPCMessage` sites      | core `Events`                    | done       |
 | `handlers/handler.steam.ts`           | `core/steam/`                    | prompts    |
 | `lib/steam-{vdf,shortcuts,installation,process,grid-db}.ts` | `core/steam/` | launch |
 | `handlers/handler.library.ts`         | `core/library/`, `core/launch/`  | launch     |

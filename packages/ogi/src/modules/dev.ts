@@ -341,9 +341,10 @@ export default function DevCommand({
     // host the addon server for the gui, listening before the addon connects
     const ogiBuilder = new OgiMaker();
     // only this machine's gui and addons should reach a dev server
-    const server = yield* Effect.promise(() =>
-      ogiBuilder.start(port, true, secret, true)
-    );
+    const server = yield* Effect.tryPromise({
+      try: () => ogiBuilder.start(port, true, secret, true),
+      catch: (cause) => new Error((cause as Error).message),
+    });
     server.on('connect', (connection) => {
       const secret: string | undefined = connection.secret;
       const path: string | undefined = secret && addonPaths.get(secret);

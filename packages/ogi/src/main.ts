@@ -75,10 +75,21 @@ const serverStart = Command.make(
   ({ port, enforceSecurity, securityKey }) =>
     Effect.gen(function* () {
       yield* entranceMessage('server start');
-      yield* Effect.promise(() =>
+      yield* Effect.tryPromise(() =>
         ogiBuilder.start(port, enforceSecurity, securityKey)
       );
-    })
+      // the server runs until ogi is interrupted
+      yield* Effect.never;
+    }).pipe(
+      // a taken port fails start(); print it like launch's errors
+      Effect.catchAll((error) =>
+        Console.error(styleText(['red'], (error.error as Error).message)).pipe(
+          Effect.andThen(() => {
+            process.exitCode = 1;
+          })
+        )
+      )
+    )
 );
 
 // ogi launch [version]

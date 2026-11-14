@@ -1,10 +1,13 @@
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { LibraryError } from '@ogi-sdk/errors';
+import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { LibraryGroup } from '@ogi-sdk/protocol';
 import { Context, Effect, Layer, Stream } from 'effect';
 import { Library } from '../library/library';
 import { Prompts } from '../prompts/prompts';
 import { type Implementation, implement } from '../server/router';
+
+const logger = createLogger(LOGGER_PREFIXES.core);
 
 /**
  * Adapter: runs every addon's `launch-app` hook for a game. The Electron host
@@ -68,21 +71,61 @@ export const LaunchLive: Layer.Layer<
     const runner = yield* GameRunner;
     const library = yield* Library;
 
-    // Lives as long as the layer: one post-hook run per exit, in order.
+    const scope = yield* Effect.scope;
+    // Managed sessions that really started; a launch that fails still
+    // reports an exit, and that one must not run post hooks.
+    const started = new Set<number>();
+    const postHooks = (appID: number) =>
+      library.get(appID).pipe(
+        Effect.flatMap((game) =>
+          game ? hooks.run(game, 'post') : Effect.void
+        ),
+        Effect.catchAll((error) =>
+          logger.warn(`[launch] post hooks failed for ${appID}`, error)
+        )
+      );
+
+    // Lives as long as the layer. Each exit's hooks get their own fiber, so
+    // one unanswered prompt cannot hold up another game's.
     yield* Effect.forkScoped(
       (yield* library.changes).pipe(
-        Stream.runForEach((change) =>
-          change._tag === 'Exited' && change.managed
-            ? library.get(change.appID).pipe(
-                Effect.flatMap((game) =>
-                  game ? hooks.run(game, 'post') : Effect.void
-                ),
-                Effect.ignore
-              )
-            : Effect.void
-        )
+        Stream.runForEach((change) => {
+          if (change._tag === 'Launched' && change.managed)
+            started.add(change.appID);
+          if (change._tag !== 'Exited' || !started.delete(change.appID))
+            return Effect.void;
+          return Effect.forkIn(postHooks(change.appID), scope);
+        })
       )
     );
+
+    // Pre hooks (asking whether to go on if they fail), then the game.
+    const startClaimed = (game: LibraryInfo) =>
+      Effect.gen(function* () {
+        const pre = yield* Effect.either(hooks.run(game, 'pre'));
+        if (pre._tag === 'Left') {
+          const answer = yield* Effect.flatMap(Prompts, (prompts) =>
+            prompts.ask({
+              _tag: 'Confirm',
+              title: 'Addon pre-launch step failed',
+              message: pre.left.message,
+              detail: 'Launch the game anyway?',
+              confirmLabel: 'Launch anyway',
+              cancelLabel: 'Cancel',
+            })
+          );
+          if (answer._tag !== 'Confirm' || !answer.confirmed) {
+            return yield* Effect.fail(
+              new LibraryError({
+                message: 'Launch cancelled',
+                gameId: game.appID,
+              })
+            );
+          }
+        }
+
+        yield* runner.start(game.appID);
+      });
 
     return {
       launch: (appID) =>
@@ -100,29 +143,19 @@ export const LaunchLive: Layer.Layer<
             )
           );
 
-          const pre = yield* Effect.either(hooks.run(game, 'pre'));
-          if (pre._tag === 'Left') {
-            const answer = yield* Effect.flatMap(Prompts, (prompts) =>
-              prompts.ask({
-                _tag: 'Confirm',
-                title: 'Addon pre-launch step failed',
-                message: pre.left.message,
-                detail: 'Launch the game anyway?',
-                confirmLabel: 'Launch anyway',
-                cancelLabel: 'Cancel',
+          // Claimed before the hooks so a second launch can't start the
+          // same game and share (then drop) this session's post hooks.
+          if (!(yield* library.claimHooks(appID)))
+            return yield* Effect.fail(
+              new LibraryError({
+                message: 'Game is already running',
+                gameId: appID,
               })
             );
-            if (answer._tag !== 'Confirm' || !answer.confirmed) {
-              return yield* Effect.fail(
-                new LibraryError({ message: 'Launch cancelled', gameId: appID })
-              );
-            }
-          }
-
-          yield* library.claimHooks(appID);
-          yield* runner
-            .start(appID)
-            .pipe(Effect.tapError(() => library.releaseHooks(appID)));
+          yield* startClaimed(game).pipe(
+            // Whatever stops the launch (hooks, cancel, runner) frees the claim.
+            Effect.onError(() => library.releaseHooks(appID))
+          );
         }),
     };
   })

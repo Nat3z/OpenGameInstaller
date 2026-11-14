@@ -52,14 +52,15 @@ export const LibraryChange = Schema.Union(
   /**
    * `managed`: core runs this session's addon hooks (it was started with
    * `library.launch`). Clients must not run hooks for managed sessions.
+   * Optional on the wire so older backends, which never send it, still decode.
    */
   Schema.TaggedStruct('Launched', {
     appID: Schema.Number,
-    managed: Schema.Boolean,
+    managed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   }),
   Schema.TaggedStruct('Exited', {
     appID: Schema.Number,
-    managed: Schema.Boolean,
+    managed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   })
 );
 export type LibraryChange = typeof LibraryChange.Type;

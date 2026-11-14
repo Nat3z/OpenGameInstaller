@@ -55,9 +55,9 @@ export type LibraryShape = {
   /**
    * Marks the next session of `appID` as managed: core runs its hooks, and
    * its Launched/Exited changes say so. Cleared when it exits, or with
-   * `releaseHooks` if it never starts.
+   * `releaseHooks` if it never starts. False if a session already holds it.
    */
-  readonly claimHooks: (appID: number) => Effect.Effect<void>;
+  readonly claimHooks: (appID: number) => Effect.Effect<boolean>;
   readonly releaseHooks: (appID: number) => Effect.Effect<void>;
   /** Live changes only, from now on. Needs no database read. */
   readonly changes: Effect.Effect<
@@ -146,7 +146,8 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
             const wasManaged = managed.delete(appID);
             return publish({ _tag: 'Exited', appID, managed: wasManaged });
           }),
-        claimHooks: (appID) => Effect.sync(() => void managed.add(appID)),
+        claimHooks: (appID) =>
+          Effect.sync(() => !managed.has(appID) && !!managed.add(appID)),
         releaseHooks: (appID) => Effect.sync(() => void managed.delete(appID)),
         changes: PubSub.subscribe(changes).pipe(Effect.map(Stream.fromQueue)),
         watch: Effect.gen(function* () {

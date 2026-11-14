@@ -19,7 +19,7 @@ const game: LibraryInfo = {
 };
 
 /** Builds the launch stack with recording fakes for the two adapters. */
-const setup = (options: { failPre?: boolean } = {}) => {
+const setup = (options: { failPre?: boolean; failStart?: boolean } = {}) => {
   const calls: string[] = [];
   const store = Layer.succeed(LibraryStore, {
     get: (appID) => Effect.succeed(appID === 1 ? game : null),
@@ -44,7 +44,18 @@ const setup = (options: { failPre?: boolean } = {}) => {
     Effect.map(Library, (lib) => ({
       start: (appID: number) =>
         Effect.sync(() => calls.push(`start:${appID}`)).pipe(
-          Effect.andThen(lib.notifyLaunched(appID))
+          // A failed start still reports an exit, like the UMU path does.
+          Effect.andThen(
+            options.failStart
+              ? lib
+                  .notifyExited(appID)
+                  .pipe(
+                    Effect.andThen(
+                      Effect.fail(new LibraryError({ message: 'no umu' }))
+                    )
+                  )
+              : lib.notifyLaunched(appID)
+          )
         ),
     }))
   ).pipe(Layer.provide(library));
@@ -152,5 +163,31 @@ describe('Launcher', () => {
       { _tag: 'Exited', appID: 1, managed: true },
       { _tag: 'Exited', appID: 1, managed: false },
     ]);
+  });
+
+  test('a running game cannot be launched again', async () => {
+    const { calls, layer } = setup();
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        yield* launcher.launch(1);
+        return yield* Effect.flip(launcher.launch(1));
+      }).pipe(Effect.provide(layer))
+    );
+    expect(error.message).toBe('Game is already running');
+    expect(calls).toEqual(['hook:pre', 'start:1']);
+  });
+
+  test('a start that fails skips post hooks and frees the game', async () => {
+    const { calls, layer } = setup({ failStart: true });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        yield* Effect.flip(launcher.launch(1));
+        yield* Effect.sleep('10 millis');
+        yield* Effect.flip(launcher.launch(1));
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:pre', 'start:1']);
   });
 });

@@ -2,13 +2,19 @@ import { GameRunner, LaunchHooks } from '@ogi-sdk/core';
 import { LibraryError } from '@ogi-sdk/errors';
 import { Effect, Layer } from 'effect';
 import { launchGameFromLibrary } from '@/electron/handlers/handler.library.js';
+import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { runElectronEffect } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 
-/** Core's hook adapter: the in-process addon server's `launch-app` event. */
+/**
+ * Core's hook adapter: the in-process addon server's `launch-app` event.
+ * Waits for running addons to connect first, so an early launch (a client
+ * that read `client.json` during startup) still gets their hooks.
+ */
 export const LaunchHooksFromAddonServer = Layer.succeed(LaunchHooks, {
   run: (game, stage) =>
-    runLaunchAppHooks(game, stage).pipe(
+    waitForAddonManifests().pipe(
+      Effect.zipRight(runLaunchAppHooks(game, stage)),
       Effect.flatMap((result) =>
         result.success
           ? Effect.void
@@ -28,7 +34,16 @@ export const LaunchHooksFromAddonServer = Layer.succeed(LaunchHooks, {
  */
 export const GameRunnerFromLibrary = Layer.succeed(GameRunner, {
   start: (appID) =>
-    Effect.promise(() => runElectronEffect(launchGameFromLibrary(appID))).pipe(
+    Effect.tryPromise({
+      try: () => runElectronEffect(launchGameFromLibrary(appID)),
+      // A rejected launch (Steam shortcut inspection, migration) is a
+      // failure the caller sees, not a defect that drops the reply.
+      catch: (cause) =>
+        new LibraryError({
+          message: cause instanceof Error ? cause.message : String(cause),
+          gameId: appID,
+        }),
+    }).pipe(
       Effect.flatMap((result) =>
         result.success
           ? Effect.void

@@ -4,6 +4,12 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { ProtocolError } from '@ogi-sdk/protocol';
 import { Effect, Exit, Fiber, Layer, ManagedRuntime, Scope } from 'effect';
 import { Events, EventsHandlers, EventsLive } from '../events/events';
+import {
+  GameRunner,
+  LaunchHandlers,
+  LaunchHooks,
+  LaunchLive,
+} from '../launch/launch';
 import { LibraryHandlers } from '../library/handlers';
 import { Library, LibraryLive, LibraryStore } from '../library/library';
 import { Prompts, PromptsHandlers, PromptsLive } from '../prompts/prompts';
@@ -42,12 +48,21 @@ const memoryStore = () => {
 };
 
 const TOKEN = 'test-token';
+const launched: number[] = [];
+const library = LibraryLive.pipe(Layer.provide(memoryStore()));
+const launch = LaunchLive.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.succeed(LaunchHooks, { run: () => Effect.void }),
+      Layer.succeed(GameRunner, {
+        start: (appID) => Effect.sync(() => void launched.push(appID)),
+      })
+    )
+  ),
+  Layer.provideMerge(library)
+);
 const runtime = ManagedRuntime.make(
-  Layer.mergeAll(
-    LibraryLive.pipe(Layer.provide(memoryStore())),
-    EventsLive,
-    PromptsLive
-  )
+  Layer.mergeAll(launch, EventsLive, PromptsLive)
 );
 let server: ReturnType<typeof Bun.serve>;
 let url = '';
@@ -57,7 +72,12 @@ beforeAll(async () => {
   const ogi = await runtime.runPromise(
     OGIServer.make({
       token: TOKEN,
-      implementations: [LibraryHandlers, EventsHandlers, PromptsHandlers],
+      implementations: [
+        LibraryHandlers,
+        LaunchHandlers,
+        EventsHandlers,
+        PromptsHandlers,
+      ],
     }).pipe(Scope.extend(scope))
   );
   // Bun's ServerWebSocket pushes messages to the server-level handler, so
@@ -190,6 +210,13 @@ describe('OGIServer <-> OGIClient', () => {
     expect((await client.library.list()).map((g) => g.appID)).toEqual([1]);
     expect((await client.library.get({ appID: 1 }))?.name).toBe('Game 1');
     expect(await client.library.get({ appID: 9 })).toBeNull();
+    await client.close();
+  });
+
+  test('library.launch reaches the launcher', async () => {
+    const client = await OGIClient.connect({ url, token: TOKEN });
+    await client.library.launch({ appID: 1 });
+    expect(launched).toEqual([1]);
     await client.close();
   });
 

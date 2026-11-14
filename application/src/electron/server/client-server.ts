@@ -87,6 +87,10 @@ export const startClientServer = (
 ): Promise<void> =>
   runElectronEffect(
     Effect.gen(function* () {
+      // A second start (macOS reopening its window) replaces the first, so
+      // its watchers don't run twice.
+      if (scope) yield* Scope.close(scope, Exit.void);
+      scope = undefined;
       const local = mode === 'addon-server';
       const token = randomBytes(32).toString('hex');
       const serverScope = yield* Scope.make();

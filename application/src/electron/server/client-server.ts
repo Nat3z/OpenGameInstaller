@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   EventsHandlers,
@@ -29,6 +29,10 @@ let scope: Scope.CloseableScope | undefined;
 export const startClientServer = (): Promise<void> =>
   runElectronEffect(
     Effect.gen(function* () {
+      // A second start (macOS reopening its window) replaces the first, so
+      // its watchers don't run twice.
+      if (scope) yield* Scope.close(scope, Exit.void);
+      scope = undefined;
       const token = randomBytes(32).toString('hex');
       const serverScope = yield* Scope.make();
       const server = yield* OGIServer.make({
@@ -36,11 +40,14 @@ export const startClientServer = (): Promise<void> =>
         implementations: [LibraryHandlers, EventsHandlers],
       }).pipe(Scope.extend(serverScope));
       routeUpgrade(CLIENT_PATH, (ws) => server.serve(fromWs(ws)));
+      const file = join(dataDirectory, CLIENT_FILE);
       writeFileSync(
-        join(dataDirectory, CLIENT_FILE),
+        file,
         JSON.stringify({ url: `ws://127.0.0.1:${port}${CLIENT_PATH}`, token }),
         { mode: 0o600 }
       );
+      // `mode` only applies on create; tighten a file left by an older run.
+      chmodSync(file, 0o600);
       scope = serverScope;
       logger.sync.info(`[client] protocol served at ${CLIENT_PATH}`);
     })

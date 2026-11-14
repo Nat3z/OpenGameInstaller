@@ -122,11 +122,14 @@ forever. `Library`, `Downloads`, and `Prompts` all follow this; copy one.
 
 ## Changing the wire
 
-- Adding a method, a group, an optional field, or a union case is **not**
-  breaking. Older clients ignore it, and missing methods answer
-  `MethodNotFound`.
-- Removing or renaming anything, or changing what a field means, **is**
-  breaking: bump `PROTOCOL_VERSION` in `packages/protocol/lib/envelope.ts`.
+- Adding a method, a group, or an optional field is **not** breaking. Older
+  clients ignore it, and missing methods answer `MethodNotFound`.
+- Adding a union case (an `AppEvent`, a `LibraryChange`, a status) **is**
+  breaking: older clients decode with the old union, so the new case fails
+  with `BadFrame` and ends their subscription.
+- Removing or renaming anything, making a field required, or changing what a
+  field means is breaking too: bump `PROTOCOL_VERSION` in
+  `packages/protocol/lib/envelope.ts`.
   Old clients then get `VersionMismatch` at `hello` instead of corrupt data.
 
 ## Tests that matter

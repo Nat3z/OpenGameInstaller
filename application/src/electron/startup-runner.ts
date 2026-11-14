@@ -240,22 +240,29 @@ export function runStartupTasks(
 
       return { shutdownPending };
     })
-  ).pipe(Effect.catchTag('UpdateError', reportFatalStartupError));
+  ).pipe(
+    Effect.catchTag('UpdateError', (error) =>
+      reportFatalStartupError(error, showSplash)
+    )
+  );
 }
 
 /**
  * A failed startup step leaves the app unusable, so tell the user why and quit
- * rather than leaving them on the splash screen.
+ * rather than leaving them on the splash screen. Headless only logs: nobody
+ * is there to dismiss a dialog.
  */
 function reportFatalStartupError(
-  error: UpdateError
+  error: UpdateError,
+  showDialog: boolean
 ): Effect.Effect<StartupTasksResult> {
   return Effect.gen(function* () {
     yield* logger.error('[startup] Fatal startup error', error);
-    dialog.showErrorBox(
-      'OpenGameInstaller failed to start',
-      `${error.message}\n\nThe app will now close. Check the logs for details.`
-    );
+    if (showDialog)
+      dialog.showErrorBox(
+        'OpenGameInstaller failed to start',
+        `${error.message}\n\nThe app will now close. Check the logs for details.`
+      );
     app.quit();
     return { shutdownPending: true };
   });

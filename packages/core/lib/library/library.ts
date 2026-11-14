@@ -52,6 +52,13 @@ export type LibraryShape = {
   /** Report a running game's lifecycle to subscribers. */
   readonly notifyLaunched: (appID: number) => Effect.Effect<void>;
   readonly notifyExited: (appID: number) => Effect.Effect<void>;
+  /**
+   * Marks the next session of `appID` as managed: core runs its hooks, and
+   * its Launched/Exited changes say so. Cleared when it exits, or with
+   * `releaseHooks` if it never starts.
+   */
+  readonly claimHooks: (appID: number) => Effect.Effect<void>;
+  readonly releaseHooks: (appID: number) => Effect.Effect<void>;
   /** Live changes only, from now on. Needs no database read. */
   readonly changes: Effect.Effect<
     Stream.Stream<LibraryChange>,
@@ -80,6 +87,7 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
     Effect.gen(function* () {
       const store = yield* LibraryStore;
       const changes = yield* PubSub.unbounded<LibraryChange>();
+      const managed = new Set<number>();
       const publish = (change: LibraryChange) =>
         PubSub.publish(changes, change).pipe(Effect.asVoid);
 
@@ -117,8 +125,17 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
               rollback: removal.rollback,
             }))
           ),
-        notifyLaunched: (appID) => publish({ _tag: 'Launched', appID }),
-        notifyExited: (appID) => publish({ _tag: 'Exited', appID }),
+        notifyLaunched: (appID) =>
+          Effect.suspend(() =>
+            publish({ _tag: 'Launched', appID, managed: managed.has(appID) })
+          ),
+        notifyExited: (appID) =>
+          Effect.suspend(() => {
+            const wasManaged = managed.delete(appID);
+            return publish({ _tag: 'Exited', appID, managed: wasManaged });
+          }),
+        claimHooks: (appID) => Effect.sync(() => void managed.add(appID)),
+        releaseHooks: (appID) => Effect.sync(() => void managed.delete(appID)),
         changes: PubSub.subscribe(changes).pipe(Effect.map(Stream.fromQueue)),
         watch: Effect.gen(function* () {
           const subscription = yield* PubSub.subscribe(changes);

@@ -116,7 +116,9 @@ describe('OGIServer <-> OGIClient', () => {
 
   test('unimplemented methods fail with MethodNotFound', async () => {
     const client = await OGIClient.connect({ url, token: TOKEN });
-    const error = await client.library.launch({ appID: 1 }).catch((e) => e);
+    const error = await client.library
+      .uninstall({ appID: 1, deleteFiles: false })
+      .catch((e) => e);
     expect(error.tag).toBe('MethodNotFound');
     const downloads = await client.downloads.pause({ id: 'x' }).catch((e) => e);
     expect(downloads.tag).toBe('MethodNotFound');

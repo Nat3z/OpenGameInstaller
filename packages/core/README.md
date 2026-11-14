@@ -134,11 +134,31 @@ Not moved: the root password prompt. `app.grantRootPassword` was never
 implemented (it throws), so there is no flow to port yet. When one exists, add
 a `Secret` prompt.
 
-### launch
+### Done: launch
 
-Move `launchGameFromLibrary`, the umu launch path, and the pre/post hook flow
-from `GameLaunchOverlay.svelte` into `lib/launch/`. Implement `library.launch`.
-After this, a Steam `--game-id` launch needs no window.
+`library.launch` works from any client, with no window:
+
+```
+Launcher.launch(appID)
+  pre hooks ── fail? ── Prompts: "Launch anyway?" ── no → LibraryError
+  claimHooks(appID)        // this session is "managed"
+  GameRunner.start(appID)  // host adapter: umu / legacy spawn
+  ...game exits → Exited { managed: true } → post hooks
+```
+
+- adapters: `LaunchHooks` (run `launch-app` on every addon) and `GameRunner`
+  (start the process). The Electron host's are in
+  `application/src/electron/server/launch-adapters.ts`.
+- `Launched`/`Exited` carry `managed`. Core runs hooks only for managed
+  sessions; the renderer runs them only for the rest, so a session never gets
+  hooks twice while both paths exist.
+- the Launcher is built inside the client server's scope, so its post-hook
+  watcher stops with the protocol.
+
+Still in the renderer: `PlayPage` / `GameManager` / `GameLaunchOverlay` keep
+their own launch + hooks for desktop launches. They switch to `library.launch`
+when the renderer moves to `OGIClient`. The Steam `--game-id` flow in `main.ts`
+also keeps its own hooks, because the wrapper command runs between them.
 
 ### downloads
 
@@ -180,7 +200,8 @@ in `application/` as an adapter or Electron glue.
 | `main.ts` `sendIPCMessage` sites      | core `Events`                    | done       |
 | `handlers/handler.steam.ts`           | `core/steam/`                    | prompts    |
 | `lib/steam-{vdf,shortcuts,installation,process,grid-db}.ts` | `core/steam/` | launch |
-| `handlers/handler.library.ts`         | `core/library/`, `core/launch/`  | launch     |
+| `handlers/handler.library.ts` launch  | core `Launcher` + host `GameRunner` | done    |
+| `handlers/handler.library.ts` rest    | `core/library/`                  | library    |
 | `handlers/handler.umu.ts`, `lib/umu-prefix-migration.ts` | `core/launch/umu/` | launch |
 | `lib/{launch-command,spawn-shell,gamescope}.ts` | `core/launch/`         | launch     |
 | `handlers/handler.{ddl,torrent}.ts`   | `core/downloads/sources/`        | downloads  |

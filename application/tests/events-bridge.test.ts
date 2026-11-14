@@ -42,5 +42,5 @@ test('core events and game lifecycle reach the renderer unchanged', async () => 
     ['all-addons-started'],
     ['app:show-changelog', '2.5.0'],
   ]);
-  expect(sent).toContainEqual(['game:launch', { id: 7 }]);
+  expect(sent).toContainEqual(['game:launch', { id: 7, managed: false }]);
 });

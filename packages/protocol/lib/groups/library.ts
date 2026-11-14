@@ -49,8 +49,18 @@ export const AppID = Schema.Struct({ appID: Schema.Number });
 export const LibraryChange = Schema.Union(
   Schema.TaggedStruct('Saved', { entry: LibraryEntry }),
   Schema.TaggedStruct('Removed', { appID: Schema.Number }),
-  Schema.TaggedStruct('Launched', { appID: Schema.Number }),
-  Schema.TaggedStruct('Exited', { appID: Schema.Number })
+  /**
+   * `managed`: core runs this session's addon hooks (it was started with
+   * `library.launch`). Clients must not run hooks for managed sessions.
+   */
+  Schema.TaggedStruct('Launched', {
+    appID: Schema.Number,
+    managed: Schema.Boolean,
+  }),
+  Schema.TaggedStruct('Exited', {
+    appID: Schema.Number,
+    managed: Schema.Boolean,
+  })
 );
 export type LibraryChange = typeof LibraryChange.Type;
 
@@ -64,8 +74,9 @@ export const LibraryGroup = group('library', {
     snapshot: Schema.Array(LibraryEntry),
     update: LibraryChange,
   }),
-  // TODO(pass: launch) move launch hooks into core, then implement these.
+  /** Runs pre hooks, starts the game; post hooks run when it exits. */
   launch: call({ params: AppID, result: Schema.Void }),
+  // TODO(pass: library) implement once removal moves into core.
   uninstall: call({
     params: Schema.Struct({
       appID: Schema.Number,

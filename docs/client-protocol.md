@@ -14,7 +14,8 @@ frontends   Svelte (Electron) · GPUI Deck · CLI · third-party
                │  adapters: LibraryStore, DownloadSource, SleepLock, Shell …
             application/          the Electron host
                │
-            addon-server ─ ws /   bun addons (unchanged)
+            addon-server ─ ws /   bun addons (unchanged; `ogi dev` hosts it
+                                  itself and the app joins as an SDK client)
 ```
 
 ## Why
@@ -63,6 +64,7 @@ stop()           ── unsubscribe { id: 2 } ───────────�
 | download state: `downloads.watch`, controls | #273 | done |
 | addons: proxied through core           | #274 | done  |
 | headless: `electron . --headless`      | #275 | done  |
+| `ogi dev`: `/client` under `--no-server` | #277 | done  |
 | pipeline: `downloads.enqueue`, sources + setup | —  | next  |
 | renderer on `OGIClient`; delete bridges | —   | after |
 | bun host; Rust `ogi-client`; GPUI Deck | —    | later |

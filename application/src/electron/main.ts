@@ -314,7 +314,9 @@ async function ensureAddonServerRunning() {
 
 async function startAddonRuntime() {
   if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
+  // under `ogi dev` the CLI owns the addon server; core serves on its own port
   if (isAddonServerListening) await startClientServer(getAddonServer());
+  else if (hookArgs?.noAddonServer) await startClientServer();
   sendNotification({
     message: 'Addons Starting...',
     id: Math.random().toString(36).substring(7),
@@ -751,6 +753,7 @@ app.on('ready', async () => {
 
   await startupEnvironmentReady;
   registerClientReadyListener();
+  hookArgs = parseLaunchHookArgs();
 
   if (isHeadless()) {
     await startHeadless();
@@ -759,7 +762,6 @@ app.on('ready', async () => {
 
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
-  hookArgs = parseLaunchHookArgs();
   const wrapperCommand = parseWrapperAfterSeparator();
   if (gameIdToLaunch !== null) {
     logger.sync.info(

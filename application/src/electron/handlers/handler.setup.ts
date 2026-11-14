@@ -240,6 +240,10 @@ const extractArchive = (arg: {
               id: arg.downloadId,
               log: [`Archive extraction failed: ${formatError(error)}`],
             });
+            emitDownload('processing:error', {
+              id: arg.downloadId,
+              error: `Archive extraction failed: ${formatError(error)}`,
+            });
           }
         })
       )
@@ -249,6 +253,7 @@ const extractArchive = (arg: {
         id: arg.downloadId,
         log: ['Archive extraction completed successfully'],
       });
+      emitDownload('processing:complete', { id: arg.downloadId });
     }
     // The archive is dead weight once extracted; a failure to remove it must
     // not fail the setup.

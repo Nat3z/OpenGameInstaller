@@ -39,6 +39,16 @@ export const toPatch = (
         progress: num('progress'),
         speed: 0,
       };
+    // Extraction ended: the files are on disk again (setup itself still runs
+    // in the renderer), or it failed and the card shows why.
+    case 'processing:complete':
+      return { status: 'completed', progress: 1, speed: 0 };
+    case 'processing:error':
+      return {
+        status: 'error',
+        speed: 0,
+        error: typeof data.error === 'string' ? data.error : undefined,
+      };
     case 'ddl:download-paused':
     case 'torrent:download-paused':
       return { status: 'paused', speed: 0 };

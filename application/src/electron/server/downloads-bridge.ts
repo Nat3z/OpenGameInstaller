@@ -2,7 +2,10 @@ import { DownloadControl, Downloads } from '@ogi-sdk/core';
 import { DownloadError } from '@ogi-sdk/errors';
 import { Effect, Layer } from 'effect';
 import { sendIPCMessage } from '@/electron/main.js';
-import { cancelQueuedDownload } from '@/electron/rpc/queue-cancel.js';
+import {
+  cancelQueuedDownload,
+  hasQueueCancel,
+} from '@/electron/rpc/queue-cancel.js';
 import { runElectronSync } from '@/electron/runtime.js';
 import { toPatch } from '@/electron/server/download-patch.js';
 
@@ -73,9 +76,11 @@ const withEngine = (
 export const DownloadControlFromEngines = Layer.succeed(DownloadControl, {
   pause: (id) => withEngine(id, (engine) => engine.pause(id)),
   resume: (id) => withEngine(id, (engine) => engine.resume(id)),
-  // A queued download has no engine fiber yet; the queue cancels it.
+  // While the queue holds an entry, cancel through it: aborting the engine
+  // alone leaves the entry behind and it blocks the next download's slot.
+  // The queue's handler cancels the engine too.
   cancel: (id) =>
-    engines.some((engine) => engine.has(id))
-      ? withEngine(id, (engine) => engine.abort(id))
-      : Effect.promise(() => cancelQueuedDownload(id)),
+    hasQueueCancel(id)
+      ? Effect.promise(() => cancelQueuedDownload(id))
+      : withEngine(id, (engine) => engine.abort(id)),
 });

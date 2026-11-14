@@ -52,14 +52,22 @@ library.watch()  ── subscribe { id: 2, ... } ──────────�
 stop()           ── unsubscribe { id: 2 } ──────────────────▶   interrupt the fiber
 ```
 
-## Order of work
+## Status
 
-Tracked in `packages/core/README.md` → "Passes". In short:
+| Step                                   | PR   | State |
+| -------------------------------------- | ---- | ----- |
+| protocol + core + `OGIClient` + library | #269 | done  |
+| events: notices through core `Events`  | #270 | done  |
+| prompts: first-answer-wins human input | #271 | done  |
+| launch: `library.launch`, managed hooks | #272 | done  |
+| download state: `downloads.watch`, controls | #273 | done |
+| addons: proxied through core           | #274 | done  |
+| headless: `electron . --headless`      | #275 | done  |
+| pipeline: `downloads.enqueue`, sources + setup | —  | next  |
+| renderer on `OGIClient`; delete bridges | —   | after |
+| bun host; Rust `ogi-client`; GPUI Deck | —    | later |
 
-1. ~~protocol + library slice~~ (this PR)
-2. events: all renderer pushes go through core `Events`
-3. prompts: Steam close, addon input, and root password become `prompts.*`
-4. launch: `library.launch` works with no window
-5. downloads: the renderer pipeline moves into core
-6. addons: core proxies addon calls
-7. headless: `--headless`, then a bun host, then the Rust client
+## Maintaining it
+
+See `docs/maintaining-core.md` for recipes: adding a method, a group, an
+event, an adapter; where tests go; and the rules that keep the boundary clean.

@@ -1,33 +1,25 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import * as d3 from 'd3';
 import { Effect } from 'effect';
 import { onDestroy, onMount } from 'svelte';
 import GameImage from '@/frontend/components/GameImage.svelte';
-import RedistributablesProgress from '@/frontend/components/RedistributablesProgress.svelte';
 import SetupPrompt from '@/frontend/components/SetupPrompt.svelte';
-import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
-import { updateDownloadStatus } from '@/frontend/lib/downloads/lifecycle';
-import { electronRpc } from '@/frontend/lib/electron-rpc';
-import { startRedistributableInstallation } from '@/frontend/lib/setup/setup';
+import { runDetached } from '@/frontend/lib/core/runtime';
 import {
-  createNotification,
+  cancelDownload,
+  dismissSetup,
+  pauseDownload,
+  resumeDownload,
+  retrySetup,
+  watchLogs,
+} from '@/frontend/lib/downloads/protocol';
+import { electronRpc } from '@/frontend/lib/electron-rpc';
+import {
   currentDownloads,
   type FailedSetup,
   failedSetups,
-  redistributableInstalls,
   setupLogs,
 } from '@/frontend/store.svelte';
-import {
-  cancelPausedDownload,
-  loadFailedSetups,
-  pauseDownload,
-  removeFailedSetup,
-  resumeDownload,
-  retryFailedSetup,
-} from '@/frontend/utils';
-
-const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 let chartContainer: HTMLDivElement | null = $state(null);
 let speedData: { time: Date; speed: number; downloadId: string }[] = $state([]);
@@ -46,10 +38,6 @@ let targetDownload = $derived(
       (!download.queuePosition || download.queuePosition === 1)
   ) || undefined
 );
-
-function isCustomEvent(event: Event): event is CustomEvent {
-  return event instanceof CustomEvent;
-}
 
 function isQueued(download: { status: string; queuePosition?: number }) {
   return (
@@ -98,123 +86,30 @@ function formatETA(etaMs: number): string {
   }
 }
 
-function setupLog(event: Event) {
-  if (!isCustomEvent(event)) return;
-  const downloadID = event.detail.id;
-  let logs: string[] = event.detail.log;
-  // Update the $setupLogs state for the given downloadID
-  // if the logs are above 100, remove the first 50
-  if (logs.length > 100) {
-    logs = logs.slice(50);
+// Setup logs stream from core for every card that is setting up.
+const logWatches = new Map<string, () => void>();
+let sub_logs = currentDownloads.subscribe((downloads) => {
+  const settingUp = new Set(
+    downloads.filter((d) => d.status === 'completed').map((d) => d.id)
+  );
+  for (const id of settingUp) {
+    if (logWatches.has(id)) continue;
+    logWatches.set(id, () => {});
+    void watchLogs(id).then((stop) => logWatches.set(id, stop));
   }
-  setupLogs.update((otherLogs) => ({
-    ...otherLogs,
-    [downloadID]: {
-      ...(otherLogs[downloadID] || {
-        logs: [],
-        progress: 0,
-        isActive: true,
-        downloadId: downloadID,
-      }),
-      logs: [...logs],
-    },
-  }));
-}
-
-function setupProgress(event: Event) {
-  if (!isCustomEvent(event)) return;
-  const downloadID = event.detail.id;
-  const progress = event.detail.progress;
-  setupLogs.update((otherLogs) => ({
-    ...otherLogs,
-    [downloadID]: {
-      ...(otherLogs[downloadID] || {
-        logs: [],
-        progress: 0,
-        isActive: true,
-        downloadId: downloadID,
-      }),
-      progress,
-    },
-  }));
-}
-
-// Load failed setups and paused downloads when component mounts
-onMount(() => {
-  runDetached(loadFailedSetups(), 'Failed to load failed setups');
-  document.addEventListener('setup:log', setupLog);
-  document.addEventListener('setup:progress', setupProgress);
-
-  return () => {
-    document.removeEventListener('setup:log', setupLog);
-    document.removeEventListener('setup:progress', setupProgress);
-  };
+  for (const [id, stop] of logWatches) {
+    if (settingUp.has(id)) continue;
+    stop();
+    logWatches.delete(id);
+  }
 });
 
-async function runDownloadAction<A, E>(
-  effect: Effect.Effect<A, E>,
-  description: string
-): Promise<A | undefined> {
-  return runFrontendEffect(
-    effect.pipe(
-      Effect.catchAll((error) =>
-        Effect.sync(() => {
-          logger.sync.error(`${description}:`, error);
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            message: description,
-            type: 'error',
-          });
-          return undefined;
-        })
-      )
-    )
-  );
-}
-
-/** The failed redistributable setup for a finished download, if any. */
-function redistFailureFor(download: { id: string; status: string }) {
-  const setup = $redistributableInstalls[download.id];
-  if (
-    (download.status === 'setup-complete' || download.status === 'seeding') &&
-    setup?.isComplete === true &&
-    setup.error
-  ) {
-    return setup;
-  }
-  return undefined;
-}
-
-function handleRetryRedistributables(downloadId: string, appID: number) {
-  redistributableInstalls.update((setups) => {
-    const current = setups[downloadId];
-    if (!current) return setups;
-    return {
-      ...setups,
-      [downloadId]: {
-        ...current,
-        overallProgress: 0,
-        isComplete: false,
-        error: undefined,
-      },
-    };
-  });
-  updateDownloadStatus(downloadId, { status: 'installing-redistributables' });
-  runDetached(
-    startRedistributableInstallation(downloadId, appID),
-    'Failed to retry redistributable installation'
-  );
-}
-
-async function handleRetry(failedSetup: FailedSetup) {
-  await runDownloadAction(
-    retryFailedSetup(failedSetup),
-    'Failed to retry setup'
-  );
+function handleRetry(failedSetup: FailedSetup) {
+  void retrySetup(failedSetup.id);
 }
 
 function handleRemove(setupId: string) {
-  removeFailedSetup(setupId);
+  void dismissSetup(setupId);
 }
 function updateSpeedData() {
   const now = new Date();
@@ -383,6 +278,8 @@ onMount(() => {
 onDestroy(() => {
   sub_currentDownloads();
   sub_sortedDownloads();
+  sub_logs();
+  for (const stop of logWatches.values()) stop();
 });
 </script>
 
@@ -686,21 +583,10 @@ onDestroy(() => {
                 <div class="status-badge installing-redistributables">
                   <div class="spinner"></div>
                   Installing Dependencies
+                  {#if hasDeterminateProgress(download.progress)}
+                    {Math.floor(download.progress * 100)}%
+                  {/if}
                 </div>
-              {:else if redistFailureFor(download)}
-                <div class="status-badge installing-redistributables">
-                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fill-rule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                      clip-rule="evenodd"
-                    ></path>
-                  </svg>
-                  Redistributables Need Attention
-                </div>
-                <p class="text-sm text-error mt-2 break-words">
-                  {redistFailureFor(download)?.error}
-                </p>
               {:else if download.status === 'setup-complete'}
                 <div class="status-badge complete">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -766,46 +652,22 @@ onDestroy(() => {
                   </div>
                 </div>
               {:else if download.status === 'paused'}
-                {#if $redistributableInstalls[download.id] && !$redistributableInstalls[download.id].isComplete}
-                  <div class="status-badge installing-redistributables">
-                    <svg
-                      class="w-4 h-4"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
-                      ></path>
-                    </svg>
-                    Paused Installing Dependencies
-                  </div>
-                {:else}
-                  <div class="status-badge paused">
-                    <svg
-                      class="w-4 h-4"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
-                      ></path>
-                    </svg>
-                    Paused
-                  </div>
-                {/if}
+                <div class="status-badge paused">
+                  <svg
+                    class="w-4 h-4"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      d="M6 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1zM14 4a1 1 0 011 1v10a1 1 0 11-2 0V5a1 1 0 011-1z"
+                    ></path>
+                  </svg>
+                  Paused
+                </div>
               {/if}
             </div>
 
             <div class="download-actions">
-              {#if redistFailureFor(download)}
-                <button
-                  class="btn btn-primary btn-sm"
-                  onclick={() =>
-                    handleRetryRedistributables(download.id, download.appID)}
-                >
-                  Retry Redistributables
-                </button>
-              {/if}
               {#if download.status === 'setup-complete'}
                 <button
                   class="btn btn-primary btn-sm"
@@ -835,7 +697,7 @@ onDestroy(() => {
               {:else if isQueued(download)}
                 <button
                   class="text-overlay-text border-none p-4 rounded-lg bg-accent hover:bg-accent-dark transition-colors"
-                  onclick={() => runFrontendEffect(electronRpc.queue.cancel(download.id))}
+                  onclick={() => void cancelDownload(download.id)}
                   aria-label="Cancel Download"
                 >
                   <svg
@@ -855,16 +717,10 @@ onDestroy(() => {
                 <button
                   class="text-overlay-text border-none p-4 rounded-lg bg-accent hover:bg-accent-dark transition-colors"
                   aria-label="Pause Download"
-                  onclick={async () => {
-                    if (isQueued(download)) {
-                      runFrontendEffect(electronRpc.queue.cancel(download.id));
-                    } else {
-                      await runDownloadAction(
-                        pauseDownload(download.id),
-                        'Failed to pause download'
-                      );
-                    }
-                  }}
+                  onclick={() =>
+                    void (isQueued(download)
+                      ? cancelDownload(download.id)
+                      : pauseDownload(download.id))}
                 >
                   <svg
                     fill="currentColor"
@@ -882,12 +738,7 @@ onDestroy(() => {
                 <button
                   class="text-overlay-text border-none p-3 rounded-lg bg-success hover:bg-success-hover transition-colors mr-2"
                   aria-label="Resume Download"
-                  onclick={async () => {
-                    await runDownloadAction(
-                      resumeDownload(download.id),
-                      'Failed to resume download'
-                    );
-                  }}
+                  onclick={() => void resumeDownload(download.id)}
                 >
                   <svg
                     fill="currentColor"
@@ -904,11 +755,7 @@ onDestroy(() => {
                 <button
                   class="text-overlay-text border-none p-3 rounded-lg bg-error hover:bg-error-hover transition-colors"
                   aria-label="Cancel Download"
-                  onclick={() =>
-                    void runDownloadAction(
-                      cancelPausedDownload(download.id),
-                      'Failed to cancel download'
-                    )}
+                  onclick={() => void cancelDownload(download.id)}
                 >
                   <svg
                     fill="currentColor"
@@ -931,15 +778,6 @@ onDestroy(() => {
               setupLog={$setupLogs[download.id]}
               downloadName={download.name}
               addonSource={download.addonSource}
-            />
-          </div>
-        {/if}
-        {#if (download.status === 'installing-redistributables' || (download.status === 'paused' && $redistributableInstalls[download.id] && !$redistributableInstalls[download.id].isComplete) ||
-          redistFailureFor(download)) &&
-          $redistributableInstalls[download.id]}
-          <div class="mt-4 w-full">
-            <RedistributablesProgress
-              setup={$redistributableInstalls[download.id]}
             />
           </div>
         {/if}

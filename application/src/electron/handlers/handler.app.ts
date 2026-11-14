@@ -26,6 +26,7 @@ import {
 } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { getAddonServer } from '@/electron/server/addon-server.js';
+import { clientConnection } from '@/electron/server/client-server.js';
 import { answerInputPrompt } from '@/electron/server/prompts-bridge.js';
 import {
   getUpdateChannel,
@@ -179,6 +180,9 @@ export default function handler(mainWindow: Electron.BrowserWindow | null) {
           relaunchThroughSetup(mainWindow, gui ? ['--gui'] : [])
         )
       )
+    ),
+    procedure(ElectronRpc.app.clientConnection, () =>
+      runBoundary(Effect.sync(() => clientConnection() ?? null))
     ),
     procedure(ElectronRpc.app.getAddonPath, (addonID: string) =>
       runBoundary(

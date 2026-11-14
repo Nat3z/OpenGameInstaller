@@ -12,6 +12,7 @@ import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TextModal from '@/frontend/components/modal/TextModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { startDownload } from '@/frontend/lib/downloads/protocol';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   createNotification,
@@ -30,7 +31,6 @@ import {
   isAddonEventAvailable,
   runTask,
   type SearchResultWithAddon,
-  startDownload,
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
 
@@ -294,7 +294,7 @@ function showSourceInfo(result: SearchResultWithAddon) {
   selectedResult = result;
 }
 
-function handleDownloadClick(result: SearchResultWithAddon, event: MouseEvent) {
+function handleDownloadClick(result: SearchResultWithAddon) {
   // Check if there's already an active download for this game
   if (activeDownload) {
     createNotification({
@@ -311,15 +311,10 @@ function handleDownloadClick(result: SearchResultWithAddon, event: MouseEvent) {
       runTask(result, alreadyOwns ? originalFilePath || '' : '', libraryInfo)
     );
   } else {
-    void runFrontendEffect(
-      startDownload(
-        {
-          ...result,
-          name: (gameData as StoreData).name!,
-        },
-        appID,
-        event
-      )
+    // Core runs the whole pipeline; the card appears on downloads.watch.
+    void startDownload(
+      { ...result, name: (gameData as StoreData).name! },
+      appID
     );
   }
 }
@@ -783,8 +778,8 @@ $effect(() => {
                                     disabled={(results.length === 0 &&
                                       !queryingSources) ||
                                       (activeDownload && !alreadyOwns)}
-                                    onclick={(event) =>
-                                      handleDownloadClick(result, event)}
+                                    onclick={() =>
+                                      handleDownloadClick(result)}
                                   >
                                     {activeDownload && !alreadyOwns
                                       ? "Download in Progress"

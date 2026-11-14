@@ -3007,6 +3007,10 @@ let activeService: DownloadServiceShape | undefined;
 export const shutdownDirectDownloads = (): Effect.Effect<void> =>
   activeService?.shutdown ?? Effect.void;
 
+/** The running direct-download engine; set once the router is built. */
+export const directDownloads = (): DownloadServiceShape | undefined =>
+  activeService;
+
 export default function handler() {
   const service = Effect.runSync(makeDownloadService());
   activeService = service;

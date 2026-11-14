@@ -10,8 +10,8 @@ frontends   Svelte (Electron) · GPUI Deck · CLI · third-party
                │  WS 127.0.0.1:7654/client  · token from client.json
             @ogi-sdk/protocol     schemas + envelope (the contract)
                │
-            @ogi-sdk/core         server · library · events · (pipeline, over time)
-               │  adapters: LibraryStore, DownloadSource, SleepLock, Shell …
+            @ogi-sdk/core         server · library · events · prompts · pipeline
+               │  adapters: LibraryStore, Engines, Debrid, Installer, DownloadStore …
             application/          the Electron host
                │
             addon-server ─ ws /   bun addons (unchanged; `ogi dev` hosts it
@@ -65,8 +65,9 @@ stop()           ── unsubscribe { id: 2 } ───────────�
 | addons: proxied through core           | #274 | done  |
 | headless: `electron . --headless`      | #275 | done  |
 | `ogi dev`: `/client` under `--no-server` | #277 | done  |
-| pipeline: `downloads.enqueue`, sources + setup | —  | next  |
-| renderer on `OGIClient`; delete bridges | —   | after |
+| pipeline: `downloads.enqueue`, sources + setup | #278 | done  |
+| renderer downloads on `OGIClient`       | #278 | done  |
+| renderer launch on `OGIClient`; delete bridges | — | next |
 | bun host; Rust `ogi-client`; GPUI Deck | —    | later |
 
 ## Maintaining it

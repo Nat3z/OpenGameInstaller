@@ -179,48 +179,47 @@ engine (ddl / torrent / setup / redist / addon card)
 - `Download` / `TorrentDownload` constructors and the ddl/torrent routers no
   longer take `mainWindow`.
 
-### Next: pipeline
+### Done: pipeline
 
-What's left in the renderer is the orchestration: picking a source (direct,
-torrent, RD/AD/Torbox/Premiumize), creating the card, and running setup when a
-download completes. Moving it implements `downloads.enqueue` / `retrySetup`:
+`downloads.enqueue` runs the whole thing in core. The renderer only calls
+`enqueue` and renders `downloads.watch`; there is no download, debrid, or
+setup code left in it.
 
-- `frontend/lib/downloads/services/*` → core `DownloadSource` adapters (one per
-  service). Debrid clients already live in `packages/real-debrid` and
-  `packages/all-debrid`; Torbox/Premiumize need small HTTP clients.
-- `DownloadManager.svelte` completion handler + `frontend/lib/setup/*` →
-  `core/setup/pipeline.ts` (extract → addon `setup` → `Library.save` → Steam)
-- `frontend/lib/downloads/{persistence,restart}.ts` +
-  `frontend/lib/recovery/failedSetups.ts` → core, persisted through a
-  `DownloadStore` adapter (the app already has `database.downloads`)
-- `frontend/lib/downloads/sleep-lock.ts` → `SleepLock` adapter
+```
+enqueue(result) ─▶ record saved (step: download)
+  resolve      request → AddonCalls.requestDownload; torrent → Debrid.resolve
+  download     Engines.direct / Engines.torrent; engine id aliased onto ours
+  extract      SetupFiles.extract (debrid rar/zip), content root found
+  setup        stage old_files (updates) → AddonCalls.setup (prompts → Prompts)
+  install      Installer.install (UMU, Steam) / Installer.update
+  redist       Installer.redistributables (Linux prefixes)
+  ─▶ record removed, card `completed`
+```
 
-Then delete `DownloadStatusAndInfo` bookkeeping from the renderer and have it
-render `downloads.watch`.
+- one fiber per download (`FiberMap`), every step saved to `DownloadStore`
+  before it runs. A crash mid-transfer comes back `paused` (`downloads.resume`
+  restarts the engine); a crash after it resumes on its own.
+- a failure once files are on disk keeps the record with an `error`: it shows
+  on `downloads.failedSetups` and `downloads.retrySetup` picks it up from the
+  step it failed on, without downloading again.
+- `Downloads.alias(engineId, id)` makes engine progress land on the pipeline's
+  card, so one download is one card while engines come and go underneath.
+- the sleep lock watches `downloads.watch` itself: awake while anything is
+  resolving, downloading, extracting, or setting up.
 
-### Done: addons
+Adapters (all in `lib/pipeline/adapters.ts`; Electron's in
+`application/src/electron/server/pipeline/`):
 
-`addons.list / search / gameDetails / catalog` are proxied through core, so a
-frontend needs one socket. The `Addons` adapter talks to the host's
-in-process addon server (`application/.../server/addons-adapter.ts`); core
-checks the addon is running and supports the event before forwarding, so a
-call fails fast instead of hanging.
-
-Still direct: the renderer keeps its own client-kit `Connection` until it moves
-to `OGIClient`. Addon install/update/remove (`executor`,
-`checkForAddonUpdates`) stays in the host for now, since no client needs it
-over the protocol yet.
-
-### Done: headless
-
-`electron . --headless` runs the whole backend with no window: startup tasks
-(logged instead of a splash), the addon server, addons, and the `/client`
-socket. A Deck UI, CLI, or script drives it with `OGIClient` using
-`client.json`. SIGTERM / SIGINT quit it cleanly through the usual shutdown.
-
-To get there, nothing below the window needs one anymore: the direct-download,
-torrent, and debrid routers dropped `mainWindow`, and direct downloads shut down
-from app quit instead of from the window's `closed` event.
+| Adapter         | Electron implementation                                  |
+| --------------- | -------------------------------------------------------- |
+| `Engines`       | ddl `DownloadService` + `startTorrent`, via `onTerminal` |
+| `Debrid`        | Real-Debrid / AllDebrid clients, TorBox / Premiumize HTTP |
+| `PipelineConfig`| settings: download root, torrent client                  |
+| `SetupFiles`    | guarded fs helpers from `handler.setup.ts`               |
+| `AddonCalls`    | `AddonConnection.deferred` (or the SDK under `ogi dev`)  |
+| `Installer`     | `insertApp` / `updateAppVersion` / redistributables      |
+| `DownloadStore` | the existing `downloads` table (`download_info.pipeline`) |
+| `SleepLock`     | Electron `powerSaveBlocker`                              |
 
 ### Done: `ogi dev`
 
@@ -231,11 +230,10 @@ CLI's server: `AddonsFromDevServer` and `LaunchHooksFromDevServer` in
 `application/src/electron/server/dev-addons.ts`. Addon `input-asked` from
 that server goes to core `Prompts` too, so any client can answer.
 
-### Next: pipeline
+### Next: the rest of the renderer
 
-See the downloads section above: `DownloadSource` adapters plus the setup
-pipeline implement `downloads.enqueue`. After that, the renderer can move to
-`OGIClient`, and the IPC bridges (events, prompts, downloads) get deleted.
+Launch (`PlayPage`, `GameManager`) and the IPC bridges for events and prompts
+still exist; launch can move to `library.launch` the same way downloads moved.
 
 ### Later: a bun host
 
@@ -260,11 +258,11 @@ in `application/` as an adapter or Electron glue.
 | `handlers/handler.library.ts` rest    | `core/library/`                  | library    |
 | `handlers/handler.umu.ts`, `lib/umu-prefix-migration.ts` | `core/launch/umu/` | launch |
 | `lib/{launch-command,spawn-shell,gamescope}.ts` | `core/launch/`         | launch     |
-| `handlers/handler.{ddl,torrent}.ts`   | `core/downloads/sources/`        | downloads  |
-| `handlers/handler.{realdebrid,alldebrid}.ts` | `core/downloads/sources/` | downloads |
-| `manager/manager.{queue,webtorrent}.ts` | `core/downloads/`              | downloads  |
-| `lib/{download-paths,torrent-files,torrent-hash}.ts` | `core/downloads/` | downloads |
-| `handlers/handler.{setup,redists}.ts` | `core/setup/`                    | downloads  |
+| `frontend/lib/downloads/*`, `lib/setup/*`, `lib/recovery/*`, `DownloadManager` | `core/pipeline/` | done |
+| `handlers/handler.{ddl,torrent}.ts`   | host `Engines` (engines stay)    | done       |
+| debrid (renderer services + `handler.{realdebrid,alldebrid}.ts`) | host `Debrid` | done |
+| `handlers/handler.{setup,redists}.ts` | host `SetupFiles` / `Installer`  | done       |
+| `manager/manager.{queue,webtorrent}.ts` | host (engine internals)        | stays      |
 | `server/addon-{server,downloads,lifecycle}.ts` | `core/addons/`          | addons     |
 | `manager/manager.addon*.ts`, `lib/addon-links.ts`, `lib/marketplace*.ts` | `core/addons/` | addons |
 | `startup.ts` (`checkForAddonUpdates`, `reinstallAddonDependencies`) | `core/addons/` | addons |

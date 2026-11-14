@@ -17,7 +17,8 @@ import { runEffectBoundary, runElectronSync } from '@/electron/runtime.js';
 import { Downloads, Library } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
-const installRedistributables = (appID: number, downloadId?: string) =>
+/** Installs a saved game's redistributables into its UMU prefix. */
+export const installRedistributables = (appID: number, downloadId?: string) =>
   Effect.gen(function* () {
     const emitProgress = (progress: RedistributableInstallProgress): void => {
       const payload = { appID, downloadId, ...progress };

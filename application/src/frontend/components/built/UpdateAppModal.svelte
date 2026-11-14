@@ -1,7 +1,6 @@
 <script lang="ts">
 import type { SearchResult, StoreData } from '@ogi-sdk/connect';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect } from 'effect';
 import { onMount } from 'svelte';
 import { fly, slide } from 'svelte/transition';
 import AddonPicture from '@/frontend/components/AddonPicture.svelte';
@@ -9,6 +8,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import SectionModal from '@/frontend/components/modal/SectionModal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { startDownload } from '@/frontend/lib/downloads/protocol';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { createNotification } from '@/frontend/store.svelte';
 import {
@@ -17,7 +17,6 @@ import {
   getAddonServerPromise,
   isAddonEventAvailable,
   type SearchResultWithAddon,
-  startDownloadEffect,
 } from '@/frontend/utils';
 import { supportsStorefront } from '@/lib/storefronts';
 
@@ -213,10 +212,7 @@ async function loadUpdateSources() {
   loadingAddons = new Set();
 }
 
-async function handleDownloadClick(
-  result: SearchResultWithAddon,
-  event: MouseEvent
-) {
+async function handleDownloadClick(result: SearchResultWithAddon) {
   // Add update flags to the result before starting download
   const updateResult = {
     ...result,
@@ -225,29 +221,16 @@ async function handleDownloadClick(
     updateVersion: updateVersion,
   } as SearchResultWithAddon & { isUpdate: boolean; updateVersion: string };
 
-  startDownloadEffect(updateResult, appID, event)
-    .pipe(
-      Effect.as(true),
-      Effect.tap(() => {
-        createNotification({
-          id: Math.random().toString(36).substring(7),
-          message: `Starting update download for ${gameName}`,
-          type: 'info',
-        });
-      }),
-      Effect.catchAll((error) =>
-        Effect.sync(() => {
-          logger.sync.error('Failed to start update download:', error);
-          createNotification({
-            id: Math.random().toString(36).substring(7),
-            message: `Failed to start update download for ${gameName}`,
-            type: 'error',
-          });
-          return false;
-        })
-      )
-    )
-    .pipe(Effect.runFork);
+  void startDownload(updateResult, appID, { version: updateVersion }).then(
+    (id) => {
+      if (!id) return;
+      createNotification({
+        id: Math.random().toString(36).substring(7),
+        message: `Starting update download for ${gameName}`,
+        type: 'info',
+      });
+    }
+  );
   onClose();
 }
 
@@ -405,7 +388,7 @@ function toggleAddonCollapse(addonId: string) {
                       </div>
                       <button
                         class="w-full text-sm border-none bg-accent-light hover:bg-accent/30 text-accent-dark font-medium py-2 px-3 rounded-lg transition-colors duration-200"
-                        onclick={(event) => handleDownloadClick(result, event)}
+                        onclick={() => handleDownloadClick(result)}
                       >
                         Download Update
                       </button>
@@ -508,8 +491,8 @@ function toggleAddonCollapse(addonId: string) {
                         </div>
                         <button
                           class="w-full text-sm border-none bg-accent-light hover:bg-accent/30 text-accent-dark font-medium py-2 px-3 rounded-lg transition-colors duration-200"
-                          onclick={(event) =>
-                            handleDownloadClick(result, event)}
+                          onclick={() =>
+                            handleDownloadClick(result)}
                         >
                           Download Update
                         </button>

@@ -276,6 +276,7 @@ describe('OGIServer <-> OGIClient', () => {
       .uninstall({ appID: 1, deleteFiles: false })
       .catch((e) => e);
     expect(error.tag).toBe('MethodNotFound');
+    // The pipeline is not served here, so its methods are missing too.
     const enqueue = await client.downloads
       .enqueue({ appID: 1, addonSource: 'x', result: {} })
       .catch((e) => e);
@@ -442,7 +443,7 @@ describe('OGIServer <-> OGIClient', () => {
     await report({ progress: 0.5 }); // partial: name and status survive
     await client.downloads.pause({ id: 'dl-1' });
     await paused.promise;
-    await client.downloads.cancel({ id: 'dl-1' });
+    await client.downloads.clear({ id: 'dl-1' });
     const missing = await client.downloads
       .pause({ id: 'dl-1' })
       .catch((e) => e);

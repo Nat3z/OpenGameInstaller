@@ -7,9 +7,12 @@ import {
 import { Context, Effect, Layer, PubSub, type Scope, Stream } from 'effect';
 import { type Implementation, implement } from '../server/router';
 
-/** A partial update: `undefined` leaves a field alone, `null` clears it. */
+/**
+ * What a host reports about a download. Omitted (undefined) fields keep their
+ * value; `null` clears an optional field, e.g. `error: null` on a retry.
+ */
 export type DownloadPatch = {
-  [K in keyof Omit<Download, 'id'>]?: Download[K] | null;
+  readonly [K in keyof Omit<Download, 'id'>]?: Download[K] | null;
 };
 
 /**
@@ -18,9 +21,25 @@ export type DownloadPatch = {
  * Reports are merged, so each source only sends what it knows.
  */
 export type DownloadsShape = {
+  /**
+   * Reports for `engineId` land on `id` from now on, so a pipeline download
+   * shows as one card while engines come and go underneath it. Engine status
+   * is only taken while it describes the transfer; the pipeline owns the rest.
+   */
+  readonly alias: (engineId: string, id: string) => Effect.Effect<void>;
+  /** The engine currently moving bytes for `id`, if any. */
+  readonly engineOf: (id: string) => Effect.Effect<string | undefined>;
   readonly report: (id: string, patch: DownloadPatch) => Effect.Effect<void>;
   readonly remove: (id: string) => Effect.Effect<void>;
   readonly log: (id: string, lines: readonly string[]) => Effect.Effect<void>;
+  /**
+   * Replaces the log with `lines`, publishing only what is new. Addons report
+   * their whole log every time, so this is how their output is appended.
+   */
+  readonly setLogs: (
+    id: string,
+    lines: readonly string[]
+  ) => Effect.Effect<void>;
   readonly get: (id: string) => Effect.Effect<Download | undefined>;
   readonly watch: Effect.Effect<
     { snapshot: Download[]; updates: Stream.Stream<DownloadChange> },
@@ -41,6 +60,9 @@ export class Downloads extends Context.Tag('@ogi-sdk/core/Downloads')<
   DownloadsShape
 >() {}
 
+/** Engine statuses that describe the transfer itself. */
+const TRANSFER = new Set(['queued', 'downloading', 'paused', 'merging']);
+
 const blank = (id: string): Download => ({
   id,
   status: 'queued',
@@ -54,15 +76,43 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
   Effect.gen(function* () {
     const downloads = new Map<string, Download>();
     const logLines = new Map<string, string[]>();
+    /** engine id → pipeline id, and back. */
+    const aliases = new Map<string, string>();
+    const engines = new Map<string, string>();
     const changes = yield* PubSub.unbounded<DownloadChange>();
     const lines = yield* PubSub.unbounded<{ id: string; line: string }>();
 
+    const drop = (id: string) =>
+      Effect.suspend(() => {
+        logLines.delete(id);
+        return downloads.delete(id)
+          ? PubSub.publish(changes, { _tag: 'Removed', id })
+          : Effect.void;
+      }).pipe(Effect.asVoid);
+
     return {
-      report: (id, patch) =>
+      alias: (engineId, id) =>
         Effect.suspend(() => {
+          aliases.set(engineId, id);
+          engines.set(id, engineId);
+          // Anything the engine reported before it was linked was a stray card.
+          return drop(engineId);
+        }),
+      engineOf: (id) => Effect.sync(() => engines.get(id)),
+      report: (reportedId, patch) =>
+        Effect.suspend(() => {
+          const id = aliases.get(reportedId) ?? reportedId;
           // Drop undefined so a partial report never erases known fields.
           const defined = Object.fromEntries(
-            Object.entries(patch).filter(([, value]) => value !== undefined)
+            Object.entries(patch).filter(
+              ([key, value]) =>
+                value !== undefined &&
+                !(
+                  key === 'status' &&
+                  id !== reportedId &&
+                  !TRANSFER.has(value as string)
+                )
+            )
           );
           const next: Record<string, unknown> = {
             ...(downloads.get(id) ?? blank(id)),
@@ -76,19 +126,26 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
             download: next as Download,
           });
         }).pipe(Effect.asVoid),
-      remove: (id) =>
+      remove: (reportedId) => drop(aliases.get(reportedId) ?? reportedId),
+      log: (reportedId, newLines) =>
         Effect.suspend(() => {
-          logLines.delete(id);
-          return downloads.delete(id)
-            ? PubSub.publish(changes, { _tag: 'Removed', id })
-            : Effect.void;
-        }).pipe(Effect.asVoid),
-      log: (id, newLines) =>
-        Effect.suspend(() => {
+          const id = aliases.get(reportedId) ?? reportedId;
           logLines.set(id, [...(logLines.get(id) ?? []), ...newLines]);
           return PubSub.publishAll(
             lines,
             newLines.map((line) => ({ id, line }))
+          );
+        }).pipe(Effect.asVoid),
+      setLogs: (id, all) =>
+        Effect.suspend(() => {
+          const known = logLines.get(id) ?? [];
+          // An addon's log only grows; a shorter one is a fresh run.
+          const fresh =
+            all.length >= known.length ? all.slice(known.length) : all;
+          logLines.set(id, [...all]);
+          return PubSub.publishAll(
+            lines,
+            fresh.map((line) => ({ id, line }))
           );
         }).pipe(Effect.asVoid),
       get: (id) => Effect.sync(() => downloads.get(id)),
@@ -128,19 +185,27 @@ export class DownloadControl extends Context.Tag(
   '@ogi-sdk/core/DownloadControl'
 )<DownloadControl, DownloadControlShape>() {}
 
-const control =
-  (action: keyof DownloadControlShape) =>
-  ({ id }: { id: string }) =>
-    Effect.gen(function* () {
-      const download = yield* Effect.flatMap(Downloads, (d) => d.get(id));
-      if (!download) {
-        return yield* Effect.fail(
-          new DownloadError({ message: `No download ${id}`, downloadId: id })
-        );
-      }
-      yield* (yield* DownloadControl)[action](id);
-    });
+/** Sends `action` to whichever engine is moving bytes for `id` right now. */
+export const controlEngine = (
+  action: keyof DownloadControlShape,
+  id: string
+): Effect.Effect<void, DownloadError, Downloads | DownloadControl> =>
+  Effect.gen(function* () {
+    const downloads = yield* Downloads;
+    if (!(yield* downloads.get(id)))
+      return yield* new DownloadError({
+        message: `No download ${id}`,
+        downloadId: id,
+      });
+    const engine = yield* downloads.engineOf(id);
+    yield* (yield* DownloadControl)[action](engine ?? id);
+  });
 
+/**
+ * State and engine controls. The pipeline's methods (`enqueue`, `resume` and
+ * `cancel` with cleanup, failed setups) are in `PipelineHandlers`; both
+ * implement the `downloads` group and the server merges them per method.
+ */
 export const DownloadsHandlers: Implementation<Downloads | DownloadControl> =
   implement<typeof DownloadsGroup, Downloads | DownloadControl>(
     DownloadsGroup,
@@ -148,9 +213,8 @@ export const DownloadsHandlers: Implementation<Downloads | DownloadControl> =
       watch: () => Effect.flatMap(Downloads, (downloads) => downloads.watch),
       logs: ({ id }) =>
         Effect.flatMap(Downloads, (downloads) => downloads.logs(id)),
-      pause: control('pause'),
-      resume: control('resume'),
-      cancel: control('cancel'),
-      // enqueue / retrySetup: MethodNotFound until the pipeline moves.
+      pause: ({ id }) => controlEngine('pause', id),
+      clear: ({ id }) =>
+        Effect.flatMap(Downloads, (downloads) => downloads.remove(id)),
     }
   );

@@ -11,6 +11,8 @@ import {
   LaunchLive,
   LibraryHandlers,
   OGIServer,
+  PipelineHandlers,
+  PipelineLive,
   PromptsHandlers,
   type ServerSocket,
 } from '@ogi-sdk/core';
@@ -22,6 +24,7 @@ import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import { port, routeUpgrade } from '@/electron/server/addon-server.js';
 import { AddonsFromAddonServer } from '@/electron/server/addons-adapter.js';
 import {
+  AddonCallsFromDevServer,
   AddonsFromDevServer,
   closeDevAddons,
   connectDevAddons,
@@ -32,7 +35,17 @@ import {
   GameRunnerFromLibrary,
   LaunchHooksFromAddonServer,
 } from '@/electron/server/launch-adapters.js';
-import { Library } from '@/electron/services/index.js';
+import { DebridFromSettings } from '@/electron/server/pipeline/debrid.js';
+import { EnginesFromHandlers } from '@/electron/server/pipeline/engines.js';
+import {
+  AddonCallsFromAddonServer,
+  DownloadStoreFromDatabase,
+  InstallerFromLibrary,
+  PipelineConfigFromSettings,
+  SleepLockFromPowerSave,
+} from '@/electron/server/pipeline/host.js';
+import { SetupFilesFromHandlers } from '@/electron/server/pipeline/setup-files.js';
+import { Downloads, Events, Library } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -41,6 +54,12 @@ export const CLIENT_FILE = 'client.json';
 export const CLIENT_PATH = '/client';
 
 let scope: Scope.CloseableScope | undefined;
+let connection: { url: string; token: string } | undefined;
+
+/** Where the desktop renderer connects; undefined until the server is up. */
+export const clientConnection = ():
+  | { url: string; token: string }
+  | undefined => connection;
 
 type Serve = (socket: ServerSocket) => void;
 
@@ -118,6 +137,27 @@ export const startClientServer = (
         ),
         services
       );
+      // The pipeline too: closing the server scope stops every download fiber.
+      const pipeline = yield* Layer.buildWithScope(
+        PipelineLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(Library, yield* Library),
+              Layer.succeed(Downloads, yield* Downloads),
+              Layer.succeed(Events, yield* Events),
+              EnginesFromHandlers,
+              DebridFromSettings,
+              PipelineConfigFromSettings,
+              SetupFilesFromHandlers,
+              local ? AddonCallsFromAddonServer : AddonCallsFromDevServer,
+              InstallerFromLibrary,
+              DownloadStoreFromDatabase,
+              SleepLockFromPowerSave
+            )
+          )
+        ),
+        serverScope
+      );
       const server = yield* OGIServer.make({
         token,
         implementations: [
@@ -126,10 +166,12 @@ export const startClientServer = (
           EventsHandlers,
           PromptsHandlers,
           DownloadsHandlers,
+          PipelineHandlers,
           AddonsHandlers,
         ],
       }).pipe(
         Effect.provide(launcher),
+        Effect.provide(pipeline),
         Effect.provide(local ? AddonsFromAddonServer : AddonsFromDevServer),
         Effect.provide(DownloadControlFromEngines),
         Scope.extend(serverScope)
@@ -146,6 +188,7 @@ export const startClientServer = (
       writeFileSync(file, JSON.stringify({ url, token }), { mode: 0o600 });
       // `mode` only applies on create; tighten a file left by an older run.
       chmodSync(file, 0o600);
+      connection = { url, token };
       logger.sync.info(`[client] protocol served at ${url}`);
     }).pipe(
       // Half-started (e.g. client.json unwritable): close what was built.
@@ -169,6 +212,7 @@ export const awaitManagedPostHooks = (
 
 export const stopClientServer = (): void => {
   rmSync(join(dataDirectory, CLIENT_FILE), { force: true });
+  connection = undefined;
   closeDevAddons();
   if (!scope) return;
   forkElectronEffect(Scope.close(scope, Exit.void));

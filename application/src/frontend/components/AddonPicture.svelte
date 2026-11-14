@@ -1,7 +1,7 @@
 <script lang="ts">
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
+import { getAddonDataUrl } from '@/frontend/lib/core/ipc';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
-import { electronRpc } from '@/frontend/lib/electron-rpc';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -12,17 +12,16 @@ let image = $state<string | undefined>(undefined);
 $effect(() => {
   // Reset image when addonId changes
   image = undefined;
+  // a slower request for a previous addonId must not overwrite this one
+  let stale: boolean = false;
 
   logger.sync.info('Getting addon icon for: ' + addonId);
-  runFrontendEffect(electronRpc.app.getAddonIcon(addonId)).then(
-    async (iconPath) => {
-      if (iconPath) {
-        image =
-          (await runFrontendEffect(electronRpc.app.getLocalImage(iconPath))) ??
-          undefined;
-      }
-    }
-  );
+  runFrontendEffect(getAddonDataUrl(addonId)).then((dataUrl) => {
+    if (dataUrl && !stale) image = dataUrl;
+  });
+  return () => {
+    stale = true;
+  };
 });
 </script>
 

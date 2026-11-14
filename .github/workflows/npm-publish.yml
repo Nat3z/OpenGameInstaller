@@ -14,6 +14,7 @@ on:
       - "packages/connection/package.json"
       - "packages/executor/package.json"
       - "packages/real-debrid/package.json"
+      - "packages/ogi/package.json"
   workflow_dispatch:
     inputs:
       package:
@@ -30,6 +31,7 @@ on:
           - packages/connection
           - packages/executor
           - packages/real-debrid
+          - packages/ogi
 
 permissions:
   id-token: write # Required for OIDC
@@ -50,7 +52,8 @@ jobs:
             {"dir":"packages/client-kit","tag-prefix":"ogi-sdk-client-kit"},
             {"dir":"packages/connection","tag-prefix":"ogi-sdk-connect"},
             {"dir":"packages/executor","tag-prefix":"ogi-sdk-executor"},
-            {"dir":"packages/real-debrid","tag-prefix":"real-debrid-js"}
+            {"dir":"packages/real-debrid","tag-prefix":"real-debrid-js"},
+            {"dir":"packages/ogi","tag-prefix":"ogi-kit"}
           ]'
 
           MATRIX=$(echo "$MATRIX" | jq -c .)
@@ -131,7 +134,7 @@ jobs:
         env:
           PACKAGE_NAME: ${{ steps.version-check.outputs.name }}
         run: |
-          PACKAGE_TARBALL="$PWD/$(npm pack --silent)"
+          PACKAGE_TARBALL="$PWD/$(bun pm pack --quiet)"
           TEMP_DIRECTORY=$(mktemp -d)
           trap 'rm -rf "$TEMP_DIRECTORY" "$PACKAGE_TARBALL"' EXIT
           npm install --prefix "$TEMP_DIRECTORY" "$PACKAGE_TARBALL"
@@ -140,7 +143,8 @@ jobs:
       - name: Publish shared package to npm
         if: steps.version-check.outputs.changed == 'true'
         working-directory: ${{ matrix.package.dir }}
-        run: npm publish --access public
+        # bun pm pack resolves workspace: ranges, which npm pack would leave in place.
+        run: npm publish "$(bun pm pack --quiet)" --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -191,8 +195,9 @@ jobs:
             packages/client-kit \
             packages/connection \
             packages/executor \
-            packages/real-debrid; do
-            (cd "$PACKAGE_DIR" && npm pack --silent --pack-destination "$TEMP_DIRECTORY/tarballs" >/dev/null)
+            packages/real-debrid \
+            packages/ogi; do
+            (cd "$PACKAGE_DIR" && bun pm pack --quiet --destination "$TEMP_DIRECTORY/tarballs" >/dev/null)
           done
 
           for PACKAGE_TARBALL in "$TEMP_DIRECTORY"/tarballs/*.tgz; do
@@ -218,6 +223,7 @@ jobs:
             '@ogi-sdk/connect',
             '@ogi-sdk/executor',
             'real-debrid-js',
+            'ogi-kit',
           ];
           const installDirectory = process.env.INSTALL_DIRECTORY;
 
@@ -329,15 +335,56 @@ jobs:
         if: steps.version-check.outputs.changed == 'true'
         run: bun run build
 
+      # Matrix packages publish in parallel, so wait for sibling packages this one
+      # depends on (e.g. ogi-kit on @ogi-sdk/executor) to reach npm first.
+      - name: Wait for workspace dependencies on npm
+        if: steps.version-check.outputs.changed == 'true'
+        env:
+          PACKAGE_DIR: ${{ matrix.package.dir }}
+        run: |
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { readdirSync, readFileSync, existsSync } = require('node:fs');
+          const read = (dir) => JSON.parse(readFileSync(`${dir}/package.json`, 'utf8'));
+          const workspace = new Map(
+            readdirSync('packages')
+              .filter((dir) => existsSync(`packages/${dir}/package.json`))
+              .map((dir) => read(`packages/${dir}`))
+              .filter((manifest) => !manifest.private)
+              .map((manifest) => [manifest.name, manifest.version])
+          );
+          const { dependencies = {} } = read(process.env.PACKAGE_DIR);
+          const wanted = Object.keys(dependencies).filter((name) => workspace.has(name));
+          const published = (name, version) => {
+            try {
+              execFileSync('npm', ['view', `${name}@${version}`, 'version'], { stdio: 'ignore' });
+              return true;
+            } catch {
+              return false;
+            }
+          };
+          const deadline = Date.now() + 20 * 60 * 1000;
+          for (const name of wanted) {
+            const version = workspace.get(name);
+            while (!published(name, version)) {
+              if (Date.now() > deadline) throw new Error(`${name}@${version} never reached npm`);
+              console.log(`Waiting for ${name}@${version}...`);
+              execFileSync('sleep', ['15']);
+            }
+          }
+          NODE
+
       - name: Publish to npm
         if: steps.version-check.outputs.changed == 'true'
         working-directory: ${{ matrix.package.dir }}
+        # bun pm pack resolves workspace: ranges, which npm pack would leave in place.
         run: |
+          PACKAGE_TARBALL=$(bun pm pack --quiet)
           if [[ "${{ steps.version-check.outputs.name }}" == @* ]]; then
             echo "Publishing scoped package"
-            npm publish --access public
+            npm publish "$PACKAGE_TARBALL" --access public
           else
-            npm publish
+            npm publish "$PACKAGE_TARBALL"
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

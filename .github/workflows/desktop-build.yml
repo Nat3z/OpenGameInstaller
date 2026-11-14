@@ -23,7 +23,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - name: Check out Git repository
@@ -79,12 +79,16 @@ jobs:
         if: steps.check_changes.outputs.has_build_changes == 'true' && !inputs.nightly && !startsWith(github.ref, 'refs/tags/v')
         run: bun .github/workflows/js/nightly.ts stamp-ci
 
+      # macOS builds are unsigned (ad-hoc), so skip looking for a signing identity.
       - name: Build Release Client
         if: steps.check_changes.outputs.has_build_changes == 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: cd application && bun run electron-pack
 
+      # macOS only ships the app, for `ogi dev`; there's no setup for it.
       - name: Build Release Updater
-        if: steps.check_changes.outputs.has_build_changes == 'true' && (!inputs.nightly || inputs.build_updater)
+        if: matrix.os != 'macos-latest' && steps.check_changes.outputs.has_build_changes == 'true' && (!inputs.nightly || inputs.build_updater)
         run: cd updater && bun run electron-pack
 
       - name: Zip for Windows Portable
@@ -114,7 +118,11 @@ jobs:
             bun run .github/workflows/js/generate-blockmaps.mjs updater/dist/OpenGameInstaller-Setup.AppImage
           fi
 
-      - name: What's in the folders? (Windows)
+      - name: Generate macOS blockmaps
+        if: matrix.os == 'macos-latest' && steps.check_changes.outputs.has_build_changes == 'true'
+        run: bun run .github/workflows/js/generate-blockmaps.mjs application/dist/OpenGameInstaller-mac.zip
+
+      - name: What's in the folders?
         if: steps.check_changes.outputs.has_build_changes == 'true'
         shell: bash
         run: |
@@ -142,3 +150,12 @@ jobs:
             updater/dist/OpenGameInstaller-Setup.AppImage.blockmap
             application/dist/OpenGameInstaller-linux-pt.AppImage
             application/dist/OpenGameInstaller-linux-pt.AppImage.blockmap
+
+      - name: Upload macOS Assets as Artifacts
+        if: matrix.os == 'macos-latest' && steps.check_changes.outputs.has_build_changes == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-assets
+          path: |
+            application/dist/OpenGameInstaller-mac.zip
+            application/dist/OpenGameInstaller-mac.zip.blockmap

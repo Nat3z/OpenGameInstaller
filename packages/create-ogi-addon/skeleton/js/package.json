@@ -2,7 +2,12 @@
   "name": "{addon-id}",
   "module": "main.js",
   "type": "module",
+  "scripts": {
+    "dev": "ogi dev -w",
+    "build": "ogi build"
+  },
   "dependencies": {
-    "ogi-addon": "latest"
+    "ogi-addon": "latest",
+    "ogi-kit": "latest"
   }
 }

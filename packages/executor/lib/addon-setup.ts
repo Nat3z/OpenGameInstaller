@@ -87,6 +87,8 @@ export class AddonSetup {
             cwd: this.config.path,
             env,
             stdio: ['ignore', 'pipe', 'pipe'],
+            // own process group, so interrupting kills the whole script tree
+            detached: process.platform !== 'win32',
             windowsVerbatimArguments,
           }),
         catch: (cause) =>
@@ -145,7 +147,7 @@ export class AddonSetup {
         });
 
         return Effect.sync(() => {
-          if (!settled) child.kill();
+          if (!settled) Addon.killProcessGroup(child);
         });
       });
     });

@@ -1,27 +1,32 @@
 import {
-  acceptsRelease,
+  blockmapAsset,
+  type ChannelRelease,
   channelStatePath,
-  NIGHTLY_API,
-  nightlyRelease,
-  parseNightlyManifest,
+  downloadAsset,
+  fetchReleases,
+  findSetupUpdate,
+  formatBytes,
+  platformAsset,
+  type ReleaseAsset,
+  type ReleaseChannel,
+  type ReleaseError,
   resolveChannel,
   selectChannel,
-  shouldUpdateSetup,
+  setReleaseFetch,
+  setupVersion,
   type UpdateChannel,
+  verifyAsset,
 } from '@ogi/update-channel';
 import { formatError, NetworkError, ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { exec, spawn } from 'child_process';
-import { createHash } from 'crypto';
 import { Effect } from 'effect';
-import { app } from 'electron';
+import { app, net } from 'electron';
 import {
   chmodSync,
   closeSync,
   copyFileSync,
-  createReadStream,
-  createWriteStream,
   existsSync,
   mkdirSync,
   openSync,
@@ -35,7 +40,6 @@ import {
 } from 'original-fs';
 import * as path from 'path';
 import { basename, dirname, join } from 'path';
-import semver from 'semver';
 import { setTimeout as setTimeoutPromise } from 'timers/promises';
 import * as zlib from 'zlib';
 import { DATABASE_FILENAME, getDatabase } from '@/electron/database/index.js';
@@ -44,6 +48,10 @@ import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js'
 import { runElectronEffect } from '@/electron/runtime.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
+
+// electron's fetch honors the system and env proxies, unlike node's; it's
+// only called once the app is ready
+setReleaseFetch((url, init) => net.fetch(url, init));
 
 function isDev() {
   return !app.isPackaged;
@@ -112,9 +120,7 @@ export function getUpdateChannel(): ChannelInfo {
 }
 
 /** Saves a release-feed channel; the setup installs its build on the next launch. */
-export function setUpdateChannel(
-  channel: Exclude<UpdateChannel, 'bleeding-edge'>
-): void {
+export function setUpdateChannel(channel: ReleaseChannel): void {
   const { root, statePath } = channelLocation();
   const setupVersionPath = join(root, 'updater-version.txt');
   selectChannel(statePath, root, channel, {
@@ -331,192 +337,34 @@ async function backupFilesAsync(
   }; // Allow up to 10% failure (inclusive), handle zero files
 }
 
-async function downloadFileWithProgress(
-  url: string,
+function downloadSetupAsset(
+  asset: ReleaseAsset,
   destination: string,
   updateStatus: (text: string, subtext?: string) => void,
   updateProgress: (current: number, total: number, speed: string) => void
-) {
-  const response = await axios.get(url, {
-    responseType: 'stream',
-    timeout: 60000,
-  });
-  const writer = createWriteStream(destination);
-  const startTime = Date.now();
-  const fileSize = Number.parseInt(
-    String(response.headers['content-length'] ?? '0'),
-    10
+): Promise<void> {
+  return runElectronEffect(
+    downloadAsset(asset, destination, {
+      onProgress: ({ written, total, bytesPerSecond }) => {
+        const speed = `${formatBytes(bytesPerSecond)}/s`;
+        updateStatus('Downloading Latest Setup', speed);
+        updateProgress(written, total ?? asset.size, speed);
+      },
+      onRetry: (attempt, attempts) =>
+        updateStatus(
+          'Downloading Latest Setup',
+          `Retrying (${attempt}/${attempts})`
+        ),
+    })
   );
-
-  response.data.on('data', () => {
-    const elapsedTime = Math.max((Date.now() - startTime) / 1000, 1);
-    const downloadSpeed = writer.bytesWritten / elapsedTime;
-    const formattedSpeed = `${correctParsingSize(downloadSpeed)}/s`;
-    updateStatus('Downloading Latest Setup', formattedSpeed);
-    updateProgress(writer.bytesWritten, fileSize, formattedSpeed);
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      if (error) {
-        response.data.unpipe(writer);
-        const writerClosed = new Promise<void>((close) => {
-          if (writer.closed) close();
-          else writer.once('close', close);
-        });
-        const responseClosed = new Promise<void>((close) => {
-          if (response.data.closed) close();
-          else response.data.once('close', close);
-        });
-        writer.destroy();
-        response.data.destroy(error);
-        void Promise.all([writerClosed, responseClosed]).then(() => {
-          try {
-            rmSync(destination, { force: true });
-            reject(error);
-          } catch (cleanupError) {
-            reject(cleanupError);
-          }
-        });
-        return;
-      }
-      resolve();
-    };
-
-    writer.on('finish', () => finish());
-    writer.on('error', (error) => finish(error));
-    response.data.on('error', (error: Error) => finish(error));
-    response.data.pipe(writer);
-  });
 }
 
 const PATCH_PROGRESS_INTERVAL = 128;
 const RANGE_DOWNLOAD_CHUNK_SIZE = 16 * 1024 * 1024;
 const RANGE_DOWNLOAD_COALESCE_GAP = 512 * 1024;
 
-type ReleaseAsset = {
-  name: string;
-  browser_download_url: string;
-  size?: number;
-  digest?: string;
-};
-
-type GithubRelease = {
-  tag_name: string;
-  body?: string;
-  prerelease?: boolean;
-  created_at: string;
-  assets: ReleaseAsset[];
-};
-
-function getSetupVersionFromRelease(release: GithubRelease): string | null {
-  const match = release.body?.match(/Setup Version: (.*)/);
-  return match?.[1]?.trim() ?? null;
-}
-
-function compareReleaseOrder(a: GithubRelease, b: GithubRelease): number {
-  const versionA = semver.clean(a.tag_name);
-  const versionB = semver.clean(b.tag_name);
-
-  if (versionA && versionB) {
-    return semver.compare(versionB, versionA);
-  }
-  if (versionA) return -1;
-  if (versionB) return 1;
-  return 0;
-}
-
-function getSetupAsset(release: GithubRelease): ReleaseAsset | undefined {
-  const suffix =
-    process.platform === 'win32' ? '-Setup.exe' : '-Setup.AppImage';
-  return release.assets.find((asset) => asset.name.includes(suffix));
-}
-
-function getBlockmapAsset(
-  release: GithubRelease,
-  artifact: ReleaseAsset
-): ReleaseAsset | undefined {
-  return release.assets.find(
-    (asset) =>
-      asset.name.toLowerCase() === `${artifact.name.toLowerCase()}.blockmap`
-  );
-}
-
 function getBlockKey(checksum: string, size: number): string {
   return `${checksum}:${size}`;
-}
-
-function parseDigest(
-  digest?: string
-): { algorithm: string; value: string } | null {
-  if (!digest) return null;
-  const [algorithm, value] = digest.split(':', 2);
-  const normalized = algorithm?.toLowerCase();
-  if (!value || !['sha256', 'sha384', 'sha512'].includes(normalized)) {
-    return null;
-  }
-  return { algorithm: normalized, value: value.toLowerCase() };
-}
-
-async function hashFile(filePath: string, algorithm: string): Promise<string> {
-  return await new Promise((resolve, reject) => {
-    const hash = createHash(algorithm);
-    const stream = createReadStream(filePath);
-    stream.on('error', reject);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest('hex')));
-  });
-}
-
-function verifyReleaseArtifact(
-  artifactPath: string,
-  expectedArtifact: ReleaseAsset
-): Effect.Effect<void, ValidationError> {
-  return Effect.gen(function* () {
-    const size = yield* Effect.try({
-      try: () => statSync(artifactPath).size,
-      catch: (cause) =>
-        new ValidationError({
-          message: `Unable to inspect release artifact: ${formatError(cause)}`,
-          field: artifactPath,
-        }),
-    });
-    if (
-      Number.isFinite(expectedArtifact.size) &&
-      expectedArtifact.size &&
-      size !== expectedArtifact.size
-    ) {
-      return yield* Effect.fail(
-        new ValidationError({
-          message: `Artifact size mismatch: expected ${expectedArtifact.size}, got ${size}`,
-          field: artifactPath,
-        })
-      );
-    }
-
-    const parsedDigest = parseDigest(expectedArtifact.digest);
-    if (!parsedDigest) return;
-
-    const actualDigest = yield* Effect.tryPromise({
-      try: () => hashFile(artifactPath, parsedDigest.algorithm),
-      catch: (cause) =>
-        new ValidationError({
-          message: `Unable to hash release artifact: ${formatError(cause)}`,
-          field: artifactPath,
-        }),
-    });
-    if (actualDigest !== parsedDigest.value) {
-      return yield* Effect.fail(
-        new ValidationError({
-          message: `Artifact digest mismatch for ${parsedDigest.algorithm}`,
-          field: artifactPath,
-        })
-      );
-    }
-  });
 }
 
 function downloadRangeChunk(
@@ -598,7 +446,7 @@ function applyBlockmapPatch(params: {
   expectedArtifact: ReleaseAsset;
   updateStatus: (text: string, subtext?: string) => void;
   updateProgress: (current: number, total: number, speed: string) => void;
-}): Effect.Effect<void, NetworkError | ValidationError> {
+}): Effect.Effect<void, NetworkError | ValidationError | ReleaseError> {
   return Effect.gen(function* () {
     const { oldMap, newMap } = yield* Effect.try({
       try: () => ({
@@ -766,16 +614,13 @@ function applyBlockmapPatch(params: {
       }
     }
 
-    yield* verifyReleaseArtifact(
-      params.outputArtifact,
-      params.expectedArtifact
-    );
+    yield* verifyAsset(params.outputArtifact, params.expectedArtifact);
   });
 }
 
 async function downloadSetupAppImageWithDifferentialFallback(params: {
-  releases: GithubRelease[];
-  latestRelease: GithubRelease;
+  releases: ChannelRelease[];
+  latestRelease: ChannelRelease;
   latestAsset: ReleaseAsset;
   localVersion: string;
   destination: string;
@@ -783,19 +628,19 @@ async function downloadSetupAppImageWithDifferentialFallback(params: {
   updateProgress: (current: number, total: number, speed: string) => void;
 }): Promise<void> {
   const currentSetupPath = '../OpenGameInstaller-Setup.AppImage';
-  const newBlockmapAsset = getBlockmapAsset(
+  const newBlockmapAsset = blockmapAsset(
     params.latestRelease,
     params.latestAsset
   );
   const previousRelease = params.releases.find(
-    (release) => getSetupVersionFromRelease(release) === params.localVersion
+    (release) => setupVersion(release) === params.localVersion.trim()
   );
   const previousAsset = previousRelease
-    ? getSetupAsset(previousRelease)
+    ? platformAsset(previousRelease, 'setup')
     : undefined;
   const oldBlockmapAsset =
     previousRelease && previousAsset
-      ? getBlockmapAsset(previousRelease, previousAsset)
+      ? blockmapAsset(previousRelease, previousAsset)
       : undefined;
 
   if (existsSync(currentSetupPath) && newBlockmapAsset && oldBlockmapAsset) {
@@ -804,14 +649,14 @@ async function downloadSetupAppImageWithDifferentialFallback(params: {
     const newBlockmapPath = join(tempDir, 'ogi-new-setup.blockmap');
     try {
       params.updateStatus('Downloading setup blockmaps...');
-      await downloadFileWithProgress(
-        oldBlockmapAsset.browser_download_url,
+      await downloadSetupAsset(
+        oldBlockmapAsset,
         oldBlockmapPath,
         params.updateStatus,
         params.updateProgress
       );
-      await downloadFileWithProgress(
-        newBlockmapAsset.browser_download_url,
+      await downloadSetupAsset(
+        newBlockmapAsset,
         newBlockmapPath,
         params.updateStatus,
         params.updateProgress
@@ -844,8 +689,8 @@ async function downloadSetupAppImageWithDifferentialFallback(params: {
     }
   }
 
-  await downloadFileWithProgress(
-    params.latestAsset.browser_download_url,
+  await downloadSetupAsset(
+    params.latestAsset,
     params.destination,
     params.updateStatus,
     params.updateProgress
@@ -903,24 +748,6 @@ async function backupStateForSetupReplacement(
   } catch (backupError: any) {
     logger.sync.error('[updater] Backup failed:', backupError.message);
     // Continue anyway - better to update with potential data loss than to leave broken
-  }
-}
-
-/**
- * Format a byte count into a human-readable string using B, KB, MB, or GB.
- *
- * @param size - The size in bytes to format
- * @returns The formatted size string (e.g., `512B`, `1.23KB`, `4.56MB`, `7.89GB`); values for KB and above use two decimal places
- */
-function correctParsingSize(size: number) {
-  if (size < 1024) {
-    return size + 'B';
-  } else if (size < 1024 * 1024) {
-    return (size / 1024).toFixed(2) + 'KB';
-  } else if (size < 1024 * 1024 * 1024) {
-    return (size / (1024 * 1024)).toFixed(2) + 'MB';
-  } else {
-    return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
   }
 }
 
@@ -1052,65 +879,17 @@ export function checkIfInstallerUpdateAvailable(
     }
     // check for updates
     try {
-      const gitRepo = 'nat3z/OpenGameInstaller';
-      const releases =
-        channel === 'nightly'
-          ? {
-              data: [
-                nightlyRelease(
-                  parseNightlyManifest(
-                    JSON.parse(
-                      (await axios.get(NIGHTLY_API, { timeout: 10000 })).data
-                        .body
-                    )
-                  ),
-                  'updater'
-                ),
-              ],
-            }
-          : await axios.get(
-              `https://api.github.com/repos/${gitRepo}/releases?per_page=100`,
-              { timeout: 10000 }
-            );
-      const candidates = (releases.data as GithubRelease[])
-        .flatMap((release) => {
-          const setupVersion = getSetupVersionFromRelease(release);
-          const version = setupVersion
-            ? semver.valid(setupVersion.trim())
-            : undefined;
-          if (
-            !version ||
-            (channel !== 'nightly' && !acceptsRelease(channel, release)) ||
-            (setupVersion &&
-              semver.eq(setupVersion.trim(), localVersion.trim()))
-          ) {
-            return [];
-          }
-          return [{ release, version }];
-        })
-        .sort((a, b) => compareReleaseOrder(a.release, b.release));
-      let latestRelease: GithubRelease | undefined = candidates[0]?.release;
-
-      // disable the release if we already have this version
-      if (latestRelease) {
-        const wantedVersion = getSetupVersionFromRelease(latestRelease);
-        const version = wantedVersion
-          ? semver.valid(wantedVersion.trim())
-          : undefined;
-        if (!version || !shouldUpdateSetup(localVersion, version, channel)) {
-          latestRelease = undefined;
-        }
-      }
-
-      if (!latestRelease) {
-        logger.sync.error('[updater] No new version available.');
+      const releases = await runElectronEffect(fetchReleases(channel, 'setup'));
+      const update = findSetupUpdate(releases, localVersion, channel);
+      if (!update) {
+        logger.sync.info('[updater] No new version available.');
         resolve({ success: true, updated: false });
         return;
       }
-      const latestVersion = latestRelease.tag_name;
-      const latestSetupAsset = getSetupAsset(latestRelease);
-      const latestSetupVersionUrl = latestSetupAsset?.browser_download_url;
-      if (!latestSetupVersionUrl || !latestSetupAsset) {
+      const latestRelease = update.release;
+      const latestSetupVersion = update.version;
+      const latestSetupAsset = platformAsset(latestRelease, 'setup');
+      if (!latestSetupAsset) {
         logger.sync.error(
           '[updater] No setup version found for the current platform.'
         );
@@ -1122,136 +901,103 @@ export function checkIfInstallerUpdateAvailable(
         return;
       }
       logger.sync.info(
-        `[updater] Latest setup version url: ${latestSetupVersionUrl}`
+        `[updater] New setup ${latestSetupVersion} available from ${latestRelease.tag_name}: ${latestSetupAsset.browser_download_url}`
       );
-      // get the latest version of the setup from the description of the release
-      const setupVersion = getSetupVersionFromRelease(latestRelease);
-      if (!setupVersion) {
-        logger.sync.error(
-          '[updater] No setup version found in the release description.'
+      // Kill any running instances of Setup.AppImage or ogi-updater.exe before updating
+      updateStatus('Stopping updater processes');
+      await killUpdaterProcesses();
+
+      updateStatus('Downloading latest Setup...');
+      if (process.platform === 'win32') {
+        const directory = app.getPath('temp') + '\\ogi-setup.exe';
+        await downloadSetupAsset(
+          latestSetupAsset,
+          directory,
+          updateStatus,
+          updateProgress
         );
-        resolve({
-          success: false,
-          updated: false,
-          error: 'No setup version found in the release description',
-        });
-        return;
-      }
-      const latestSetupVersion = setupVersion;
-      logger.sync.info(`[updater] Latest setup version: ${latestSetupVersion}`);
-      logger.sync.info(`[updater] Latest version: ${latestVersion}`);
+        logger.sync.info(`[updater] Setup downloaded successfully.`);
+        logger.sync.info(`[updater] Backing up files in update.`);
+        await backupStateForSetupReplacement(updateStatus, updateProgress);
 
-      if (latestSetupVersion !== localVersion) {
-        logger.sync.info(`[updater] New version available: ${latestVersion}`);
+        updateStatus('Starting Setup');
 
-        // Kill any running instances of Setup.AppImage or ogi-updater.exe before updating
-        updateStatus('Stopping updater processes');
-        await killUpdaterProcesses();
-
-        updateStatus('Downloading latest Setup...');
-        if (process.platform === 'win32') {
-          const directory = app.getPath('temp') + '\\ogi-setup.exe';
-          await downloadFileWithProgress(
-            latestSetupVersionUrl,
-            directory,
-            updateStatus,
-            updateProgress
+        await setTimeoutPromise(500);
+        try {
+          spawn(directory, {
+            detached: true,
+            stdio: 'ignore',
+          }).unref();
+        } catch (spawnError: any) {
+          logger.sync.error(
+            '[updater] Failed to launch setup:',
+            spawnError.message
           );
-          await runElectronEffect(
-            verifyReleaseArtifact(directory, latestSetupAsset)
-          );
-          logger.sync.info(`[updater] Setup downloaded successfully.`);
-          logger.sync.info(`[updater] Backing up files in update.`);
-          await backupStateForSetupReplacement(updateStatus, updateProgress);
-
-          updateStatus('Starting Setup');
-
-          await setTimeoutPromise(500);
-          try {
-            spawn(directory, {
-              detached: true,
-              stdio: 'ignore',
-            }).unref();
-          } catch (spawnError: any) {
-            logger.sync.error(
-              '[updater] Failed to launch setup:',
-              spawnError.message
-            );
-            updateStatus('Update Failed', 'Please try again later');
-            resolve({
-              success: false,
-              updated: false,
-              error: spawnError.message,
-            });
-            return;
-          }
-          resolve({ success: true, updated: true });
-        } else if (process.platform === 'linux') {
-          await setTimeoutPromise(3000);
-          await downloadSetupAppImageWithDifferentialFallback({
-            releases: releases.data,
-            latestRelease,
-            latestAsset: latestSetupAsset,
-            localVersion,
-            destination: '../temp-setup-OGI.AppImage',
-            updateStatus,
-            updateProgress,
+          updateStatus('Update Failed', 'Please try again later');
+          resolve({
+            success: false,
+            updated: false,
+            error: spawnError.message,
           });
-          await runElectronEffect(
-            verifyReleaseArtifact(
-              '../temp-setup-OGI.AppImage',
-              latestSetupAsset
-            )
-          );
-          logger.sync.info(`[updater] Setup downloaded successfully.`);
-
-          updateStatus('Starting Setup');
-
-          await setTimeoutPromise(500);
-          try {
-            // Replace the old Setup AppImage only after the download is complete.
-            logger.sync.info(
-              `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
-            );
-            rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
-            logger.sync.info(
-              `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
-            );
-            copyFileSync(
-              '../temp-setup-OGI.AppImage',
-              '../OpenGameInstaller-Setup.AppImage'
-            );
-            rmSync('../temp-setup-OGI.AppImage', { force: true });
-            logger.sync.info(
-              `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
-            );
-            chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
-            // Keep the recorded version in sync with the replaced setup for channel switches.
-            writeFileSync('../updater-version.txt', latestSetupVersion.trim());
-          } catch (moveError: any) {
-            logger.sync.error(
-              '[updater] Failed to move setup:',
-              moveError.message
-            );
-            updateStatus('Update Failed', 'Please try again later');
-            await setTimeoutPromise(3000);
-            resolve({
-              success: false,
-              updated: false,
-              error: moveError.message,
-            });
-            return;
-          }
-          updateStatus(
-            'Shutting Down OpenGameInstaller',
-            'Please open OpenGameInstaller again'
-          );
-          await setTimeoutPromise(3000);
-          resolve({ success: true, updated: true });
+          return;
         }
-      } else {
-        logger.sync.info(`[updater] No new version available.`);
-        resolve({ success: true, updated: false });
+        resolve({ success: true, updated: true });
+      } else if (process.platform === 'linux') {
+        await setTimeoutPromise(3000);
+        await downloadSetupAppImageWithDifferentialFallback({
+          releases,
+          latestRelease,
+          latestAsset: latestSetupAsset,
+          localVersion,
+          destination: '../temp-setup-OGI.AppImage',
+          updateStatus,
+          updateProgress,
+        });
+        logger.sync.info(`[updater] Setup downloaded successfully.`);
+
+        updateStatus('Starting Setup');
+
+        await setTimeoutPromise(500);
+        try {
+          // Replace the old Setup AppImage only after the download is complete.
+          logger.sync.info(
+            `[updater] Renaming setup to OpenGameInstaller-Setup.AppImage`
+          );
+          rmSync('../OpenGameInstaller-Setup.AppImage', { force: true });
+          logger.sync.info(
+            `[updater] Moving over setup to OpenGameInstaller-Setup.AppImage`
+          );
+          copyFileSync(
+            '../temp-setup-OGI.AppImage',
+            '../OpenGameInstaller-Setup.AppImage'
+          );
+          rmSync('../temp-setup-OGI.AppImage', { force: true });
+          logger.sync.info(
+            `[updater] Copied setup to OpenGameInstaller-Setup.AppImage`
+          );
+          chmodSync('../OpenGameInstaller-Setup.AppImage', 0o755);
+          // Keep the recorded version in sync with the replaced setup for channel switches.
+          writeFileSync('../updater-version.txt', latestSetupVersion.trim());
+        } catch (moveError: any) {
+          logger.sync.error(
+            '[updater] Failed to move setup:',
+            moveError.message
+          );
+          updateStatus('Update Failed', 'Please try again later');
+          await setTimeoutPromise(3000);
+          resolve({
+            success: false,
+            updated: false,
+            error: moveError.message,
+          });
+          return;
+        }
+        updateStatus(
+          'Shutting Down OpenGameInstaller',
+          'Please open OpenGameInstaller again'
+        );
+        await setTimeoutPromise(3000);
+        resolve({ success: true, updated: true });
       }
     } catch (ex) {
       logger.sync.error('[updater] Error while checking for updates: ', ex);

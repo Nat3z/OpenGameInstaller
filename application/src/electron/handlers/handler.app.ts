@@ -191,24 +191,6 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
         Effect.sync(() => getAddonServer().getClient(addonID)?.filePath ?? null)
       )
     ),
-    procedure(ElectronRpc.app.getAddonIcon, (addonID: string) =>
-      runBoundary(
-        Effect.try({
-          try: () => {
-            const client = getAddonServer().getClient(addonID);
-            if (!client?.filePath) return null;
-            const addonJson = JSON.parse(
-              fs.readFileSync(join(client.filePath, 'addon.json'), 'utf-8')
-            ) as { icon?: string };
-            if (!addonJson.icon) return null;
-            const iconPath = join(client.filePath, addonJson.icon);
-            return fs.existsSync(iconPath) ? iconPath : null;
-          },
-          catch: (cause) =>
-            new FileSystemError({ message: formatError(cause), cause }),
-        })
-      )
-    ),
     procedure(ElectronRpc.app.getLocalImage, (requestPath: string) =>
       runBoundary(
         Effect.gen(function* () {

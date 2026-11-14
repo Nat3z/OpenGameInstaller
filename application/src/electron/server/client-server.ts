@@ -24,6 +24,7 @@ import { AddonsFromAddonServer } from '@/electron/server/addons-adapter.js';
 import {
   AddonsFromDevServer,
   closeDevAddons,
+  connectDevAddons,
   LaunchHooksFromDevServer,
 } from '@/electron/server/dev-addons.js';
 import { DownloadControlFromEngines } from '@/electron/server/downloads-bridge.js';
@@ -96,9 +97,7 @@ export const startClientServer = (
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(Library, yield* Library),
-              local
-                ? LaunchHooksFromAddonServer
-                : LaunchHooksFromDevServer,
+              local ? LaunchHooksFromAddonServer : LaunchHooksFromDevServer,
               GameRunnerFromLibrary
             )
           )
@@ -117,9 +116,7 @@ export const startClientServer = (
         ],
       }).pipe(
         Effect.provide(launcher),
-        Effect.provide(
-          local ? AddonsFromAddonServer : AddonsFromDevServer
-        ),
+        Effect.provide(local ? AddonsFromAddonServer : AddonsFromDevServer),
         Effect.provide(DownloadControlFromEngines),
         Scope.extend(serverScope)
       );
@@ -128,6 +125,8 @@ export const startClientServer = (
       const clientPort: number = local
         ? port
         : yield* listenStandalone(serve, serverScope);
+      // Before the window loads, so core is the SDK client prompts go to.
+      if (!local) yield* connectDevAddons();
       const url = `ws://127.0.0.1:${clientPort}${CLIENT_PATH}`;
       const file = join(dataDirectory, CLIENT_FILE);
       writeFileSync(

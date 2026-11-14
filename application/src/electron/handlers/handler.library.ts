@@ -504,8 +504,7 @@ export function launchGameFromLibrary(
       yield* markLaunched(appInfo.appID);
       // A game that exited before this point already reported its exit;
       // `Launched` after `Exited` would leave watchers thinking it runs.
-      if (runningGames.has(appInfo.appID))
-        reportGame('launch', appInfo.appID);
+      if (runningGames.has(appInfo.appID)) reportGame('launch', appInfo.appID);
       return { success: true };
     }
 

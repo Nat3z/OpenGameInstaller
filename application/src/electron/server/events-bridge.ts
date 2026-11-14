@@ -60,13 +60,13 @@ const libraryToIpc = (change: LibraryChange): Ipc | undefined => {
  * renderer's IPC channels, so the Svelte app keeps working unchanged while
  * every producer goes through core. Subscribes synchronously, so nothing
  * published after this call is missed. `send` waits for the renderer like
- * `sendIPCMessage` always has; one consumer per feed keeps events in order.
+ * `sendIPCMessage` always has; a single consumer keeps both feeds in order.
  * Removed once the renderer subscribes over the protocol.
  */
 export const forwardEventsToRenderer = (
   send: (channel: string, ...args: unknown[]) => Promise<void>
 ): void => {
-  // Lives as long as the process; the forked consumers are interrupted with
+  // Lives as long as the process; the forked consumer is interrupted with
   // the runtime on quit.
   const scope = Effect.runSync(Scope.make());
   const deliver = (ipc: Ipc | undefined) =>
@@ -82,12 +82,12 @@ export const forwardEventsToRenderer = (
       Scope.extend(scope)
     )
   );
+  // One consumer for both feeds: `game:launch` must not overtake
+  // `game:launch-requested` while the renderer is slow to accept.
   forkElectronEffect(
-    Stream.fromQueue(events).pipe(
-      Stream.runForEach((event) => deliver(eventToIpc(event)))
-    )
-  );
-  forkElectronEffect(
-    library.pipe(Stream.runForEach((change) => deliver(libraryToIpc(change))))
+    Stream.merge(
+      Stream.fromQueue(events).pipe(Stream.map(eventToIpc)),
+      library.pipe(Stream.map(libraryToIpc))
+    ).pipe(Stream.runForEach(deliver))
   );
 };

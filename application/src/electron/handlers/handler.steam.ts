@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { FileSystemError, SteamRunningError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Layer } from 'effect';
-import { type BrowserWindow, dialog } from 'electron';
 import { generateNotificationId } from '@/electron/handlers/helpers.app/notifications.js';
 import {
   getCurrentUsername,
@@ -34,7 +33,11 @@ import { getNonSteamLaunchId } from '@/electron/lib/steam-shortcuts.js';
 import { sendNotification } from '@/electron/main.js';
 import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
 import { ipcServiceBoundary } from '@/electron/runtime.js';
-import { type AppServices, Library } from '@/electron/services/index.js';
+import {
+  type AppServices,
+  Library,
+  Prompts,
+} from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
 export type SteamOperationResult =
@@ -85,34 +88,23 @@ export const findSteamAppIdForGame = (appID: number, oldSteamAppId?: number) =>
     Effect.map((shortcut) => shortcut?.appId)
   );
 
+/** Asks every client (first answer wins) whether Steam may close briefly. */
 const confirmSteamClose = (
-  mainWindow: BrowserWindow,
   operation: 'add' | 'remove'
-): Effect.Effect<boolean, FileSystemError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const result = await dialog.showMessageBox(mainWindow, {
-        type: 'warning',
-        title: 'Steam must close briefly',
-        message: `Steam is running and must close before OpenGameInstaller can ${operation} this shortcut safely.`,
-        detail:
-          'OpenGameInstaller will wait for Steam to exit, update shortcuts.vdf, and restart Steam automatically.',
-        buttons: ['Cancel', 'Close Steam and Continue'],
-        defaultId: 1,
-        cancelId: 0,
-        noLink: true,
-      });
-      return result.response === 1;
-    },
-    catch: (cause) =>
-      new FileSystemError({
-        message: 'Could not display the Steam shutdown confirmation',
-        cause,
-      }),
-  });
+): Effect.Effect<boolean, never, Prompts> =>
+  Effect.flatMap(Prompts, (prompts) =>
+    prompts.ask({
+      _tag: 'Confirm',
+      title: 'Steam must close briefly',
+      message: `Steam is running and must close before OpenGameInstaller can ${operation} this shortcut safely.`,
+      detail:
+        'OpenGameInstaller will wait for Steam to exit, update shortcuts.vdf, and restart Steam automatically.',
+      confirmLabel: 'Close Steam and Continue',
+      cancelLabel: 'Cancel',
+    })
+  ).pipe(Effect.map((answer) => answer._tag === 'Confirm' && answer.confirmed));
 
 export const runSteamMutationWithConfirmation = (
-  mainWindow: BrowserWindow,
   operation: 'add' | 'remove',
   options: SteamMutationOptions
 ): Effect.Effect<
@@ -127,7 +119,7 @@ export const runSteamMutationWithConfirmation = (
     if (!(initial.left instanceof SteamRunningError)) {
       return yield* Effect.fail(initial.left);
     }
-    const confirmed = yield* confirmSteamClose(mainWindow, operation);
+    const confirmed = yield* confirmSteamClose(operation);
     if (!confirmed) {
       return {
         status: 'cancelled' as const,
@@ -140,19 +132,18 @@ export const runSteamMutationWithConfirmation = (
     });
   }).pipe(provideSteam);
 
-export function addUmuGameToSteam(
-  mainWindow: BrowserWindow,
-  params: { appID: number; oldSteamAppId?: number }
-): Effect.Effect<
+export function addUmuGameToSteam(params: {
+  appID: number;
+  oldSteamAppId?: number;
+}): Effect.Effect<
   SteamOperationResult,
   SteamServiceError | FileSystemError,
   AppServices
 > {
-  return runSteamMutationWithConfirmation(mainWindow, 'add', params);
+  return runSteamMutationWithConfirmation('add', params);
 }
 
 export function addDeckGameToSteam(
-  mainWindow: BrowserWindow,
   appID: number
 ): Effect.Effect<void, SteamServiceError | FileSystemError, AppServices> {
   if (!isLinux() || getCurrentUsername()?.toLowerCase() !== 'deck') {
@@ -160,7 +151,7 @@ export function addDeckGameToSteam(
   }
 
   return Effect.gen(function* () {
-    const result = yield* addUmuGameToSteam(mainWindow, { appID });
+    const result = yield* addUmuGameToSteam({ appID });
     if (result.status === 'cancelled') {
       sendNotification({
         message:
@@ -268,7 +259,7 @@ Icon=steam_icon_${params.appID}
   });
 }
 
-export function registerSteamHandlers(mainWindow: BrowserWindow) {
+export function registerSteamHandlers() {
   const getSteamAppId = ipcProcedure(
     ElectronRpc.app.getSteamAppId,
     ipcServiceBoundary((_, appID: number) =>
@@ -329,14 +320,10 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
           (appInfo.umu !== undefined &&
             appInfo.umu.steamShortcutId === undefined);
         if (shouldUpsertShortcut) {
-          const added = yield* runSteamMutationWithConfirmation(
-            mainWindow,
-            'add',
-            {
-              appID,
-              oldSteamAppId: existingSteamAppId,
-            }
-          );
+          const added = yield* runSteamMutationWithConfirmation('add', {
+            appID,
+            oldSteamAppId: existingSteamAppId,
+          });
           if (added.status === 'cancelled') return added;
           if (added.steamAppId === undefined) {
             return yield* Effect.fail(
@@ -429,7 +416,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
             );
           }
         }
-        return yield* runSteamMutationWithConfirmation(mainWindow, 'add', {
+        return yield* runSteamMutationWithConfirmation('add', {
           appID,
           oldSteamAppId,
         });
@@ -450,7 +437,7 @@ export function registerSteamHandlers(mainWindow: BrowserWindow) {
           new FileSystemError({ message: 'Only available on Linux' })
         );
       }
-      return runSteamMutationWithConfirmation(mainWindow, 'remove', { appID });
+      return runSteamMutationWithConfirmation('remove', { appID });
     })
   );
 

@@ -2,11 +2,9 @@ import { Schema } from 'effect';
 import { call, group, stream } from '../define';
 
 /**
- * DRAFT: no server implements this group yet.
- *
- * When core needs a human (addon `input-asked`, "close Steam?", root password
- * for redistributables) it opens a prompt. Every connected client sees it;
- * the first `reply` wins and the prompt is removed for everyone.
+ * When core needs a human (addon `input-asked`, "close Steam?") it opens a
+ * prompt. Every connected client sees it; the first `reply` wins and the
+ * prompt closes for everyone. Served by core's `Prompts` service.
  */
 
 export const Prompt = Schema.Union(
@@ -21,13 +19,9 @@ export const Prompt = Schema.Union(
     id: Schema.String,
     title: Schema.String,
     message: Schema.String,
+    detail: Schema.optional(Schema.String),
     confirmLabel: Schema.String,
     cancelLabel: Schema.String,
-  }),
-  Schema.TaggedStruct('Secret', {
-    id: Schema.String,
-    title: Schema.String,
-    message: Schema.String,
   })
 );
 export type Prompt = typeof Prompt.Type;
@@ -45,9 +39,11 @@ export const PromptAnswer = Schema.Union(
     }),
   }),
   Schema.TaggedStruct('Confirm', { confirmed: Schema.Boolean }),
-  Schema.TaggedStruct('Secret', { value: Schema.String }),
+  /** The user closed the prompt without answering. */
   Schema.TaggedStruct('Dismiss', {})
 );
+export type PromptAnswer = typeof PromptAnswer.Type;
+export type PromptChange = typeof PromptChange.Type;
 
 export const PromptsGroup = group('prompts', {
   watch: stream({

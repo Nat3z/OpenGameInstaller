@@ -2,10 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { OGIClient } from '@ogi-sdk/client-kit';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { ProtocolError } from '@ogi-sdk/protocol';
-import { Effect, Exit, Layer, ManagedRuntime, Scope } from 'effect';
+import { Effect, Exit, Fiber, Layer, ManagedRuntime, Scope } from 'effect';
 import { Events, EventsHandlers, EventsLive } from '../events/events';
 import { LibraryHandlers } from '../library/handlers';
 import { Library, LibraryLive, LibraryStore } from '../library/library';
+import { Prompts, PromptsHandlers, PromptsLive } from '../prompts/prompts';
 import { OGIServer } from './server';
 import type { ServerSocket } from './socket';
 
@@ -42,7 +43,11 @@ const memoryStore = () => {
 
 const TOKEN = 'test-token';
 const runtime = ManagedRuntime.make(
-  Layer.mergeAll(LibraryLive.pipe(Layer.provide(memoryStore())), EventsLive)
+  Layer.mergeAll(
+    LibraryLive.pipe(Layer.provide(memoryStore())),
+    EventsLive,
+    PromptsLive
+  )
 );
 let server: ReturnType<typeof Bun.serve>;
 let url = '';
@@ -52,7 +57,7 @@ beforeAll(async () => {
   const ogi = await runtime.runPromise(
     OGIServer.make({
       token: TOKEN,
-      implementations: [LibraryHandlers, EventsHandlers],
+      implementations: [LibraryHandlers, EventsHandlers, PromptsHandlers],
     }).pipe(Scope.extend(scope))
   );
   // Bun's ServerWebSocket pushes messages to the server-level handler, so
@@ -98,7 +103,11 @@ describe('OGIServer <-> OGIClient', () => {
 
   test('calls return decoded results', async () => {
     const client = await OGIClient.connect({ url, token: TOKEN });
-    expect(client.effect.serverGroups).toEqual(['library', 'events']);
+    expect(client.effect.serverGroups).toEqual([
+      'library',
+      'events',
+      'prompts',
+    ]);
     expect((await client.library.list()).map((g) => g.appID)).toEqual([1]);
     expect((await client.library.get({ appID: 1 }))?.name).toBe('Game 1');
     expect(await client.library.get({ appID: 9 })).toBeNull();
@@ -169,5 +178,79 @@ describe('OGIServer <-> OGIClient', () => {
     expect(seen).toEqual(['AddonsStarted', 'ShowChangelog']);
     stop();
     await client.close();
+  });
+
+  test('a prompt reaches every client and the first answer wins', async () => {
+    const a = await OGIClient.connect({ url, token: TOKEN });
+    const b = await OGIClient.connect({ url, token: TOKEN });
+    // Both clients see the prompt open, then close for everyone.
+    const opened = (client: OGIClient) => {
+      const seen = Promise.withResolvers<string>();
+      const closed = Promise.withResolvers<void>();
+      const stop = client.prompts.watch((event) => {
+        if (event._tag !== 'Update') return;
+        if (event.value._tag === 'Opened') seen.resolve(event.value.prompt.id);
+        else closed.resolve();
+      });
+      return { seen: seen.promise, closed: closed.promise, stop };
+    };
+    const onA = opened(a);
+    const onB = opened(b);
+    await Bun.sleep(50);
+
+    // Core asks; the answer comes back through whoever replies first.
+    const asked = runtime.runPromise(
+      Effect.flatMap(Prompts, (prompts) =>
+        prompts.ask({
+          _tag: 'Confirm',
+          title: 'Close Steam?',
+          message: 'Steam must close briefly',
+          confirmLabel: 'Close',
+          cancelLabel: 'Cancel',
+        })
+      )
+    );
+    const id = await onA.seen;
+    expect(await onB.seen).toBe(id);
+
+    const first = await b.prompts.reply({
+      id,
+      answer: { _tag: 'Confirm', confirmed: true },
+    });
+    const second = await a.prompts.reply({
+      id,
+      answer: { _tag: 'Confirm', confirmed: false },
+    });
+    expect(first).toEqual({ accepted: true });
+    expect(second).toEqual({ accepted: false });
+    expect(await asked).toEqual({ _tag: 'Confirm', confirmed: true });
+    await Promise.all([onA.closed, onB.closed]);
+
+    onA.stop();
+    onB.stop();
+    await Promise.all([a.close(), b.close()]);
+  });
+
+  test('a late subscriber gets open prompts in the snapshot', async () => {
+    const asking = runtime.runFork(
+      Effect.flatMap(Prompts, (prompts) =>
+        prompts.ask({
+          _tag: 'Input',
+          title: 'Login',
+          description: '',
+          config: {},
+        })
+      )
+    );
+    await Bun.sleep(20);
+    const client = await OGIClient.connect({ url, token: TOKEN });
+    const snapshot = Promise.withResolvers<number>();
+    const stop = client.prompts.watch((event) => {
+      if (event._tag === 'Snapshot') snapshot.resolve(event.value.length);
+    });
+    expect(await snapshot.promise).toBe(1);
+    stop();
+    await client.close();
+    await Effect.runPromise(Fiber.interrupt(asking));
   });
 });

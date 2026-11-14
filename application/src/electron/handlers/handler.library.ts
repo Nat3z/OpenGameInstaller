@@ -382,7 +382,6 @@ const markLaunched = (appID: number) =>
 
 export function launchGameFromLibrary(
   appid: number | string,
-  mainWindow?: Electron.BrowserWindow | null,
   launchEnv?: Record<string, string>
 ): Effect.Effect<LaunchGameResult, LibraryError, AppServices> {
   return Effect.gen(function* () {
@@ -430,8 +429,8 @@ export function launchGameFromLibrary(
       if (!appInfo)
         return { success: false, error: 'Game disappeared during migration' };
 
-      if (mainWindow && oldSteamAppId !== undefined) {
-        const shortcutResult = yield* addUmuGameToSteam(mainWindow, {
+      if (oldSteamAppId !== undefined) {
+        const shortcutResult = yield* addUmuGameToSteam({
           appID: parsedAppId,
           oldSteamAppId,
         }).pipe(
@@ -869,12 +868,12 @@ const gameSearchRoots = Effect.gen(function* () {
 let lastFoundGames = new Map<string, FoundGame>();
 let manifestsBackfilled = false;
 
-export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
+export function registerLibraryHandlers() {
   const launchGame = ipcProcedure(
     ElectronRpc.app.launchGame,
     ipcServiceBoundary((_, appid: string) =>
       Effect.gen(function* () {
-        const result = yield* launchGameFromLibrary(Number(appid), mainWindow);
+        const result = yield* launchGameFromLibrary(Number(appid));
         if (!result.success) {
           return yield* Effect.fail(
             new LibraryError({
@@ -940,7 +939,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
               let warning = steamCleanupWarning;
               if (detectedSteamAppId !== undefined) {
                 const steamResult = yield* Effect.either(
-                  runSteamMutationWithConfirmation(mainWindow, 'remove', {
+                  runSteamMutationWithConfirmation('remove', {
                     appID: appid,
                     oldSteamAppId: detectedSteamAppId,
                     libraryInfo: appInfo,
@@ -1127,9 +1126,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
                 return 'setup-prefix-required';
               }
 
-              yield* Effect.forkDaemon(
-                addDeckGameToSteam(mainWindow, data.appID)
-              );
+              yield* Effect.forkDaemon(addDeckGameToSteam(data.appID));
               return 'setup-success';
             }
           }
@@ -1314,9 +1311,7 @@ export function registerLibraryHandlers(mainWindow: Electron.BrowserWindow) {
           lastFoundGames.delete(normalizeDeletePath(path));
           imported++;
           if (!existing) {
-            yield* Effect.forkDaemon(
-              addDeckGameToSteam(mainWindow, info.appID)
-            );
+            yield* Effect.forkDaemon(addDeckGameToSteam(info.appID));
           }
         }
         return { imported, errors };

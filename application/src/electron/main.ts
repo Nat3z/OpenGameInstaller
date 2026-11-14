@@ -54,6 +54,7 @@ import {
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
+import { configureAddons } from '@/electron/server/addons-adapter.js';
 import {
   awaitManagedPostHooks,
   startClientServer,
@@ -554,6 +555,9 @@ async function startHeadless(): Promise<void> {
   await runElectronEffect(checkForAddonUpdates());
   publishEvent({ _tag: 'AddonsStarted' });
   await runElectronEffect(waitForAddonManifests());
+  // The renderer's config-update is the addon handshake (`connect`, saved
+  // settings, events); headless sends it from here.
+  await runElectronEffect(configureAddons);
   publishEvent({ _tag: 'AddonManifestsReady' });
   logger.sync.info(
     '[headless] Ready; client.json written to the data directory'

@@ -166,6 +166,10 @@ export class AddonServer {
   public rememberConfig(id: string, config: ConfigurationFile): void {
     this.lastConfigs.set(id, config);
   }
+  /** Whether an addon has been sent a config since this server started. */
+  public isConfigured(id: string): boolean {
+    return this.lastConfigs.has(id);
+  }
   public getDeferredTasksManager(): DeferredTasksManager {
     return this.deferredTasksManager;
   }

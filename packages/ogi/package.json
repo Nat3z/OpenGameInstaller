@@ -46,12 +46,12 @@
     "auto-build": "tsc -w",
     "build": "bun run --cwd ../update-channel build && tsdown --config tsdown.config.js && bun run --filter '../../packages/addon-server' generate:event-proxy",
     "typecheck": "tsc --noEmit",
-    "release": "bun run build && npm publish --access public",
+    "release": "bun run build && bun publish --access public",
     "dev": "bun run src/main.ts",
     "dev:link": "bun run --cwd ../executor build && bun run build && bun link && tsdown --config tsdown.config.js --watch",
     "format": "biome check --write src package.json --files-ignore-unknown=true",
     "lint": "biome check src package.json --files-ignore-unknown=true",
-    "release-beta": "bun run build && npm publish --access public --tag future"
+    "release-beta": "bun run build && bun publish --access public --tag future"
   },
   "devDependencies": {
     "@ogi/update-channel": "workspace:*",

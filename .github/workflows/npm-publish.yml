@@ -134,7 +134,7 @@ jobs:
         env:
           PACKAGE_NAME: ${{ steps.version-check.outputs.name }}
         run: |
-          PACKAGE_TARBALL="$PWD/$(npm pack --silent)"
+          PACKAGE_TARBALL="$PWD/$(bun pm pack --quiet)"
           TEMP_DIRECTORY=$(mktemp -d)
           trap 'rm -rf "$TEMP_DIRECTORY" "$PACKAGE_TARBALL"' EXIT
           npm install --prefix "$TEMP_DIRECTORY" "$PACKAGE_TARBALL"
@@ -143,7 +143,8 @@ jobs:
       - name: Publish shared package to npm
         if: steps.version-check.outputs.changed == 'true'
         working-directory: ${{ matrix.package.dir }}
-        run: npm publish --access public
+        # bun pm pack resolves workspace: ranges, which npm pack would leave in place.
+        run: npm publish "$(bun pm pack --quiet)" --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -196,7 +197,7 @@ jobs:
             packages/executor \
             packages/real-debrid \
             packages/ogi; do
-            (cd "$PACKAGE_DIR" && npm pack --silent --pack-destination "$TEMP_DIRECTORY/tarballs" >/dev/null)
+            (cd "$PACKAGE_DIR" && bun pm pack --quiet --destination "$TEMP_DIRECTORY/tarballs" >/dev/null)
           done
 
           for PACKAGE_TARBALL in "$TEMP_DIRECTORY"/tarballs/*.tgz; do
@@ -376,12 +377,14 @@ jobs:
       - name: Publish to npm
         if: steps.version-check.outputs.changed == 'true'
         working-directory: ${{ matrix.package.dir }}
+        # bun pm pack resolves workspace: ranges, which npm pack would leave in place.
         run: |
+          PACKAGE_TARBALL=$(bun pm pack --quiet)
           if [[ "${{ steps.version-check.outputs.name }}" == @* ]]; then
             echo "Publishing scoped package"
-            npm publish --access public
+            npm publish "$PACKAGE_TARBALL" --access public
           else
-            npm publish
+            npm publish "$PACKAGE_TARBALL"
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

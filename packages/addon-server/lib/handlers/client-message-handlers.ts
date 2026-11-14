@@ -33,10 +33,7 @@ const handleAuthenticate: ClientMessageHandler = (context, message) =>
   Effect.gen(function* () {
     const { connection, config, server } = context;
     const args = message.args as AddonClientToServerEventArgs['authenticate'];
-    if (
-      config.securityCheck &&
-      (!args.secret || args.secret !== config.secret)
-    ) {
+    if (config.securityCheck && !server.acceptsSecret(args.secret)) {
       closeProtocolError(
         context,
         'Client attempted to authenticate with an invalid secret'
@@ -53,6 +50,7 @@ const handleAuthenticate: ClientMessageHandler = (context, message) =>
       return;
     }
     connection.addonInfo = args;
+    connection.secret = args.secret;
     yield* logger.info('Client authenticated:', args.name);
     server.addClient(args.id, connection);
     yield* context.resolveAuthentication(true);

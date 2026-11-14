@@ -2,9 +2,10 @@
 
 // @ts-check
 import { input, select } from '@inquirer/prompts';
-import { resolve } from 'path';
-import fs from 'fs/promises';
 import { execSync } from 'child_process';
+import fs from 'fs/promises';
+import { resolve } from 'path';
+
 const addonName = await input({
   message: 'What is the name of the addon?',
   required: true,
@@ -67,8 +68,12 @@ for (let file of files) {
 process.chdir(directory);
 console.log('📦 \x1b[1m\x1b[34mInstalling dependencies...\x1b[0m');
 execSync('bun add ogi-addon@latest', { stdio: 'inherit' });
+execSync('bun add ogi-kit@latest', { stdio: 'inherit' });
 if (language === 'ts')
   execSync('bun add --dev typescript @types/node', { stdio: 'inherit' });
+
+// generate addon.json from ogi.config.js
+execSync('bun ogi build', { stdio: 'inherit' });
 console.log('✨ \x1b[1m\x1b[34mYour addon has been created!\x1b[0m');
 console.log(
   '\x1b[1m\x1b[34mRead the README.md in your new addon for more information on how to get started.\x1b[0m'

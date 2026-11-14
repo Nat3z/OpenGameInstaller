@@ -223,6 +223,11 @@ export const addonProtocol = defineAddonProtocol({
   },
   sdkToServer: {
     forward: sdkMessage('forward'),
+    'get-addon-icon': sdkMessage<
+      'get-addon-icon',
+      { addonId: string },
+      { iconDataUrl?: string }
+    >('get-addon-icon'),
     'defer-forward': sdkMessage<
       'defer-forward',
       {

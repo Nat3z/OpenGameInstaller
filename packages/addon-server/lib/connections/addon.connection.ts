@@ -29,6 +29,8 @@ export class AddonConnection {
   public addonInfo: OGIAddonConfiguration | undefined;
   public configTemplate: ConfigurationFile | undefined;
   public filePath: string | undefined;
+  /** The secret the addon authenticated with. */
+  public secret: string | undefined;
   public addonLink: string | undefined;
   public eventsAvailable: OGIAddonSDKEventListener[] = [];
   public readonly events: SendEventProxy;
@@ -75,7 +77,8 @@ export class AddonConnection {
   public configure(
     config: ConfigurationFile
   ): Effect.Effect<void, AddonConnectionError> {
-    return this.events.noResponse.configUpdate(config).pipe(Effect.asVoid);
+    // the addon rejects a config-update without an id, so expect a response
+    return this.events.configUpdate(config).pipe(Effect.asVoid);
   }
 
   public setupWebsocket(): Effect.Effect<boolean, NetworkError> {

@@ -34,11 +34,12 @@
     "@ogi-sdk/connect": "^1.0.2",
     "@ogi-sdk/errors": "^1.0.0",
     "@ogi-sdk/logger": "^1.0.0",
+    "@ogi-sdk/protocol": "^0.1.0",
     "effect": "^3.22.0",
     "ogi-addon": "^5.0.0",
     "ws": "^8.20.0"
   },
-  "description": "Client SDK for connecting OpenGameInstaller to addon servers.",
+  "description": "Client SDK for OpenGameInstaller: OGIClient for the app protocol, plus the addon Connection.",
   "license": "MIT",
   "author": {
     "name": "Nat3z",

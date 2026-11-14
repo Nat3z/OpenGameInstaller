@@ -7,6 +7,20 @@ import { ipcProcedure, router } from '@/electron/rpc/router-core.js';
  */
 
 import type { LibraryInfo } from '@ogi-sdk/connect';
+import {
+  appMetadataSubtrees,
+  type DeleteGuardRoots,
+  filesystemRoot,
+  findManifests,
+  isUnsafeDownloadLocation,
+  normalizeDeletePath,
+  planGameFileDeletion,
+  readManifest,
+  relocateGame,
+  removeManifest,
+  systemSubtrees,
+  writeManifests,
+} from '@ogi-sdk/core';
 import { FileSystemError, LibraryError } from '@ogi-sdk/errors';
 import {
   type ChildProcess,
@@ -49,27 +63,11 @@ import {
   getCurrentUsername,
   isLinux,
 } from '@/electron/handlers/helpers.app/platform.js';
-import {
-  appMetadataSubtrees,
-  type DeleteGuardRoots,
-  filesystemRoot,
-  isUnsafeDownloadLocation,
-  normalizeDeletePath,
-  planGameFileDeletion,
-  systemSubtrees,
-} from '@/electron/lib/delete-guards.js';
 import { sessionDownloadLocations } from '@/electron/lib/download-paths.js';
-import {
-  findManifests,
-  readManifest,
-  relocateGame,
-  removeManifest,
-  writeManifests,
-} from '@/electron/lib/library-manifest.js';
 import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
-import { ipcServiceBoundary } from '@/electron/runtime.js';
+import { forkElectronEffect, ipcServiceBoundary } from '@/electron/runtime.js';
 import {
   type AppServices,
   Database,
@@ -86,6 +84,22 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
 
 /** Library appIDs with a game process currently launched by OGI. */
 const runningGames = new Set<number>();
+
+/** Tells the renderer (IPC) and protocol clients (core Library) a game started or stopped. */
+const reportGame = (
+  mainWindow: Electron.BrowserWindow | null | undefined,
+  state: 'launch' | 'exit',
+  appID: number
+): void => {
+  mainWindow?.webContents.send(`game:${state}`, { id: appID });
+  forkElectronEffect(
+    Effect.flatMap(Library, (library) =>
+      state === 'launch'
+        ? library.notifyLaunched(appID)
+        : library.notifyExited(appID)
+    )
+  );
+};
 
 /** Per-game serial queues so launches and removals cannot interleave mid-flight. */
 const gameOperationQueues = new Map<number, Promise<unknown>>();
@@ -452,7 +466,7 @@ export function launchGameFromLibrary(
       const launch = launchWithUmu(appInfo, {
         onExit: () => {
           runningGames.delete(appID);
-          mainWindow?.webContents.send('game:exit', { id: appID });
+          reportGame(mainWindow, 'exit', appID);
         },
       });
       const result = yield* Effect.tryPromise({
@@ -480,7 +494,7 @@ export function launchGameFromLibrary(
           id: generateNotificationId(),
           type: 'error',
         });
-        mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+        reportGame(mainWindow, 'exit', appInfo.appID);
         return {
           success: false,
           error: result.error ?? 'Failed to launch game with UMU',
@@ -490,7 +504,7 @@ export function launchGameFromLibrary(
       // Already tracked by the pre-await add above; do not re-add here or a
       // fast crash's onExit delete would be resurrected.
       yield* markLaunched(appInfo.appID);
-      mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+      reportGame(mainWindow, 'launch', appInfo.appID);
       return { success: true };
     }
 
@@ -547,7 +561,7 @@ export function launchGameFromLibrary(
         id: generateNotificationId(),
         type: 'error',
       });
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      reportGame(mainWindow, 'exit', appInfo.appID);
     });
     spawnedItem.on('exit', (exitCode, signal) => {
       runningGames.delete(appInfo.appID);
@@ -563,11 +577,11 @@ export function launchGameFromLibrary(
           type: 'error',
         });
       }
-      mainWindow?.webContents.send('game:exit', { id: appInfo.appID });
+      reportGame(mainWindow, 'exit', appInfo.appID);
     });
 
     yield* markLaunched(appInfo.appID);
-    mainWindow?.webContents.send('game:launch', { id: appInfo.appID });
+    reportGame(mainWindow, 'launch', appInfo.appID);
     return { success: true };
   }).pipe(
     // The launch contract is a `LibraryError`, so database faults surface as one.

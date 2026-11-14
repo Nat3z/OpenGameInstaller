@@ -1,9 +1,0 @@
-{
-  "author": "{author}",
-  "scripts": {
-    "preSetup": "bun install --frozen-lockfile",
-    "setup": "echo 'setup script is running'",
-    "postSetup": "echo 'postSetup script is running'",
-    "run": "bun run main.ts"
-  }
-}

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import * as net from 'node:net';
 import { extname, isAbsolute } from 'node:path';
+import { isProtectedDeletePath, isUnsafeDownloadLocation } from '@ogi-sdk/core';
 import {
   ConfigError,
   type DatabaseError,
@@ -10,10 +11,6 @@ import {
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Effect } from 'effect';
-import {
-  isProtectedDeletePath,
-  isUnsafeDownloadLocation,
-} from '@/electron/lib/delete-guards.js';
 import { sessionDownloadLocations } from '@/electron/lib/download-paths.js';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';

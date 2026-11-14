@@ -22,7 +22,15 @@ export type AddonConfig = {
   securityCheck: boolean;
   port: number;
   secret?: string;
+  /** Refuses websocket upgrades from anything but this machine. */
+  localOnly?: boolean;
 };
+
+const isLoopback = (address: string | undefined): boolean =>
+  !!address &&
+  (address === '::1' ||
+    address.startsWith('127.') ||
+    address.startsWith('::ffff:127.'));
 
 export type AddonServerEventListeners =
   AddonServerHostEventListeners<AddonConnection>;
@@ -33,6 +41,10 @@ export class AddonServer {
   private readonly connections = new Set<AddonConnection>();
   private readonly sdkConnections = new Set<ClientConnection>();
   private readonly clients = new Map<string, AddonConnection>();
+  // last config each addon accepted, replayed when it reconnects
+  private readonly lastConfigs = new Map<string, ConfigurationFile>();
+  // per-addon secrets accepted besides the shared one
+  private readonly extraSecrets = new Set<string>();
   private readonly deferredTasksManager = new DeferredTasksManager();
   private readonly eventEmitter = new EventEmitter();
   private readonly boundaryFibers = new Set<
@@ -50,6 +62,11 @@ export class AddonServer {
     res: http.ServerResponse
   ) => void;
   private runtime?: Runtime.Runtime<never>;
+  /** Upgrades for these paths go to another protocol (e.g. core's /client). */
+  private readonly upgradeRoutes = new Map<
+    string,
+    (ws: WebSocket, request: http.IncomingMessage) => void
+  >();
 
   public constructor(private readonly config: AddonConfig) {
     this.config.secret ??= randomUUID();
@@ -132,6 +149,10 @@ export class AddonServer {
   public addClient(id: string, connection: AddonConnection): void {
     this.clients.set(id, connection);
   }
+  /** Records the config an addon accepted, so a reconnect gets it back. */
+  public rememberConfig(id: string, config: ConfigurationFile): void {
+    this.lastConfigs.set(id, config);
+  }
   public getDeferredTasksManager(): DeferredTasksManager {
     return this.deferredTasksManager;
   }
@@ -149,6 +170,18 @@ export class AddonServer {
     return this;
   }
 
+  /**
+   * Hands WebSocket upgrades on `path` to `handler` instead of the addon
+   * protocol, so other protocols can share this port.
+   */
+  public routeUpgrade(
+    path: string,
+    handler: (ws: WebSocket, request: http.IncomingMessage) => void
+  ): this {
+    this.upgradeRoutes.set(path, handler);
+    return this;
+  }
+
   public extend(server: http.Server): this {
     this.server = server;
     return this;
@@ -156,6 +189,18 @@ export class AddonServer {
 
   public getSecret(): string {
     return this.config.secret ?? '';
+  }
+
+  /** Accepts another secret, e.g. one per addon so a host can tell connections apart. */
+  public allowSecret(secret: string): void {
+    this.extraSecrets.add(secret);
+  }
+
+  public acceptsSecret(secret: string | undefined): boolean {
+    return (
+      !!secret &&
+      (secret === this.config.secret || this.extraSecrets.has(secret))
+    );
   }
 
   public stop(): Effect.Effect<void, NetworkError> {
@@ -237,6 +282,17 @@ export class AddonServer {
         this.eventEmitter.emit('disconnect', 'Failed to setup websocket');
       } else {
         this.eventEmitter.emit('connect', connection);
+        // a reconnecting addon (crash, dev reload) would otherwise wait until
+        // the frontend configures again, and its connect event never fires
+        const id: string | undefined = connection.addonInfo?.id;
+        const config = id ? this.lastConfigs.get(id) : undefined;
+        if (config)
+          yield* connection.configure(config).pipe(
+            Effect.tapError((error) =>
+              logger.error(`Failed to replay config for ${id}:`, error)
+            ),
+            Effect.ignore
+          );
       }
     }).pipe(
       Effect.catchAll((error) =>
@@ -267,8 +323,12 @@ export class AddonServer {
       this.wss?.close();
       this.wss = new WebSocketServer({ noServer: true });
       this.upgradeListener = (req, socket, head) => {
+        if (this.config.localOnly && !isLoopback(req.socket.remoteAddress))
+          return void socket.destroy();
+        const route = this.upgradeRoutes.get(req.url?.split('?')[0] ?? '');
         this.wss!.handleUpgrade(req, socket, head, (ws) => {
-          this.supervise(this.handleWebSocketConnection(ws, req));
+          if (route) route(ws, req);
+          else this.supervise(this.handleWebSocketConnection(ws, req));
         });
       };
       this.server.on('upgrade', this.upgradeListener);

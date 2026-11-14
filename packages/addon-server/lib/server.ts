@@ -172,7 +172,8 @@ export class AddonServer {
 
   /**
    * Hands WebSocket upgrades on `path` to `handler` instead of the addon
-   * protocol, so other protocols can share this port.
+   * protocol, so other protocols can share this port. Routed paths only
+   * accept this machine, whatever `localOnly` says for addons.
    */
   public routeUpgrade(
     path: string,
@@ -326,6 +327,8 @@ export class AddonServer {
         if (this.config.localOnly && !isLoopback(req.socket.remoteAddress))
           return void socket.destroy();
         const route = this.upgradeRoutes.get(req.url?.split('?')[0] ?? '');
+        if (route && !isLoopback(req.socket.remoteAddress))
+          return void socket.destroy();
         this.wss!.handleUpgrade(req, socket, head, (ws) => {
           if (route) route(ws, req);
           else this.supervise(this.handleWebSocketConnection(ws, req));

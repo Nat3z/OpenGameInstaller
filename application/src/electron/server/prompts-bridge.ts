@@ -27,7 +27,10 @@ export const showPromptsInWindow = (
   const onChange = (
     change: PromptChange
   ): Effect.Effect<void, never, Prompts> => {
-    if (change._tag === 'Closed') return Effect.void;
+    // Answered elsewhere (or cancelled): drop the form. Confirm dialogs can't
+    // be closed by hand; their late reply is simply refused.
+    if (change._tag === 'Closed')
+      return Effect.promise(() => send('input-closed', { id: change.id }));
     const prompt = change.prompt;
     switch (prompt._tag) {
       case 'Input':

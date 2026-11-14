@@ -223,6 +223,13 @@ ipcRenderer.on(
 );
 
 ipcRenderer.on(
+  'input-closed',
+  wrap((_, arg) => {
+    document.dispatchEvent(new CustomEvent('input-closed', { detail: arg }));
+  })
+);
+
+ipcRenderer.on(
   'game:launch-requested',
   wrap((_, arg) => {
     document.dispatchEvent(

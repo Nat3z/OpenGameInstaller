@@ -92,6 +92,16 @@ document.addEventListener('input-asked', (e) => {
   processQueue();
 });
 
+// Another client answered this prompt: drop it, queued or showing.
+document.addEventListener('input-closed', (e) => {
+  if (!isCustomEvent(e)) return;
+  const { id }: { id: string } = e.detail;
+  listOfScreensQueued.update((screens) =>
+    screens.filter((screen) => screen.id !== id)
+  );
+  if (activeScreen?.id === id) closeModal();
+});
+
 listOfScreensQueued.subscribe(() => {
   processQueue();
 });

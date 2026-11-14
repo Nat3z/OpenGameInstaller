@@ -47,12 +47,14 @@ const createAddonServer = (secret?: string): AddonServer => {
     securityCheck: securityCheckEnabled,
     secret,
     // Addon input goes through core Prompts, so any client can answer it.
+    // The signal closes the prompt if the addon disconnects mid-question.
     askInput: (title, description, config) =>
-      Effect.promise(() =>
+      Effect.promise((signal) =>
         runElectronEffect(
           Effect.flatMap(Prompts, (prompts) =>
             prompts.ask({ _tag: 'Input', title, description, config })
-          )
+          ),
+          signal
         )
       ).pipe(
         Effect.map((answer) => (answer._tag === 'Input' ? answer.values : {}))

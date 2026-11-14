@@ -17,7 +17,7 @@ import { Prompts } from '@/electron/services/index.js';
 export const showPromptsInWindow = (
   getWindow: () => BrowserWindow | null,
   send: (channel: string, ...args: unknown[]) => Promise<void>
-): void => {
+): { replayInputs: () => void } => {
   const scope = Effect.runSync(Scope.make());
   const prompts = runElectronSync(
     Effect.flatMap(Prompts, (service) => service.watch).pipe(
@@ -78,6 +78,23 @@ export const showPromptsInWindow = (
       Stream.runForEach(onChange)
     )
   );
+  return {
+    // A reloaded renderer lost its forms; show the open inputs again. Confirm
+    // dialogs are native, so they survived the reload.
+    replayInputs: () =>
+      forkElectronEffect(
+        Effect.flatMap(Prompts, (service) => service.watch).pipe(
+          Effect.flatMap(({ snapshot }) =>
+            Effect.forEach(
+              snapshot.filter((prompt) => prompt._tag === 'Input'),
+              (prompt) => onChange({ _tag: 'Opened', prompt }),
+              { discard: true }
+            )
+          ),
+          Effect.scoped
+        )
+      ),
+  };
 };
 
 /** The renderer's modal submitted values for an `Input` prompt. */

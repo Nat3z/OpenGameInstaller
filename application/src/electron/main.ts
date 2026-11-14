@@ -284,11 +284,14 @@ function registerClientReadyListener() {
   if (clientReadyListenerRegistered) return;
   clientReadyListenerRegistered = true;
 
+  forwardEventsToRenderer(sendIPCMessage);
+  const prompts = showPromptsInWindow(() => mainWindow, sendIPCMessage);
+  let rendererLoads = 0;
   ipcMain.on('client-ready-for-events', () => {
     rendererEventReadiness.markReady();
+    // Every load after the first is a reload that dropped open forms.
+    if (rendererLoads++ > 0) prompts.replayInputs();
   });
-  forwardEventsToRenderer(sendIPCMessage);
-  showPromptsInWindow(() => mainWindow, sendIPCMessage);
 }
 
 async function ensureAddonServerRunning() {

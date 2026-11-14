@@ -136,7 +136,7 @@ export function setUpdateChannel(channel: ReleaseChannel): void {
  * addon server port, since the setup refuses to start beside a running instance.
  */
 export function relaunchThroughSetup(
-  mainWindow: Electron.BrowserWindow,
+  mainWindow: Electron.BrowserWindow | null,
   args: string[] = []
 ): void {
   if (!channelLocation().managed)
@@ -155,7 +155,9 @@ export function relaunchThroughSetup(
       }
     ).unref();
   });
-  mainWindow.close();
+  // Closing the window quits the app; headless has none, so quit directly.
+  if (mainWindow) mainWindow.close();
+  else app.quit();
 }
 
 /**

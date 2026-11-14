@@ -6,6 +6,7 @@ import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import { join } from 'path';
 import { closeDatabase, getOpenDatabase } from '@/electron/database/index.js';
 import { startAddons } from '@/electron/handlers/handler.addon.js';
+import { shutdownDirectDownloads } from '@/electron/handlers/handler.ddl.js';
 import {
   awaitPendingFileDeletions,
   type ExecuteWrapperResult,
@@ -498,6 +499,34 @@ async function startAppFlow(win: BrowserWindow) {
   }
 }
 
+/** `--headless`: the backend without a window, driven over the protocol. */
+const isHeadless = (): boolean => process.argv.includes('--headless');
+
+/**
+ * Starts everything a protocol client needs (database, migrations, addons,
+ * the /client socket) and no window. Startup progress goes to the log; quit
+ * with SIGTERM / SIGINT, which Electron turns into app.quit().
+ */
+async function startHeadless(): Promise<void> {
+  logger.sync.info('[headless] Starting without a window');
+  // The desktop IPC router is never served (the protocol socket replaces
+  // it), but building it registers the download engines core controls.
+  createElectronRouter(null);
+  const startup = await runElectronEffect(runStartupTasks(null, false));
+  if (startup.shutdownPending) {
+    app.quit();
+    return;
+  }
+  await startAddonRuntime();
+  await runElectronEffect(checkForAddonUpdates());
+  publishEvent({ _tag: 'AddonsStarted' });
+  await runElectronEffect(waitForAddonManifests());
+  publishEvent({ _tag: 'AddonManifestsReady' });
+  logger.sync.info(
+    '[headless] Ready; client.json written to the data directory'
+  );
+}
+
 function shutdownAfterStartup(win: BrowserWindow): void {
   if (!win.isDestroyed()) {
     win.close();
@@ -723,6 +752,11 @@ app.on('ready', async () => {
   await startupEnvironmentReady;
   registerClientReadyListener();
 
+  if (isHeadless()) {
+    await startHeadless();
+    return;
+  }
+
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
   hookArgs = parseLaunchHookArgs();
@@ -774,7 +808,8 @@ app.on('ready', async () => {
 // Quit when all windows are closed. No renderer is left to finish a held
 // launch flow, so drop the hold rather than waiting it out.
 app.on('window-all-closed', () => {
-  if (!gotTheLock || process.platform === 'darwin') return;
+  // Headless has no windows to close; it quits on SIGTERM / SIGINT.
+  if (!gotTheLock || process.platform === 'darwin' || isHeadless()) return;
   setQuitHold(false);
   app.quit();
 });
@@ -799,6 +834,7 @@ async function shutdown(): Promise<void> {
         yield* instance.stop().pipe(Effect.ignore);
       }
       for (const interval of torrentIntervals) clearInterval(interval);
+      yield* shutdownDirectDownloads();
       stopClientServer();
       if (isAddonServerListening) yield* stopAddonServer();
       yield* Effect.sync(closeDatabase);

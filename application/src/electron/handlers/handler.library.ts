@@ -94,7 +94,10 @@ const reportGame = (state: 'launch' | 'exit', appID: number): void => {
     Effect.flatMap(Library, (library) =>
       state === 'launch'
         ? library.notifyLaunched(appID)
-        : library.notifyExited(appID)
+        : // The exit ends an unmanaged launch's hold, after it is reported.
+          library
+            .notifyExited(appID)
+            .pipe(Effect.zipRight(library.unreserve(appID)))
     )
   );
 };
@@ -640,8 +643,8 @@ export function executeWrapperCommandForApp(
 }
 
 /**
- * Holds the game's reservation for the whole wrapped run (it returns when the
- * game exits), so a core launch can't claim the game mid-session.
+ * Reserves the game for the whole wrapped run and past it, until the caller's
+ * `releaseWrappedGame`, so a core launch can't claim the game mid-session.
  */
 function executeWrapperCommandForAppSteam(
   appid: number,
@@ -652,13 +655,19 @@ function executeWrapperCommandForAppSteam(
     const library = yield* Library;
     if (!(yield* library.reserve(appid)))
       return { success: false, error: 'The game is already being launched' };
+    // Held past the return: the caller runs post hooks and then reports the
+    // exit (`releaseWrappedGame`), which is when the game is free again.
     return yield* runWrapperCommandForAppSteam(
       appid,
       wrapperCommand,
       launchEnv
-    ).pipe(Effect.ensuring(library.unreserve(appid)));
+    );
   });
 }
+
+/** Reports a wrapped game's exit and frees it (after its post hooks ran). */
+export const releaseWrappedGame = (appid: number): void =>
+  reportGame('exit', appid);
 
 function runWrapperCommandForAppSteam(
   appid: number,
@@ -944,8 +953,12 @@ export function registerLibraryHandlers() {
 
   const executeWrapperCommand = ipcProcedure(
     ElectronRpc.app.executeWrapperCommand,
+    // The renderer runs its own post hooks and then quits; the game is free
+    // once the wrapped run returns.
     ipcServiceBoundary((_, appid: number, wrapperCommand: string) =>
-      executeWrapperCommandForAppSteam(appid, wrapperCommand)
+      executeWrapperCommandForAppSteam(appid, wrapperCommand).pipe(
+        Effect.ensuring(Effect.sync(() => releaseWrappedGame(appid)))
+      )
     )
   );
 

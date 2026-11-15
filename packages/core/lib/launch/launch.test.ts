@@ -23,6 +23,10 @@ const setup = (
   options: {
     failPre?: boolean;
     failStart?: boolean;
+    /** The game exits before `start` even returns. */
+    fastExit?: boolean;
+    /** Post hooks wait on this, to relaunch while they still run. */
+    postGate?: Deferred.Deferred<void>;
     /** Starts wait on this before reporting, to interrupt one mid-start. */
     gate?: Deferred.Deferred<void>;
   } = {}
@@ -40,6 +44,11 @@ const setup = (
     run: (_, stage) =>
       Effect.sync(() => calls.push(`hook:${stage}`)).pipe(
         Effect.andThen(
+          stage === 'post' && options.postGate
+            ? Deferred.await(options.postGate)
+            : Effect.void
+        ),
+        Effect.andThen(
           stage === 'pre' && options.failPre
             ? Effect.fail(new LibraryError({ message: 'save sync failed' }))
             : Effect.void
@@ -54,17 +63,16 @@ const setup = (
           Effect.andThen(
             options.gate ? Deferred.await(options.gate) : Effect.void
           ),
-          // A failed start still reports an exit, like the UMU path does.
+          // Like the UMU path: a spawn error reports nothing (no `Launched`,
+          // so no `Exited`); a fast game reports both before returning.
           Effect.andThen(
             options.failStart
-              ? lib
-                  .notifyExited(appID)
-                  .pipe(
-                    Effect.andThen(
-                      Effect.fail(new LibraryError({ message: 'no umu' }))
-                    )
-                  )
-              : lib.notifyLaunched(appID)
+              ? Effect.fail(new LibraryError({ message: 'spawn ENOENT' }))
+              : options.fastExit
+                ? lib
+                    .notifyLaunched(appID)
+                    .pipe(Effect.andThen(lib.notifyExited(appID)))
+                : lib.notifyLaunched(appID)
           )
         ),
     }))
@@ -188,17 +196,75 @@ describe('Launcher', () => {
     expect(calls).toEqual(['hook:pre', 'start:1']);
   });
 
-  test('a start that fails skips post hooks and frees the game', async () => {
+  test('a spawn error runs no post hooks, and a retry can launch', async () => {
     const { calls, layer } = setup({ failStart: true });
     await Effect.runPromise(
       Effect.gen(function* () {
         const launcher = yield* Launcher;
-        yield* Effect.flip(launcher.launch(1));
+        const first = yield* Effect.flip(launcher.launch(1));
+        expect(first.message).toBe('spawn ENOENT');
         yield* Effect.sleep('10 millis');
-        yield* Effect.flip(launcher.launch(1));
+        // Not 'Game is already running': the failed claim was released.
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'spawn ENOENT'
+        );
       }).pipe(Effect.provide(layer))
     );
     expect(calls).toEqual(['hook:pre', 'start:1', 'hook:pre', 'start:1']);
+  });
+
+  test('a game that exits before start returns still gets its post hooks', async () => {
+    const { calls, layer } = setup({ fastExit: true });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* Launcher).launch(1);
+        yield* Effect.sleep('10 millis');
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
+  });
+
+  test('two unmanaged launches cannot share a reservation', async () => {
+    const { layer } = setup();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const library = yield* Library;
+        const launcher = yield* Launcher;
+        expect(yield* library.reserve(1)).toBe(true);
+        // A second desktop launch is refused, so the first one's `unreserve`
+        // can't free the game under it.
+        expect(yield* library.reserve(1)).toBe(false);
+        yield* library.unreserve(1);
+        yield* launcher.launch(1);
+      }).pipe(Effect.provide(layer))
+    );
+  });
+
+  test("a relaunch waits until the last session's post hooks finish", async () => {
+    const postGate = Effect.runSync(Deferred.make<void>());
+    const { calls, layer } = setup({ postGate });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        yield* launcher.launch(1);
+        yield* exitGame(1);
+        // Post hooks still running (a save backup, say): no new session.
+        expect(calls.at(-1)).toBe('hook:post');
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'Game is already running'
+        );
+        yield* Deferred.succeed(postGate, undefined);
+        yield* Effect.sleep('10 millis');
+        yield* launcher.launch(1);
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual([
+      'hook:pre',
+      'start:1',
+      'hook:post',
+      'hook:pre',
+      'start:1',
+    ]);
   });
 
   test('a game running from another client cannot be claimed', async () => {
@@ -256,8 +322,13 @@ describe('Launcher', () => {
         expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
           'Game is already running'
         );
-        // Its session ends: core can launch again.
+        // Its session ends, and only once its holder lets go (after the exit
+        // is reported) can core launch again.
         yield* library.notifyExited(1);
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'Game is already running'
+        );
+        yield* library.unreserve(1);
         yield* launcher.launch(1);
       }).pipe(Effect.provide(layer))
     );

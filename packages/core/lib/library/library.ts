@@ -53,23 +53,28 @@ export type LibraryShape = {
   readonly notifyLaunched: (appID: number) => Effect.Effect<void>;
   readonly notifyExited: (appID: number) => Effect.Effect<void>;
   /**
-   * Marks the next session of `appID` as managed: core runs its hooks, and
-   * its Launched/Exited changes say so. False when the game is running (from
-   * any client) or another launch already holds it. `releaseHooks` frees a
-   * claim whose game never started; a started one ends with its exit.
+   * One owner per game at a time: a core launch (`claimHooks`) or an
+   * unmanaged one (`reserve`: desktop, Steam wrapper). Both are a single
+   * check-and-set and refuse while anything else holds the game, so a claim
+   * only ever sees its own session's `Launched` and `Exited`.
+   *
+   * A claim is managed: core runs its hooks, and its changes say so. It ends
+   * with that session's exit, or `releaseHooks` if it never started; a
+   * reservation ends with `unreserve`, which its holder calls once the session
+   * is over (after the exit is reported).
    */
   readonly claimHooks: (appID: number) => Effect.Effect<boolean>;
   readonly releaseHooks: (appID: number) => Effect.Effect<void>;
-  /** Whether a session of `appID` is running right now. */
-  readonly isRunning: (appID: number) => Effect.Effect<boolean>;
-  /**
-   * Reserves `appID` for an unmanaged launch (desktop, Steam wrapper). One
-   * check-and-set, so it and `claimHooks` can't both succeed: false while a
-   * core claim is held, and a core claim is refused while this is held. Ends
-   * with that session's exit, or `unreserve` if it never started.
-   */
   readonly reserve: (appID: number) => Effect.Effect<boolean>;
   readonly unreserve: (appID: number) => Effect.Effect<void>;
+  /**
+   * A managed session stays owned past its exit while its post hooks run (a
+   * save backup must not overlap the next launch's restore). The launcher
+   * calls this once they finish.
+   */
+  readonly endHooks: (appID: number) => Effect.Effect<void>;
+  /** Whether a session of `appID` is running right now. */
+  readonly isRunning: (appID: number) => Effect.Effect<boolean>;
   /** Live changes only, from now on. Needs no database read. */
   readonly changes: Effect.Effect<
     Stream.Stream<LibraryChange>,
@@ -98,11 +103,13 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
     Effect.gen(function* () {
       const store = yield* LibraryStore;
       const changes = yield* PubSub.unbounded<LibraryChange>();
-      // Claimed by a launch: `pending` until its game reports `Launched`.
-      const managed = new Map<number, 'pending' | 'active'>();
+      // Who owns each game: a core claim (`pending` until its `Launched`,
+      // then `active`), an unmanaged launch, or finished-but-hooking.
+      const owner = new Map<
+        number,
+        'pending' | 'active' | 'unmanaged' | 'post-hooks'
+      >();
       const running = new Set<number>();
-      // Unmanaged launches between their start and their exit.
-      const reserved = new Set<number>();
       const publish = (change: LibraryChange) =>
         PubSub.publish(changes, change).pipe(Effect.asVoid);
 
@@ -155,39 +162,44 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
         notifyLaunched: (appID) =>
           Effect.suspend(() => {
             running.add(appID);
-            const claimed = managed.has(appID);
-            if (claimed) managed.set(appID, 'active');
+            const claimed = owner.get(appID) === 'pending';
+            if (claimed) owner.set(appID, 'active');
             return publish({ _tag: 'Launched', appID, managed: claimed });
           }),
-        // Only the session a claim launched gives it up; an exit that comes
-        // before its `Launched` (a failed spawn) is not that session.
+        // Only the session a claim launched gives it up. Its owner moves to
+        // `post-hooks` until the launcher's `endHooks`.
         notifyExited: (appID) =>
           Effect.suspend(() => {
             running.delete(appID);
-            reserved.delete(appID);
-            const owned = managed.get(appID) === 'active';
-            if (owned) managed.delete(appID);
-            return publish({ _tag: 'Exited', appID, managed: owned });
+            const managed = owner.get(appID) === 'active';
+            if (managed) owner.set(appID, 'post-hooks');
+            return publish({ _tag: 'Exited', appID, managed });
           }),
         claimHooks: (appID) =>
           Effect.sync(() => {
-            if (managed.has(appID) || running.has(appID) || reserved.has(appID))
-              return false;
-            managed.set(appID, 'pending');
+            if (owner.has(appID) || running.has(appID)) return false;
+            owner.set(appID, 'pending');
             return true;
           }),
         releaseHooks: (appID) =>
           Effect.sync(() => {
-            if (managed.get(appID) === 'pending') managed.delete(appID);
+            if (owner.get(appID) === 'pending') owner.delete(appID);
           }),
-        isRunning: (appID) => Effect.sync(() => running.has(appID)),
         reserve: (appID) =>
           Effect.sync(() => {
-            if (managed.has(appID)) return false;
-            reserved.add(appID);
+            if (owner.has(appID) || running.has(appID)) return false;
+            owner.set(appID, 'unmanaged');
             return true;
           }),
-        unreserve: (appID) => Effect.sync(() => void reserved.delete(appID)),
+        unreserve: (appID) =>
+          Effect.sync(() => {
+            if (owner.get(appID) === 'unmanaged') owner.delete(appID);
+          }),
+        endHooks: (appID) =>
+          Effect.sync(() => {
+            if (owner.get(appID) === 'post-hooks') owner.delete(appID);
+          }),
+        isRunning: (appID) => Effect.sync(() => running.has(appID)),
         changes: PubSub.subscribe(changes).pipe(Effect.map(Stream.fromQueue)),
         watch: Effect.gen(function* () {
           const subscription = yield* PubSub.subscribe(changes);

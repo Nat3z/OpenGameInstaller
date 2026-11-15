@@ -12,6 +12,7 @@ import {
   executeWrapperCommandForApp,
   hasPendingFileDeletions,
   launchGameFromLibrary,
+  releaseWrappedGame,
 } from '@/electron/handlers/handler.library.js';
 import {
   isGamescopeSession,
@@ -42,7 +43,6 @@ import { registerElectronRpcHandlers } from '@/electron/rpc/server.js';
 import {
   disposeElectronRuntime,
   runElectronEffect,
-  runElectronSync,
 } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 import {
@@ -547,12 +547,6 @@ function sendLaunchErrorToRenderer(gameId: number) {
   publishEvent({ _tag: 'GameLaunchFailed', appID: gameId });
 }
 
-function sendGameExitToRenderer(gameId: number) {
-  runElectronSync(
-    Effect.flatMap(Library, (library) => library.notifyExited(gameId))
-  );
-}
-
 async function runAddonLaunchEvent(
   gameId: number,
   launchType: 'pre' | 'post'
@@ -646,22 +640,26 @@ async function handleRemoteLaunchRequest(
       focusMainWindow();
     }
 
-    if (!wrapperResult.success) {
-      sendLaunchErrorToRenderer(payload.gameId);
-      return {
-        success: false,
-        error: wrapperResult.error ?? 'Wrapped launch failed',
-      };
-    }
+    // The wrapper keeps the game reserved; it's freed (and its exit
+    // reported) only after the post hooks, whatever happens below.
+    try {
+      if (!wrapperResult.success) {
+        sendLaunchErrorToRenderer(payload.gameId);
+        return {
+          success: false,
+          error: wrapperResult.error ?? 'Wrapped launch failed',
+        };
+      }
 
-    const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
-    if (!postResult.success) {
-      sendLaunchErrorToRenderer(payload.gameId);
-      return postResult;
+      const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
+      if (!postResult.success) {
+        sendLaunchErrorToRenderer(payload.gameId);
+        return postResult;
+      }
+      return { success: true };
+    } finally {
+      releaseWrappedGame(payload.gameId);
     }
-
-    sendGameExitToRenderer(payload.gameId);
-    return { success: true };
   }
 
   sendLaunchRequestedToRenderer(payload.gameId);

@@ -79,7 +79,10 @@ export const LaunchLive: Layer.Layer<
         ),
         Effect.catchAll((error) =>
           logger.warn(`[launch] post hooks failed for ${appID}`, error)
-        )
+        ),
+        // The game stays owned until here, so a relaunch can't run its pre
+        // hooks (a save restore) while these (a save backup) still run.
+        Effect.ensuring(library.endHooks(appID))
       );
 
     // Lives as long as the layer. `managed` exits come only from sessions

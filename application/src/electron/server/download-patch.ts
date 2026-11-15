@@ -28,6 +28,7 @@ export const toPatch = (
         queuePosition: num('queuePosition'),
         part: num('part'),
         totalParts: num('totalParts'),
+        ratio: num('ratio'),
         status:
           data.processingPhase === 'Merging chunks'
             ? 'merging'

@@ -55,4 +55,21 @@ describe('Downloads', () => {
     );
     expect(lines).toEqual(['Extracting...', 'Extracted', 'a', 'b', 'c', 'd']);
   });
+
+  test('a seeding engine still updates its ratio after setup', async () => {
+    const card = await run((d) =>
+      Effect.gen(function* () {
+        yield* d.alias('engine', 'card');
+        yield* d.report('card', { status: 'seeding', progress: 1 });
+        yield* d.report('engine', {
+          status: 'seeding',
+          progress: 0.2,
+          ratio: 1.5,
+        });
+        return yield* d.get('card');
+      })
+    );
+    expect(card?.ratio).toBe(1.5);
+    expect(card?.progress).toBe(1);
+  });
 });

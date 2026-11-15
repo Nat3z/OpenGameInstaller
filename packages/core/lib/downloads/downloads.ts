@@ -131,12 +131,16 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
           const current = downloads.get(id);
           // An engine only speaks for the transfer. Once the card has moved on
           // (setup, seeding after setup), a seeding torrent's reports would
-          // only overwrite setup progress; a cleared card stays gone.
-          if (
-            id !== reportedId &&
-            ((current && !TRANSFER.has(current.status)) || cleared.has(id))
-          )
-            return Effect.void;
+          // only overwrite setup progress; a cleared card stays gone. The one
+          // thing it still owns is its upload ratio.
+          if (id !== reportedId && cleared.has(id)) return Effect.void;
+          if (id !== reportedId && current && !TRANSFER.has(current.status)) {
+            if (patch.ratio === undefined || patch.ratio === current.ratio)
+              return Effect.void;
+            const next = { ...current, ratio: patch.ratio ?? undefined };
+            downloads.set(id, next);
+            return PubSub.publish(changes, { _tag: 'Upsert', download: next });
+          }
           if (cleared.has(reportedId)) return Effect.void;
           // Drop undefined so a partial report never erases known fields.
           const defined = Object.fromEntries(

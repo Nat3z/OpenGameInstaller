@@ -267,6 +267,12 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           };
           switch (request.downloadType) {
             case 'direct':
+              // Nothing to fetch would start an engine that never finishes.
+              if (!request.files?.length)
+                return yield* failure(
+                  record.id,
+                  'The addon returned a download with no files.'
+                );
               return {
                 ...resolved,
                 path: folder,

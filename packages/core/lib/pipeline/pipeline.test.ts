@@ -423,6 +423,17 @@ describe('pipeline', () => {
     await h.runtime.dispose();
   });
 
+  test('a direct download with no files fails instead of hanging', async () => {
+    const h = harness();
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: { ...direct, files: [] } })
+    );
+    const failed = await h.until(id, (d) => d.status === 'error');
+    expect(failed.error).toContain('no files');
+    expect(h.calls.some((call) => call.startsWith('direct:'))).toBe(false);
+    await h.runtime.dispose();
+  });
+
   test('a step that fails to save leaves its inputs on disk', async () => {
     const h = harness({ torrents: 'torbox', saveFailsAt: 'setup' });
     const id = await h.pipeline((p) =>

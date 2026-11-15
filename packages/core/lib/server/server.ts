@@ -104,6 +104,12 @@ export class OGIServer<R> {
         yield* Effect.scope,
         ExecutionStrategy.sequential
       );
+      // The server going away (its scope closing) hangs up on the client, so
+      // it reconnects instead of waiting on a dead server.
+      yield* Scope.addFinalizer(
+        scope,
+        Effect.sync(() => socket.close(1001, 'Server stopped'))
+      );
       // One fiber per in-flight call or subscription, keyed by request id.
       const fibers = yield* FiberMap.make<number>().pipe(Scope.extend(scope));
       const run = Runtime.runFork(this.runtime);

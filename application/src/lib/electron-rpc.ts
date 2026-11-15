@@ -184,14 +184,21 @@ export const ElectronRpc = {
         Schema.Struct({ success: Schema.Literal(false), error: Schema.String })
       )
     ),
-    launchGame: rpc('app.launchGame', [Schema.String], Void),
+    /** `token`: the caller's `reserveGame` hold, handed to the session. */
+    launchGame: rpc('app.launchGame', [Schema.String, Schema.String], Void),
     /**
      * Holds a game for a whole desktop launch: pre hooks, the game, post
-     * hooks. False while another session (a core launch) owns it. The launch
-     * flow that got it calls `releaseGame` once its post hooks are done.
+     * hooks. Null while another session (a core launch) owns it. A flow that
+     * never starts the game frees it with `releaseGame(appID, token)`; one
+     * that does passes the token to `launchGame`, and the main process frees
+     * it after that session's post hooks.
      */
-    reserveGame: rpc('app.reserveGame', [Schema.Number], Schema.Boolean),
-    releaseGame: rpc('app.releaseGame', [Schema.Number], Void),
+    reserveGame: rpc(
+      'app.reserveGame',
+      [Schema.Number],
+      Schema.NullOr(Schema.String)
+    ),
+    releaseGame: rpc('app.releaseGame', [Schema.Number, Schema.String], Void),
     executeWrapperCommand: rpc(
       'app.executeWrapperCommand',
       [Schema.Number, Schema.String],

@@ -1,15 +1,9 @@
 <script lang="ts">
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
-import { getAllApps } from '@/frontend/lib/core/library';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
-import {
-  gameRemovalTasks,
-  gamesExiting,
-  gamesLaunched,
-} from '@/frontend/store.svelte';
-import { runLaunchAppAddons } from '@/frontend/utils';
+import { gameRemovalTasks, gamesLaunched } from '@/frontend/store.svelte';
 import type { GameRemovalProgress } from '@/lib/electron-rpc.js';
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
@@ -87,53 +81,19 @@ runDetached(
   'Failed to load pending game removals'
 );
 
+// The main process runs every session's post hooks and frees the game (the
+// window may be gone by then), so the window only clears its state. A quit
+// waits for those hooks.
 document.addEventListener('game:exit', async (event: Event) => {
-  const { id: appID, managed } = (event as CustomEvent).detail as {
-    id: number;
-    managed?: boolean;
-  };
-  const isShortcutLaunch = isShortcutLaunchForGame(appID);
-  gamesExiting.update((games) => new Set(games).add(appID));
-
-  try {
-    // For Steam shortcut launches, unhide first so post-launch UI is visible.
-    if (isShortcutLaunch) {
-      await runFrontendEffect(electronRpc.app.showWindow());
-    }
-    // run the addon launch-app event with launchType 'post'
-    let library = await getAllApps();
-    const libraryInfo = library.find((app) => app.appID === appID);
-    if (!libraryInfo) {
-      logger.sync.error('Library info not found for appID: ' + appID);
-      return;
-    }
-
-    // Core already runs post hooks for sessions started by `library.launch`.
-    if (!managed) {
-      await runFrontendEffect(runLaunchAppAddons(libraryInfo, 'post'));
-    }
-  } catch (error) {
-    logger.sync.error(error);
-  } finally {
-    // A desktop session held the game through its hooks; free it now that
-    // the post hooks are done (core's own sessions free themselves).
-    if (!managed)
-      await runFrontendEffect(
-        electronRpc.app.releaseGame(appID).pipe(Effect.ignore)
-      );
-    gamesLaunched.update((games) => {
-      delete games[appID];
-      return games;
-    });
-    gamesExiting.update((games) => {
-      const next = new Set(games);
-      next.delete(appID);
-      return next;
-    });
-
-    if (isShortcutLaunch) {
-      await runFrontendEffect(electronRpc.app.close());
-    }
+  const appID = (event as CustomEvent).detail.id as number;
+  gamesLaunched.update((games) => {
+    delete games[appID];
+    return games;
+  });
+  if (isShortcutLaunchForGame(appID)) {
+    await runFrontendEffect(electronRpc.app.close()).catch((error) =>
+      logger.sync.error(error)
+    );
   }
 });
 </script>

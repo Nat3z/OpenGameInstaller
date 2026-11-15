@@ -61,6 +61,10 @@ import {
   publishEvent,
 } from '@/electron/server/events-bridge.js';
 import { showPromptsInWindow } from '@/electron/server/prompts-bridge.js';
+import {
+  awaitEndingSessions,
+  finishOnExit,
+} from '@/electron/server/unmanaged-sessions.js';
 import { Library } from '@/electron/services/index.js';
 import {
   checkForAddonUpdates,
@@ -603,7 +607,8 @@ async function handleRemoteLaunchRequest(
 
   // The whole flow (pre hooks, game, post hooks) holds the game, so a core
   // launch can't start it, or run its own hooks, in the middle.
-  if (!(await holdGame(payload.gameId))) {
+  const token = await holdGame(payload.gameId);
+  if (!token) {
     sendLaunchErrorToRenderer(payload.gameId);
     return { success: false, error: 'The game is already being launched' };
   }
@@ -651,11 +656,11 @@ async function handleRemoteLaunchRequest(
         sendLaunchErrorToRenderer(payload.gameId);
         return postResult;
       }
-      // The game is done: the window clears its "running" state, as before.
+      // The hooks already ran here: this only clears the window's state.
       void sendIPCMessage('game:exit', { id: payload.gameId });
       return { success: true };
     } finally {
-      releaseGame(payload.gameId);
+      releaseGame(payload.gameId, token);
     }
   }
 
@@ -663,31 +668,37 @@ async function handleRemoteLaunchRequest(
 
   const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
   if (!preResult.success) {
-    releaseGame(payload.gameId);
+    releaseGame(payload.gameId, token);
     sendLaunchErrorToRenderer(payload.gameId);
     return preResult;
   }
 
+  // Started: the session's exit runs the post hooks, then releases. A failed
+  // or rejected start cancels it, which releases right away.
   const launchResult = await runElectronEffect(
-    launchGameFromLibrary(payload.gameId, payload.launchEnv)
-  );
+    Effect.gen(function* () {
+      const session = yield* finishOnExit(payload.gameId, token);
+      const result = yield* launchGameFromLibrary(
+        payload.gameId,
+        payload.launchEnv
+      ).pipe(Effect.onError(() => session.cancel));
+      if (!result.success) yield* session.cancel;
+      return result;
+    })
+  ).catch((error: unknown) => ({ success: false, error: formatError(error) }));
 
-  if (!launchResult.success) {
-    releaseGame(payload.gameId);
-    sendLaunchErrorToRenderer(payload.gameId);
-  }
-  // On success the renderer's `game:exit` runs the post hooks, then releases.
+  if (!launchResult.success) sendLaunchErrorToRenderer(payload.gameId);
   return launchResult;
 }
 
-const holdGame = (gameId: number): Promise<boolean> =>
+const holdGame = (gameId: number): Promise<string | null> =>
   runElectronEffect(
     Effect.flatMap(Library, (library) => library.reserve(gameId))
   );
 
-const releaseGame = (gameId: number): void =>
+const releaseGame = (gameId: number, token: string): void =>
   void runElectronEffect(
-    Effect.flatMap(Library, (library) => library.unreserve(gameId))
+    Effect.flatMap(Library, (library) => library.unreserve(gameId, token))
   );
 
 // the lock is scoped to userData, so a separate data directory (e.g. `ogi dev`)
@@ -817,6 +828,8 @@ async function shutdown(): Promise<void> {
   }
   await runElectronEffect(
     Effect.gen(function* () {
+      // A game that just exited may still be backing up its saves.
+      yield* awaitEndingSessions(QUIT_HOLD_TIMEOUT_MS);
       releasePowerSaveBlock();
       logger.sync.info('Stopping torrent client...');
       yield* stopClient();

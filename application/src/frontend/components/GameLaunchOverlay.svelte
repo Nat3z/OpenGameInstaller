@@ -10,7 +10,6 @@ import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   gameFocused,
-  gamesExiting,
   gamesLaunched,
   launchGameTrigger,
   launchOverlayPlayPageReady,
@@ -129,12 +128,12 @@ onMount(async () => {
 
       // Hold the game for the whole flow (pre hooks, game, post hooks), so a
       // core launch can't run its own hooks over ours. Refused: skip them all.
-      const held = await runFrontendEffect(
+      const token = await runFrontendEffect(
         electronRpc.app
           .reserveGame(gameId)
-          .pipe(Effect.orElseSucceed(() => false))
+          .pipe(Effect.orElseSucceed(() => null))
       );
-      if (!held) {
+      if (!token) {
         setQuitHold(false);
         status = 'error';
         errorMessage = 'The game is already being launched';
@@ -144,7 +143,7 @@ onMount(async () => {
       }
       const release = () =>
         runFrontendEffect(
-          electronRpc.app.releaseGame(gameId).pipe(Effect.ignore)
+          electronRpc.app.releaseGame(gameId, token).pipe(Effect.ignore)
         );
 
       const preLaunchResult = await runFrontendEffect(
@@ -261,11 +260,10 @@ onMount(async () => {
       launchGameTrigger.set(gameId);
 
       // The launch flow is over once PlayPage has cleared the game (cancelled,
-      // failed, or exited) and GameManager has no post-launch hooks left
-      // running for it. Only then may a quit go ahead.
+      // failed, or exited). The main process holds a quit for its post hooks.
       const launchActive = derived(
-        [gamesLaunched, gamesExiting],
-        ([launched, exiting]) => !!launched[gameId] || exiting.has(gameId)
+        gamesLaunched,
+        (launched) => !!launched[gameId]
       );
       let launchSeen = false;
       unsubscribeLaunchState = launchActive.subscribe((active) => {

@@ -65,8 +65,13 @@ export type LibraryShape = {
    */
   readonly claimHooks: (appID: number) => Effect.Effect<boolean>;
   readonly releaseHooks: (appID: number) => Effect.Effect<void>;
-  readonly reserve: (appID: number) => Effect.Effect<boolean>;
-  readonly unreserve: (appID: number) => Effect.Effect<void>;
+  /**
+   * A token for the reservation, or null when something else holds the game.
+   * Only that token frees it, so a late or duplicate release can't free a
+   * newer launch's hold.
+   */
+  readonly reserve: (appID: number) => Effect.Effect<string | null>;
+  readonly unreserve: (appID: number, token: string) => Effect.Effect<void>;
   /**
    * A managed session stays owned past its exit while its post hooks run (a
    * save backup must not overlap the next launch's restore). The launcher
@@ -109,6 +114,9 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
         number,
         'pending' | 'active' | 'unmanaged' | 'post-hooks'
       >();
+      // The token of each game's current unmanaged reservation.
+      const tokens = new Map<number, string>();
+      let nextToken = 0;
       const running = new Set<number>();
       const publish = (change: LibraryChange) =>
         PubSub.publish(changes, change).pipe(Effect.asVoid);
@@ -187,13 +195,17 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
           }),
         reserve: (appID) =>
           Effect.sync(() => {
-            if (owner.has(appID) || running.has(appID)) return false;
+            if (owner.has(appID) || running.has(appID)) return null;
+            const token = `${appID}:${++nextToken}`;
             owner.set(appID, 'unmanaged');
-            return true;
+            tokens.set(appID, token);
+            return token;
           }),
-        unreserve: (appID) =>
+        unreserve: (appID, token) =>
           Effect.sync(() => {
-            if (owner.get(appID) === 'unmanaged') owner.delete(appID);
+            if (tokens.get(appID) !== token) return;
+            tokens.delete(appID);
+            owner.delete(appID);
           }),
         endHooks: (appID) =>
           Effect.sync(() => {

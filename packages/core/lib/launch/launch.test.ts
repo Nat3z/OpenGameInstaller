@@ -232,7 +232,7 @@ describe('Launcher', () => {
         yield* (yield* Launcher).launch(1);
         // A Steam wrapper arrives mid-session: refused, so it releases
         // nothing (what `releaseWrappedGame` skips for `reserved: false`).
-        expect(yield* library.reserve(1)).toBe(false);
+        expect(yield* library.reserve(1)).toBeNull();
         expect(yield* library.isRunning(1)).toBe(true);
         // The core session still owns its exit and post hooks.
         yield* exitGame(1);
@@ -247,11 +247,14 @@ describe('Launcher', () => {
       Effect.gen(function* () {
         const library = yield* Library;
         const launcher = yield* Launcher;
-        expect(yield* library.reserve(1)).toBe(true);
-        // A second desktop launch is refused, so the first one's `unreserve`
-        // can't free the game under it.
-        expect(yield* library.reserve(1)).toBe(false);
-        yield* library.unreserve(1);
+        const token = yield* library.reserve(1);
+        expect(token).not.toBeNull();
+        // A second desktop launch is refused, and a stale release (any other
+        // token) can't free the game under the first one.
+        expect(yield* library.reserve(1)).toBeNull();
+        yield* library.unreserve(1, 'stale');
+        expect(yield* library.reserve(1)).toBeNull();
+        yield* library.unreserve(1, token!);
         yield* launcher.launch(1);
       }).pipe(Effect.provide(layer))
     );
@@ -330,12 +333,13 @@ describe('Launcher', () => {
         // Core holds the game, held mid-start: the desktop can't reserve it.
         const launching = yield* Effect.fork(launcher.launch(1));
         while (!calls.includes('start:1')) yield* Effect.yieldNow();
-        expect(yield* library.reserve(1)).toBe(false);
+        expect(yield* library.reserve(1)).toBeNull();
         yield* Deferred.succeed(gate, undefined);
         yield* Fiber.join(launching);
         yield* exitGame(1);
         // The desktop holds the game: core can't claim it.
-        expect(yield* library.reserve(1)).toBe(true);
+        const token = yield* library.reserve(1);
+        expect(token).not.toBeNull();
         expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
           'Game is already running'
         );
@@ -345,7 +349,7 @@ describe('Launcher', () => {
         expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
           'Game is already running'
         );
-        yield* library.unreserve(1);
+        yield* library.unreserve(1, token!);
         yield* launcher.launch(1);
       }).pipe(Effect.provide(layer))
     );

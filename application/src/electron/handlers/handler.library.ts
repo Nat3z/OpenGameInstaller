@@ -68,6 +68,7 @@ import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { ipcServiceBoundary, runElectronSync } from '@/electron/runtime.js';
+import { finishOnExit } from '@/electron/server/unmanaged-sessions.js';
 import {
   type AppServices,
   Database,
@@ -910,12 +911,20 @@ let lastFoundGames = new Map<string, FoundGame>();
 let manifestsBackfilled = false;
 
 export function registerLibraryHandlers() {
+  // The desktop holds the game with `reserveGame` from before its pre hooks.
+  // Once the game starts, the main process owns ending that session (post
+  // hooks, then release), so a closed window can't leave the game locked.
   const launchGame = ipcProcedure(
     ElectronRpc.app.launchGame,
-    ipcServiceBoundary((_, appid: string) =>
+    ipcServiceBoundary((_, appid: string, token: string) =>
       Effect.gen(function* () {
-        const result = yield* launchGameFromLibrary(Number(appid));
+        const appID = Number(appid);
+        const session = yield* finishOnExit(appID, token);
+        const result = yield* launchGameFromLibrary(appID).pipe(
+          Effect.onError(() => session.cancel)
+        );
         if (!result.success) {
+          yield* session.cancel;
           return yield* Effect.fail(
             new LibraryError({
               message: result.error ?? 'Failed to launch game',
@@ -926,8 +935,6 @@ export function registerLibraryHandlers() {
     )
   );
 
-  // The desktop's launch flows hold the game themselves (reserve before the
-  // pre hooks, release after the post hooks), so the wrapper only runs it.
   const reserveGame = ipcProcedure(
     ElectronRpc.app.reserveGame,
     ipcServiceBoundary((_, appid: number) =>
@@ -936,8 +943,8 @@ export function registerLibraryHandlers() {
   );
   const releaseGame = ipcProcedure(
     ElectronRpc.app.releaseGame,
-    ipcServiceBoundary((_, appid: number) =>
-      Effect.flatMap(Library, (library) => library.unreserve(appid))
+    ipcServiceBoundary((_, appid: number, token: string) =>
+      Effect.flatMap(Library, (library) => library.unreserve(appid, token))
     )
   );
 

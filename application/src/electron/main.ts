@@ -566,17 +566,9 @@ const isHeadless = (): boolean => process.argv.includes('--headless');
  */
 async function startHeadless(): Promise<void> {
   logger.sync.info('[headless] Starting without a window');
-  // `/client` rides on the addon server, so without it nothing could reach
-  // this process. Refuse up front instead of starting a backend nobody can use.
+  // `--no-server` (`ogi dev`) is fine here: core then listens on its own
+  // loopback port instead of the addon server's.
   hookArgs = parseLaunchHookArgs();
-  if (hookArgs.noAddonServer) {
-    logger.sync.error(
-      '[headless] --no-server leaves no endpoint for clients; drop the flag'
-    );
-    process.exitCode = 1;
-    app.quit();
-    return;
-  }
   // The desktop IPC router is never served (the protocol socket replaces
   // it), but building it registers the download engines core controls.
   createElectronRouter(null);

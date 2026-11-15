@@ -117,7 +117,8 @@ const handleInputAsked: ClientMessageHandler = (context, message) =>
               .response(message.id!, reply)
               .pipe(Effect.asVoid)
           )
-        )
+        ),
+      context.connection.addonInfo?.id
     );
   });
 

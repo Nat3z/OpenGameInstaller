@@ -119,7 +119,7 @@ test('a call waiting on a person answering the addon does not time out', async (
       // The addon asks a question 10s in; the person answers 5 minutes later.
       connection.events.search = () =>
         Effect.sleep('10 seconds').pipe(
-          Effect.flatMap(() => whileAsking(Effect.sleep('5 minutes'))),
+          Effect.flatMap(() => whileAsking('steam')(Effect.sleep('5 minutes'))),
           Effect.map(() => ({ args: [{ name: 'Answered' }] }))
         );
       const waiting = yield* Effect.fork(
@@ -134,4 +134,32 @@ test('a call waiting on a person answering the addon does not time out', async (
     ) as Effect.Effect<unknown>
   );
   expect(result).toEqual([{ name: 'Answered' }]);
+});
+
+test("another addon's question does not pause this addon's deadline", async () => {
+  connection = fresh();
+  connection.events.search = () => Effect.never;
+  const { whileAsking } = await import(
+    '../src/electron/server/addon-prompts.js'
+  );
+  const { Addons } = await import('@ogi-sdk/core');
+  const addons = await layer();
+
+  const error = await Effect.runPromise(
+    Effect.gen(function* () {
+      // A different addon waits on a person the whole time.
+      yield* Effect.fork(whileAsking('other')(Effect.never));
+      const waiting = yield* Effect.fork(
+        Effect.flatMap(Addons, (addons) =>
+          addons.call('steam', 'search', {})
+        ).pipe(Effect.flip)
+      );
+      yield* TestClock.adjust('61 seconds');
+      return yield* Fiber.join(waiting);
+    }).pipe(
+      Effect.provide(addons),
+      Effect.provide(TestContext.TestContext)
+    ) as Effect.Effect<{ message: string }>
+  );
+  expect(error.message).toContain('did not answer search');
 });

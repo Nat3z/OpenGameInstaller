@@ -50,7 +50,7 @@ const createAddonServer = (secret?: string): AddonServer => {
     // Addon input goes through core Prompts, so any client can answer it.
     // The signal closes the prompt if the addon disconnects mid-question.
     // While it's open, addon calls' deadlines are paused.
-    askInput: (title, description, config) =>
+    askInput: (title, description, config, addonId) =>
       Effect.promise((signal) =>
         runElectronEffect(
           Effect.flatMap(Prompts, (prompts) =>
@@ -60,7 +60,7 @@ const createAddonServer = (secret?: string): AddonServer => {
         )
       ).pipe(
         Effect.map((answer) => (answer._tag === 'Input' ? answer.values : {})),
-        whileAsking
+        whileAsking(addonId)
       ),
   });
   for (const [path, handler] of upgradeRoutes)

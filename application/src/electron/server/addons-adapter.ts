@@ -165,6 +165,7 @@ export const AddonsFromAddonServer = Layer.effect(
             // the call, or the client waiting on it, forever.
             Effect.raceFirst(
               addonDeadline(
+                addonId,
                 REPLY_TIMEOUT[event],
                 () =>
                   new AddonError({

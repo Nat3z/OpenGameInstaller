@@ -301,7 +301,8 @@ export const connectDevAddons = (): Effect.Effect<void> =>
  */
 export const AddonCallsFromDevServer = Layer.succeed(AddonCalls, {
   requestDownload: (addonId, appID, result) =>
-    sdk.pipe(
+    readyAddons.pipe(
+      Effect.zipRight(sdk),
       Effect.flatMap((client) =>
         client.deferToAddonAndWait(addonId, 'request-dl', [
           appID,
@@ -317,8 +318,10 @@ export const AddonCallsFromDevServer = Layer.succeed(AddonCalls, {
             )
       )
     ),
+  // Configured first: a restored setup can run before anything else asked.
   setup: (addonId, data, onProgress) =>
-    sdk.pipe(
+    readyAddons.pipe(
+      Effect.zipRight(sdk),
       Effect.flatMap((client) =>
         client.deferToAddonAndWait(addonId, 'setup', [data], {
           onProgress: (progress, task) =>

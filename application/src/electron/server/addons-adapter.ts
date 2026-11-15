@@ -96,6 +96,12 @@ const ready = (
     Effect.catchAll(warnFailure(connection))
   );
 
+/** Makes sure `connection` has its settings before a call that needs them. */
+export const configureConnection = (
+  connection: AddonConnection
+): Effect.Effect<void, never, Database> =>
+  Effect.flatMap(Database, (database) => ready(database, connection));
+
 /**
  * Sends every running addon its config, after waiting for all manifests.
  * Headless startup runs this before serving `/client`, since there is no

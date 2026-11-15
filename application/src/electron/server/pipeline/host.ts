@@ -24,6 +24,7 @@ import { setPowerSaveBlockActive } from '@/electron/lib/power-save.js';
 import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { type AppEffect, runElectronEffect } from '@/electron/runtime.js';
 import { getAddonServer } from '@/electron/server/addon-server.js';
+import { configureConnection } from '@/electron/server/addons-adapter.js';
 import { Database, Settings } from '@/electron/services/index.js';
 import type {
   DownloadStatusAndInfo,
@@ -59,12 +60,16 @@ const lookup = (addonId: string) =>
         );
   });
 
-// A setup restored at startup runs before addons have connected; wait for
-// them once before calling it a setup failure.
+// A setup restored at startup runs before addons have connected (and before
+// the window sends their settings): wait for them once, then make sure this
+// one is configured, so its handler can read its options.
 const addon = (addonId: string) =>
   lookup(addonId).pipe(
     Effect.orElse(() =>
       waitForAddonManifests().pipe(Effect.zipRight(lookup(addonId)))
+    ),
+    Effect.tap((connection) =>
+      Effect.promise(() => runElectronEffect(configureConnection(connection)))
     )
   );
 

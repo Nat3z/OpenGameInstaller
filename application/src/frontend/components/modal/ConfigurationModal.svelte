@@ -82,12 +82,16 @@ function processQueue() {
   listOfScreensQueued.set(screens.slice(1));
 }
 
+// Prompts this window already answered or saw closed. A reload can deliver
+// the same prompt twice (the held send and the replay), even after the first
+// copy was answered.
+const finished = new Set<string>();
+
 document.addEventListener('input-asked', (e) => {
   if (!isCustomEvent(e)) return;
   const { detail } = e;
   const { config, id, name, description, reply }: PendingInputScreen = detail;
-  // A reload can deliver the same prompt twice (the held send and the replay).
-  if (activeScreen?.id === id) return;
+  if (activeScreen?.id === id || finished.has(id)) return;
   listOfScreensQueued.update((screens) =>
     screens.some((screen) => screen.id === id)
       ? screens
@@ -100,6 +104,7 @@ document.addEventListener('input-asked', (e) => {
 document.addEventListener('input-closed', (e) => {
   if (!isCustomEvent(e)) return;
   const { id }: { id: string } = e.detail;
+  finished.add(id);
   listOfScreensQueued.update((screens) =>
     screens.filter((screen) => screen.id !== id)
   );
@@ -171,6 +176,7 @@ async function handleSubmit(actionKey?: string) {
     } else {
       await runFrontendEffect(electronRpc.app.inputSend(screen.id, data));
     }
+    finished.add(screen.id);
     if (activeScreen === screen) closeModal();
   } catch (error) {
     logger.sync.error('Failed to submit configuration:', error);

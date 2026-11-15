@@ -977,6 +977,13 @@ app.on('will-quit', (event) => {
   void awaitPendingFileDeletions().finally(() => app.quit());
 });
 
+// `app.quit()` exits 0 whatever `process.exitCode` says. Once cleanup is done
+// (this fires last), carry a recorded failure (headless startup) to the OS.
+app.on('quit', () => {
+  const code = Number(process.exitCode ?? 0);
+  if (code !== 0) app.exit(code);
+});
+
 app.on('activate', async function () {
   if (!gotTheLock) {
     return;

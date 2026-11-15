@@ -53,13 +53,16 @@ Example: `library.rename({ appID, name })`.
 ## Recipe: add a group
 
 1. `packages/protocol/lib/groups/<name>.ts`: `export const XGroup = group('x', {...})`.
-2. Add it to `Groups` in `packages/protocol/lib/index.ts`.
+2. In `packages/protocol/lib/index.ts`: add it to `Groups`, and re-export the
+   file (`export * from './groups/<name>'`) so core can import `XGroup`.
 3. Add a typed property in `packages/client-kit/lib/ogi-client.ts`, on both
    `EffectOGIClient` and `OGIClient` (two lines each, copy `addons`).
 4. `packages/core/lib/<name>/`: a `Context.Tag` service, its `Live` layer, and
    `XHandlers = implement(XGroup, {...})`. Export from `packages/core/lib/index.ts`.
 5. Serve it: add `XHandlers` to `implementations` in
-   `application/src/electron/server/client-server.ts`, and provide any adapter.
+   `application/src/electron/server/client-server.ts`, and add `XLive` to
+   `AppServicesLive` in `application/src/electron/services/index.ts` (with
+   its adapter), so the handlers' `X` requirement is met.
 
 ## Recipe: add an event (a notice with no state)
 
@@ -119,6 +122,12 @@ watch: Effect.gen(function* () {
 
 The other way round, a change between the read and the subscribe is lost
 forever. `Library`, `Downloads`, and `Prompts` all follow this; copy one.
+
+Subscribing first means a change can land in **both** the snapshot and the
+stream (the library's snapshot is a database read). So updates must be safe to
+apply twice: upserts and removes keyed by id, never "append this". A feed that
+only appends (download logs) reads its snapshot in the same step as the
+subscribe, with nothing async between them.
 
 ## Changing the wire
 

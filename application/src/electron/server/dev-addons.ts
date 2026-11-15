@@ -122,9 +122,18 @@ const configureDevAddons = (
             config = buildDefaultConfig(addon.configTemplate!);
             yield* database.addonConfig.set(addon.id, config);
           }
+          // Bounded, like the in-process adapter: a silent addon is skipped
+          // (and retried next request) instead of stalling every other one.
           const reply = yield* client
             .addon(addon.id)
-            .configUpdate(config as unknown as ConfigurationFile);
+            .configUpdate(config as unknown as ConfigurationFile)
+            .pipe(
+              Effect.timeoutFail({
+                duration: '10 seconds',
+                onTimeout: () =>
+                  new Error(`${addon.id} did not answer its config`),
+              })
+            );
           if ((reply as { success?: boolean } | undefined)?.success !== false)
             configured.add(addon.id);
         }).pipe(

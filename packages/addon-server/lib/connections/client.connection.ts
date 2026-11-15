@@ -474,7 +474,8 @@ export class ClientConnection {
   public askInput(
     name: string,
     description: string,
-    config: ConfigurationFile
+    config: ConfigurationFile,
+    addonId?: string
   ): Effect.Effect<
     Record<string, string | number | boolean>,
     ClientConnectionError
@@ -483,7 +484,7 @@ export class ClientConnection {
       .send(
         {
           event: 'input-asked',
-          args: { name, description, config },
+          args: { name, description, config, addonId },
         } as AddonServerToClientSDKWebsocketMessage<'input-asked'>,
         { expectResponse: true, responseEvent: 'input-response' }
       )

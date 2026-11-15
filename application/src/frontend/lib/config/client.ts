@@ -1,15 +1,7 @@
-import type {
-  ConfigurationFile,
-  ConfigurationOptionWire,
-} from '@ogi-sdk/connect';
+import type { ConfigurationFile } from '@ogi-sdk/connect';
 import { AddonError, formatError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
-import {
-  isBooleanOption,
-  isNumberOption,
-  isStringOption,
-} from 'ogi-addon/config';
 import {
   type AddonInfo,
   getAddonServer,
@@ -17,7 +9,9 @@ import {
 } from '@/frontend/lib/core/ipc';
 import { runFrontendSync } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
-import type { AddonConfigValues } from '@/lib/state';
+import { buildDefaultConfig } from '@/lib/addon-config';
+
+export { buildDefaultConfig };
 
 const logger = createLogger(LOGGER_PREFIXES.frontend);
 
@@ -31,44 +25,6 @@ export function validateAddonId(id: string): string | null {
     return null;
   }
   return id;
-}
-
-function defaultConfigValue(
-  option: ConfigurationOptionWire
-): number | boolean | string | undefined {
-  if (isBooleanOption(option)) {
-    return typeof option.defaultValue === 'boolean'
-      ? option.defaultValue
-      : false;
-  }
-  if (isNumberOption(option)) {
-    return typeof option.defaultValue === 'number'
-      ? option.defaultValue
-      : (option.min ?? 0);
-  }
-  if (isStringOption(option)) {
-    if (typeof option.defaultValue === 'string') {
-      return option.defaultValue;
-    }
-    if ((option.allowedValues?.length ?? 0) > 0) {
-      return option.allowedValues![0];
-    }
-    return '';
-  }
-  return undefined;
-}
-
-export function buildDefaultConfig(
-  configTemplate: ConfigurationFile
-): AddonConfigValues {
-  const config: AddonConfigValues = {};
-  for (const key in configTemplate) {
-    const value = defaultConfigValue(configTemplate[key]);
-    if (value !== undefined) {
-      config[key] = value;
-    }
-  }
-  return config;
 }
 
 function waitForConfiguredAddons(maxWaitMs = 15_000, pollMs = 100) {

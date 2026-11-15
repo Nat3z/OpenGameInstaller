@@ -33,7 +33,9 @@ export type AddonConfig = {
   askInput?: (
     name: string,
     description: string,
-    config: ConfigurationFile
+    config: ConfigurationFile,
+    /** The addon asking, when the server knows it. */
+    addonId?: string
   ) => Effect.Effect<InputAnswer>;
 };
 
@@ -107,20 +109,21 @@ export class AddonServer {
         );
       }
       if (event === 'input-asked') {
-        const [name, description, config, reply] = args as [
+        const [name, description, config, reply, addonId] = args as [
           string,
           string,
           ConfigurationFile,
           (
             value: Record<string, string | number | boolean>
           ) => void | Promise<void>,
+          string | undefined,
         ];
         const [connection] = this.sdkConnections;
         const answer: InputAnswer = this.config.askInput
-          ? yield* this.config.askInput(name, description, config)
+          ? yield* this.config.askInput(name, description, config, addonId)
           : connection
             ? yield* connection
-                .askInput(name, description, config)
+                .askInput(name, description, config, addonId)
                 .pipe(Effect.catchAll(() => Effect.succeed({})))
             : {};
         yield* Effect.tryPromise({

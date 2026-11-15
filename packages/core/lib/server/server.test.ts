@@ -3,6 +3,7 @@ import { EffectOGIClient, OGIClient } from '@ogi-sdk/client-kit';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { ProtocolError } from '@ogi-sdk/protocol';
 import { Effect, Exit, Fiber, Layer, ManagedRuntime, Scope } from 'effect';
+import { Addons, AddonsHandlers } from '../addons/addons';
 import {
   DownloadControl,
   Downloads,
@@ -54,6 +55,12 @@ const memoryStore = () => {
 };
 
 const TOKEN = 'test-token';
+const steamAddon = {
+  id: 'steam',
+  name: 'Steam',
+  storefronts: ['steam'],
+  events: ['search', 'game-details'],
+};
 const launched: number[] = [];
 const library = LibraryLive.pipe(Layer.provide(memoryStore()));
 const launch = LaunchLive.pipe(
@@ -67,6 +74,14 @@ const launch = LaunchLive.pipe(
   ),
   Layer.provideMerge(library)
 );
+/** The ProtocolError a call rejected with. */
+const failure = (call: Promise<unknown>): Promise<ProtocolError> =>
+  call.then(
+    () => {
+      throw new Error('expected the call to fail');
+    },
+    (error: ProtocolError) => error
+  );
 const runtime = ManagedRuntime.make(
   Layer.mergeAll(
     launch,
@@ -80,7 +95,19 @@ const runtime = ManagedRuntime.make(
         resume: () => Effect.void,
         cancel: (id: string) => downloads.remove(id),
       }))
-    ).pipe(Layer.provideMerge(DownloadsLive))
+    ).pipe(Layer.provideMerge(DownloadsLive)),
+    // One fake addon: supports search, not catalog.
+    Layer.succeed(Addons, {
+      list: Effect.succeed([steamAddon]),
+      describe: (id) =>
+        Effect.succeed(id === steamAddon.id ? steamAddon : null),
+      call: (_, event, args) =>
+        Effect.succeed(
+          event === 'search'
+            ? [{ name: 'Direct', args }]
+            : { name: 'Store page' }
+        ),
+    })
   )
 );
 let server: ReturnType<typeof Bun.serve>;
@@ -97,6 +124,7 @@ beforeAll(async () => {
         EventsHandlers,
         PromptsHandlers,
         DownloadsHandlers,
+        AddonsHandlers,
       ],
     }).pipe(Scope.extend(scope))
   );
@@ -227,6 +255,7 @@ describe('OGIServer <-> OGIClient', () => {
       'events',
       'prompts',
       'downloads',
+      'addons',
     ]);
     expect((await client.library.list()).map((g) => g.appID)).toEqual([1]);
     expect((await client.library.get({ appID: 1 }))?.name).toBe('Game 1');
@@ -425,6 +454,31 @@ describe('OGIServer <-> OGIClient', () => {
     ]);
     expect(missing.tag).toBe('DownloadError');
     stop();
+    await client.close();
+  });
+
+  test('addon calls are proxied through core', async () => {
+    const client = await OGIClient.connect({ url, token: TOKEN });
+    expect((await client.addons.list()).map((addon) => addon.id)).toEqual([
+      'steam',
+    ]);
+    // Core fills in the addon protocol's `for`, so clients don't need to.
+    expect(
+      await client.addons.search({
+        addonId: 'steam',
+        appID: 7,
+        storefront: 'steam',
+      })
+    ).toEqual([
+      { name: 'Direct', args: { appID: 7, storefront: 'steam', for: 'game' } },
+    ]);
+    const unsupported = await failure(
+      client.addons.catalog({ addonId: 'steam' })
+    );
+    expect(unsupported.tag).toBe('AddonError');
+    expect(unsupported.message).toContain('does not support catalog');
+    const missing = await failure(client.addons.catalog({ addonId: 'nope' }));
+    expect(missing.message).toContain('not running');
     await client.close();
   });
 });

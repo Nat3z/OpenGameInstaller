@@ -303,6 +303,8 @@ export const addonProtocol = defineAddonProtocol({
         config: ConfigurationFile;
         name: string;
         description: string;
+        /** The addon asking; absent from servers older than this field. */
+        addonId?: string;
       }
     >('input-asked'),
   },
@@ -674,7 +676,9 @@ export type AddonServerHostEventListeners<Connection = unknown> = {
     configuration: AddonClientToServerEventArgs['input-asked']['config'],
     reply: (
       result: Record<string, string | number | boolean>
-    ) => void | Promise<void>
+    ) => void | Promise<void>,
+    /** The addon asking. */
+    addonId?: string
   ) => void;
   'download-request': (
     addonID: string,

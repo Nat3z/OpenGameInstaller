@@ -103,13 +103,16 @@ describe('OGIServer <-> OGIClient', () => {
    */
   const handshakeServer = (reply?: string) => {
     let hungUp!: () => void;
+    let helloed!: () => void;
     const closed = new Promise<void>((resolve) => (hungUp = resolve));
+    const hello = new Promise<void>((resolve) => (helloed = resolve));
     const server = Bun.serve({
       port: 0,
       fetch: (req, srv) =>
         srv.upgrade(req) ? undefined : new Response('no', { status: 400 }),
       websocket: {
         message(ws) {
+          helloed();
           if (reply) ws.send(reply);
         },
         close() {
@@ -117,7 +120,12 @@ describe('OGIServer <-> OGIClient', () => {
         },
       },
     });
-    return { url: `ws://127.0.0.1:${server.port}/client`, server, closed };
+    return {
+      url: `ws://127.0.0.1:${server.port}/client`,
+      server,
+      closed,
+      hello,
+    };
   };
 
   test('a server that never answers hello times out and is hung up on', async () => {
@@ -137,7 +145,8 @@ describe('OGIServer <-> OGIClient', () => {
     const fiber = Effect.runFork(
       Effect.scoped(EffectOGIClient.connect({ url: silent.url, token: TOKEN }))
     );
-    await Bun.sleep(20);
+    // Interrupt only once the socket is open and `hello` is in flight.
+    await silent.hello;
     await Effect.runPromise(Fiber.interrupt(fiber));
     await silent.closed;
     silent.server.stop(true);

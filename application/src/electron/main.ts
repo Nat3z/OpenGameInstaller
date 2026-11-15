@@ -339,7 +339,8 @@ async function startClientProtocol(): Promise<void> {
   }
 }
 
-async function startAddonRuntime() {
+/** `serveClients: false` leaves `/client` for the caller to start later. */
+async function startAddonRuntime({ serveClients = true } = {}) {
   if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
   sendNotification({
     message: 'Addons Starting...',
@@ -349,7 +350,7 @@ async function startAddonRuntime() {
   await runElectronEffect(startAddons());
   // After the addons spawn, so a launch from a client that just read
   // `client.json` waits on their manifests (and hooks) instead of none.
-  if (isAddonServerListening) await startClientProtocol();
+  if (serveClients && isAddonServerListening) await startClientProtocol();
 }
 
 async function onMainAppReady() {
@@ -551,13 +552,15 @@ async function startHeadless(): Promise<void> {
     app.quit();
     return;
   }
-  await startAddonRuntime();
+  await startAddonRuntime({ serveClients: false });
   await runElectronEffect(checkForAddonUpdates());
   publishEvent({ _tag: 'AddonsStarted' });
   await runElectronEffect(waitForAddonManifests());
   // The renderer's config-update is the addon handshake (`connect`, saved
-  // settings, events); headless sends it from here.
+  // settings, events); headless sends it from here, before any client can
+  // launch a game whose hooks aren't announced yet.
   await runElectronEffect(configureAddons);
+  if (isAddonServerListening) await startClientProtocol();
   publishEvent({ _tag: 'AddonManifestsReady' });
   logger.sync.info(
     '[headless] Ready; client.json written to the data directory'

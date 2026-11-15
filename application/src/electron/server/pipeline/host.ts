@@ -8,7 +8,12 @@ import {
   PipelineConfig,
   SleepLock,
 } from '@ogi-sdk/core';
-import { AddonError, formatError, LibraryError } from '@ogi-sdk/errors';
+import {
+  AddonError,
+  DownloadError,
+  formatError,
+  LibraryError,
+} from '@ogi-sdk/errors';
 import { Effect, Layer } from 'effect';
 import {
   insertApp,
@@ -314,8 +319,13 @@ export const DownloadStoreFromDatabase = Layer.succeed(DownloadStore, {
           downloadInfo: toRow(record),
         })
       ),
-      () => undefined
-    ).pipe(Effect.ignore),
+      (cause) =>
+        new DownloadError({
+          message: `Could not save the download: ${formatError(cause)}`,
+          downloadId: record.id,
+          cause,
+        })
+    ),
   remove: (id) =>
     onApp(
       Effect.flatMap(Database, (database) =>

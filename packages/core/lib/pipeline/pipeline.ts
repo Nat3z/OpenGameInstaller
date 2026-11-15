@@ -155,11 +155,17 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
       );
 
       /** Persists a record (and keeps the in-memory copy in step). */
+      // Memory follows disk: a step that didn't persist isn't the record yet,
+      // so nothing after it (an archive delete, say) runs on its account.
       const save = (record: DownloadRecord) =>
         Effect.suspend(() => {
           const stamped = { ...record, updatedAt: Date.now() };
-          records.set(record.id, stamped);
-          return store.save(stamped).pipe(Effect.as(stamped));
+          return store.save(stamped).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => records.set(record.id, stamped))
+            ),
+            Effect.as(stamped)
+          );
         }).pipe(Effect.tap(() => refreshFailed));
 
       const forget = (id: string) =>
@@ -610,7 +616,9 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
               yield* notify('error', message);
               // Failed before any file was written: nothing to retry from.
               if (latest.step === 'download') return yield* forget(start.id);
-              yield* save({ ...latest, error: message });
+              // Best effort: if even this fails, the record on disk still
+              // resumes from its last saved step after a restart.
+              yield* save({ ...latest, error: message }).pipe(Effect.ignore);
             })
           ),
           Effect.provide(context)

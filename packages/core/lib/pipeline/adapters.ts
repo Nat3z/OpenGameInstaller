@@ -275,7 +275,8 @@ export type PipelineStep =
  */
 export type DownloadStoreShape = {
   readonly list: Effect.Effect<readonly DownloadRecord[]>;
-  readonly save: (record: DownloadRecord) => Effect.Effect<void>;
+  /** Fails when the record didn't persist: the pipeline must not move on. */
+  readonly save: (record: DownloadRecord) => Effect.Effect<void, DownloadError>;
   readonly remove: (id: string) => Effect.Effect<void>;
 };
 export class DownloadStore extends Context.Tag('@ogi-sdk/core/DownloadStore')<

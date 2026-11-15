@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { LibraryInfo, SetupCommandData } from '@ogi-sdk/connect';
-import { AddonError } from '@ogi-sdk/errors';
+import { AddonError, DownloadError } from '@ogi-sdk/errors';
 import type { Download } from '@ogi-sdk/protocol';
 import {
   Deferred,
@@ -57,6 +57,8 @@ type Options = {
   setupVersion?: string;
   /** Redistributables fail once, then succeed. */
   redistFails?: boolean;
+  /** Saving a record at this step fails (a full disk, say). */
+  saveFailsAt?: DownloadRecord['step'];
   records?: DownloadRecord[];
 };
 
@@ -182,7 +184,10 @@ const harness = (options: Options = {}) => {
     }),
     Layer.succeed(DownloadStore, {
       list: Effect.sync(() => [...saved.values()]),
-      save: (record) => Effect.sync(() => void saved.set(record.id, record)),
+      save: (record) =>
+        record.step === options.saveFailsAt && record.error === undefined
+          ? Effect.fail(new DownloadError({ message: 'disk full' }))
+          : Effect.sync(() => void saved.set(record.id, record)),
       remove: (id) => Effect.sync(() => void saved.delete(id)),
     }),
     Layer.succeed(SleepLock, {
@@ -363,6 +368,20 @@ describe('pipeline', () => {
     await h.until(id, (d) => d.status === 'completed');
     expect(h.calls.filter((call) => call.startsWith('setup'))).toHaveLength(1);
     expect(h.calls.filter((call) => call === 'redist')).toHaveLength(2);
+    await h.runtime.dispose();
+  });
+
+  test('a step that fails to save leaves its inputs on disk', async () => {
+    const h = harness({ torrents: 'torbox', saveFailsAt: 'setup' });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: magnet })
+    );
+    const failed = await h.until(id, (d) => d.status === 'error');
+    expect(failed.error).toContain('disk full');
+    // Extraction ran, but its archive stays: the saved step is still extract.
+    expect(h.calls).toContain('extract:/dl/Game/game.zip');
+    expect(h.calls.some((call) => call.startsWith('remove:'))).toBe(false);
+    expect(h.saved.get(id)?.step).toBe('extract-zip');
     await h.runtime.dispose();
   });
 

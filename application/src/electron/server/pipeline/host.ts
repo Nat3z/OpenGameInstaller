@@ -326,13 +326,20 @@ export const DownloadStoreFromDatabase = Layer.succeed(DownloadStore, {
   ),
   save: (record) =>
     onApp(
-      Effect.flatMap(Database, (database) =>
-        database.downloads.save({
-          id: record.id,
-          updatedAt: record.updatedAt,
-          downloadInfo: toRow(record),
-        })
-      ),
+      Effect.gen(function* () {
+        // The location it was started under, kept on the row (only the first
+        // write sets it): extraction can move `path` deeper, and a later
+        // location change must still allow its folder and `old_files`.
+        const { fileDownloadLocation } = yield* (yield* Settings).get;
+        yield* (yield* Database).downloads.save(
+          {
+            id: record.id,
+            updatedAt: record.updatedAt,
+            downloadInfo: toRow(record),
+          },
+          downloadRootOf(fileDownloadLocation)
+        );
+      }),
       (cause) =>
         new DownloadError({
           message: `Could not save the download: ${formatError(cause)}`,
@@ -354,13 +361,17 @@ export const DownloadStoreFromDatabase = Layer.succeed(DownloadStore, {
 
 // ---- settings and power -------------------------------------------------------------
 
+/** Where new downloads go: the setting, or the app's own folder. */
+const downloadRootOf = (location: string | undefined): string =>
+  location || './downloads';
+
 export const PipelineConfigFromSettings = Layer.succeed(PipelineConfig, {
   get: onApp(
     Effect.flatMap(Settings, (settings) => settings.get),
     () => undefined
   ).pipe(
     Effect.map((settings) => ({
-      downloadRoot: settings.fileDownloadLocation || './downloads',
+      downloadRoot: downloadRootOf(settings.fileDownloadLocation),
       torrents:
         settings.torrentClient === 'disable'
           ? ('disable' as const)
@@ -374,7 +385,7 @@ export const PipelineConfigFromSettings = Layer.succeed(PipelineConfig, {
                 : ('local' as const),
     })),
     Effect.orElseSucceed(() => ({
-      downloadRoot: './downloads',
+      downloadRoot: downloadRootOf(undefined),
       torrents: 'local' as const,
     }))
   ),

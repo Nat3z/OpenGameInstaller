@@ -381,9 +381,10 @@ const markLaunched = (appID: number) =>
   );
 
 /**
- * `managed`: core's launcher is starting this session under its claim. Every
- * other path (desktop, Steam shortcut) is refused while that claim is held,
- * so the claim's `Launched`/`Exited` always belong to the session it started.
+ * `managed`: core's launcher is starting this session under its claim. Any
+ * other launch reserves the game instead (`Library.reserve`); a claim and a
+ * reservation exclude each other atomically, so a claim's `Launched` and
+ * `Exited` always belong to the session it started.
  */
 export function launchGameFromLibrary(
   appid: number | string,
@@ -400,8 +401,29 @@ export function launchGameFromLibrary(
     }
 
     const library = yield* Library;
-    if (!options.managed && (yield* library.isClaimed(parsedAppId)))
-      return { success: false, error: 'The game is already being launched' };
+    // Unmanaged launches reserve the game atomically against core's claim;
+    // a start that fails frees it, a real session frees it on exit.
+    if (!options.managed) {
+      if (!(yield* library.reserve(parsedAppId)))
+        return { success: false, error: 'The game is already being launched' };
+      return yield* startGame(parsedAppId, launchEnv).pipe(
+        Effect.tap((result) =>
+          result.success ? Effect.void : library.unreserve(parsedAppId)
+        ),
+        Effect.onError(() => library.unreserve(parsedAppId))
+      );
+    }
+    return yield* startGame(parsedAppId, launchEnv);
+  });
+}
+
+/** Spawns the game (UMU or legacy) and reports its launch and exit. */
+function startGame(
+  parsedAppId: number,
+  launchEnv?: Record<string, string>
+): Effect.Effect<LaunchGameResult, LibraryError, AppServices> {
+  return Effect.gen(function* () {
+    const library = yield* Library;
     let appInfo = yield* library.get(parsedAppId);
     if (!appInfo) {
       logger.sync.info('[launch] Game not found');
@@ -504,7 +526,9 @@ export function launchGameFromLibrary(
           id: generateNotificationId(),
           type: 'error',
         });
-        reportGame('exit', appInfo.appID);
+        // No `Launched` went out, so no `Exited` either: an exit here would
+        // read as a finished session and run post hooks for a failed start.
+        // Callers clear their "launching" state from the failed result.
         return {
           success: false,
           error: result.error ?? 'Failed to launch game with UMU',
@@ -615,7 +639,28 @@ export function executeWrapperCommandForApp(
   });
 }
 
+/**
+ * Holds the game's reservation for the whole wrapped run (it returns when the
+ * game exits), so a core launch can't claim the game mid-session.
+ */
 function executeWrapperCommandForAppSteam(
+  appid: number,
+  wrapperCommand: string,
+  launchEnv?: Record<string, string>
+): Effect.Effect<ExecuteWrapperResult, never, AppServices> {
+  return Effect.gen(function* () {
+    const library = yield* Library;
+    if (!(yield* library.reserve(appid)))
+      return { success: false, error: 'The game is already being launched' };
+    return yield* runWrapperCommandForAppSteam(
+      appid,
+      wrapperCommand,
+      launchEnv
+    ).pipe(Effect.ensuring(library.unreserve(appid)));
+  });
+}
+
+function runWrapperCommandForAppSteam(
   appid: number,
   wrapperCommand: string,
   launchEnv?: Record<string, string>

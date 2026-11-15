@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { LibraryError } from '@ogi-sdk/errors';
-import { Deferred, Effect, Fiber, Layer, Stream } from 'effect';
+import { Deferred, Effect, Exit, Fiber, Layer, Stream } from 'effect';
 import { Library, LibraryLive, LibraryStore } from '../library/library';
 import { Prompts, PromptsLive } from '../prompts/prompts';
 import { GameRunner, Launcher, LaunchHooks, LaunchLive } from './launch';
@@ -221,11 +221,13 @@ describe('Launcher', () => {
       Effect.gen(function* () {
         const launcher = yield* Launcher;
         const fiber = yield* Effect.fork(launcher.launch(1));
-        // Wait until the runner is really starting, then interrupt it there.
+        // Wait until the runner is really starting, request the interrupt
+        // there (before the gate opens), then let the start finish.
         while (!calls.includes('start:1')) yield* Effect.yieldNow();
-        const interrupting = yield* Effect.fork(Fiber.interrupt(fiber));
+        yield* Fiber.interruptAsFork(fiber, yield* Effect.fiberId);
         yield* Deferred.succeed(gate, undefined);
-        yield* Fiber.join(interrupting);
+        const exit = yield* Fiber.await(fiber);
+        expect(Exit.isInterrupted(exit)).toBe(true);
         expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
           'Game is already running'
         );
@@ -235,21 +237,29 @@ describe('Launcher', () => {
     expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
   });
 
-  test('a desktop launch is refused while a core launch holds the game', async () => {
+  test('a core claim and a desktop reservation exclude each other', async () => {
     const gate = Effect.runSync(Deferred.make<void>());
-    const { layer } = setup({ gate });
-    const claimed = await Effect.runPromise(
+    const { calls, layer } = setup({ gate });
+    await Effect.runPromise(
       Effect.gen(function* () {
         const library = yield* Library;
-        const launching = yield* Effect.fork((yield* Launcher).launch(1));
-        while (!(yield* library.isClaimed(1))) yield* Effect.yieldNow();
-        // What the desktop path checks before it spawns anything.
-        const held = yield* library.isClaimed(1);
+        const launcher = yield* Launcher;
+        // Core holds the game, held mid-start: the desktop can't reserve it.
+        const launching = yield* Effect.fork(launcher.launch(1));
+        while (!calls.includes('start:1')) yield* Effect.yieldNow();
+        expect(yield* library.reserve(1)).toBe(false);
         yield* Deferred.succeed(gate, undefined);
         yield* Fiber.join(launching);
-        return held;
+        yield* exitGame(1);
+        // The desktop holds the game: core can't claim it.
+        expect(yield* library.reserve(1)).toBe(true);
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'Game is already running'
+        );
+        // Its session ends: core can launch again.
+        yield* library.notifyExited(1);
+        yield* launcher.launch(1);
       }).pipe(Effect.provide(layer))
     );
-    expect(claimed).toBe(true);
   });
 });

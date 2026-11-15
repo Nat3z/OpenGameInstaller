@@ -41,8 +41,8 @@ import { createElectronRouter } from '@/electron/rpc/router.js';
 import { registerElectronRpcHandlers } from '@/electron/rpc/server.js';
 import {
   disposeElectronRuntime,
+  forkElectronEffect,
   runElectronEffect,
-  runElectronSync,
 } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
 import {
@@ -54,6 +54,7 @@ import {
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
 import {
+  awaitManagedPostHooks,
   startClientServer,
   stopClientServer,
 } from '@/electron/server/client-server.js';
@@ -62,6 +63,11 @@ import {
   publishEvent,
 } from '@/electron/server/events-bridge.js';
 import { showPromptsInWindow } from '@/electron/server/prompts-bridge.js';
+import {
+  awaitEndingSessions,
+  finishOnExit,
+  releaseWindowHolds,
+} from '@/electron/server/unmanaged-sessions.js';
 import { Library } from '@/electron/services/index.js';
 import {
   checkForAddonUpdates,
@@ -330,13 +336,15 @@ async function startClientProtocol(): Promise<void> {
 
 async function startAddonRuntime() {
   if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
-  if (isAddonServerListening) await startClientProtocol();
   sendNotification({
     message: 'Addons Starting...',
     id: Math.random().toString(36).substring(7),
     type: 'success',
   });
   await runElectronEffect(startAddons());
+  // After the addons spawn, so a launch from a client that just read
+  // `client.json` waits on their manifests (and hooks) instead of none.
+  if (isAddonServerListening) await startClientProtocol();
 }
 
 async function onMainAppReady() {
@@ -441,8 +449,11 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
 
   mainWindow.webContents.on(
     'did-start-navigation',
-    (_event, _url, _isInPlace, isMainFrame) => {
-      if (isMainFrame) rendererEventReadiness.reset();
+    (_event, _url, isInPlace, isMainFrame) => {
+      if (!isMainFrame) return;
+      rendererEventReadiness.reset();
+      // A reload drops the page's launch flows; free the games they held.
+      if (!isInPlace) forkElectronEffect(releaseWindowHolds);
     }
   );
 
@@ -460,6 +471,8 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
 
   mainWindow.on('closed', function () {
     mainWindow = null;
+    // A launch flow waiting on a hook or prompt died with the window.
+    forkElectronEffect(releaseWindowHolds);
   });
 
   // renderer messages already include the prefix and level, so forward as-is
@@ -545,12 +558,6 @@ function sendLaunchErrorToRenderer(gameId: number) {
   publishEvent({ _tag: 'GameLaunchFailed', appID: gameId });
 }
 
-function sendGameExitToRenderer(gameId: number) {
-  runElectronSync(
-    Effect.flatMap(Library, (library) => library.notifyExited(gameId))
-  );
-}
-
 async function runAddonLaunchEvent(
   gameId: number,
   launchType: 'pre' | 'post'
@@ -606,80 +613,101 @@ async function handleRemoteLaunchRequest(
     return { success: true };
   }
 
+  // The whole flow (pre hooks, game, post hooks) holds the game, so a core
+  // launch can't start it, or run its own hooks, in the middle.
+  const token = await holdGame(payload.gameId);
+  if (!token) {
+    sendLaunchErrorToRenderer(payload.gameId);
+    return { success: false, error: 'The game is already being launched' };
+  }
+
   if (payload.wrapperCommand && payload.wrapperCommand.trim().length > 0) {
-    sendLaunchRequestedToRenderer(payload.gameId);
-
-    const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
-    if (!preResult.success) {
-      sendLaunchErrorToRenderer(payload.gameId);
-      return preResult;
-    }
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.hide();
-    }
-
-    let wrapperResult: ExecuteWrapperResult;
     try {
-      if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
-        wrapperResult = await runElectronEffect(
-          executeWrapperCommandForApp(
-            payload.gameId,
-            payload.wrapperCommand,
-            'steam-proton',
-            payload.launchEnv
-          )
-        );
-      } else {
-        wrapperResult = await runElectronEffect(
-          executeWrapperCommandForApp(
-            payload.gameId,
-            payload.wrapperCommand,
-            'unknown',
-            payload.launchEnv
-          )
-        );
+      sendLaunchRequestedToRenderer(payload.gameId);
+
+      const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
+      if (!preResult.success) {
+        sendLaunchErrorToRenderer(payload.gameId);
+        return preResult;
       }
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.hide();
+      }
+
+      let wrapperResult: ExecuteWrapperResult;
+      try {
+        wrapperResult = await runElectronEffect(
+          executeWrapperCommandForApp(
+            payload.gameId,
+            payload.wrapperCommand,
+            payload.wrapperCommand.includes('steam-launch-wrapper')
+              ? 'steam-proton'
+              : 'unknown',
+            payload.launchEnv
+          )
+        );
+      } finally {
+        focusMainWindow();
+      }
+
+      if (!wrapperResult.success) {
+        sendLaunchErrorToRenderer(payload.gameId);
+        return {
+          success: false,
+          error: wrapperResult.error ?? 'Wrapped launch failed',
+        };
+      }
+
+      const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
+      if (!postResult.success) {
+        sendLaunchErrorToRenderer(payload.gameId);
+        return postResult;
+      }
+      // The hooks already ran here: this only clears the window's state.
+      void sendIPCMessage('game:exit', { id: payload.gameId });
+      return { success: true };
     } finally {
-      focusMainWindow();
+      releaseGame(payload.gameId, token);
     }
-
-    if (!wrapperResult.success) {
-      sendLaunchErrorToRenderer(payload.gameId);
-      return {
-        success: false,
-        error: wrapperResult.error ?? 'Wrapped launch failed',
-      };
-    }
-
-    const postResult = await runAddonLaunchEvent(payload.gameId, 'post');
-    if (!postResult.success) {
-      sendLaunchErrorToRenderer(payload.gameId);
-      return postResult;
-    }
-
-    sendGameExitToRenderer(payload.gameId);
-    return { success: true };
   }
 
   sendLaunchRequestedToRenderer(payload.gameId);
 
   const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
   if (!preResult.success) {
+    releaseGame(payload.gameId, token);
     sendLaunchErrorToRenderer(payload.gameId);
     return preResult;
   }
 
+  // Started: the session's exit runs the post hooks, then releases. A failed
+  // or rejected start cancels it, which releases right away.
   const launchResult = await runElectronEffect(
-    launchGameFromLibrary(payload.gameId, payload.launchEnv)
-  );
+    Effect.gen(function* () {
+      const session = yield* finishOnExit(payload.gameId, token);
+      const result = yield* launchGameFromLibrary(
+        payload.gameId,
+        payload.launchEnv
+      ).pipe(Effect.onError(() => session.cancel));
+      if (!result.success) yield* session.cancel;
+      return result;
+    })
+  ).catch((error: unknown) => ({ success: false, error: formatError(error) }));
 
-  if (!launchResult.success) {
-    sendLaunchErrorToRenderer(payload.gameId);
-  }
-
+  if (!launchResult.success) sendLaunchErrorToRenderer(payload.gameId);
   return launchResult;
 }
+
+const holdGame = (gameId: number): Promise<string | null> =>
+  runElectronEffect(
+    Effect.flatMap(Library, (library) => library.reserve(gameId))
+  );
+
+const releaseGame = (gameId: number, token: string): void =>
+  void runElectronEffect(
+    Effect.flatMap(Library, (library) => library.unreserve(gameId, token))
+  );
 
 // the lock is scoped to userData, so a separate data directory (e.g. `ogi dev`)
 // gets its own instead of quitting into an installed OpenGameInstaller
@@ -808,6 +836,15 @@ async function shutdown(): Promise<void> {
   }
   await runElectronEffect(
     Effect.gen(function* () {
+      // A game that just exited may still be backing up its saves, whether
+      // the window or a client started it.
+      yield* Effect.all(
+        [
+          awaitEndingSessions(QUIT_HOLD_TIMEOUT_MS),
+          awaitManagedPostHooks(QUIT_HOLD_TIMEOUT_MS),
+        ],
+        { concurrency: 'unbounded', discard: true }
+      );
       releasePowerSaveBlock();
       logger.sync.info('Stopping torrent client...');
       yield* stopClient();

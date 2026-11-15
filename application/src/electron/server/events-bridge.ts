@@ -46,10 +46,11 @@ const eventToIpc = (event: AppEvent): Ipc => {
 /** Game lifecycle lives on the library feed; the renderer still wants it as events. */
 const libraryToIpc = (change: LibraryChange): Ipc | undefined => {
   switch (change._tag) {
+    // `managed`: core runs this session's hooks, so the renderer must not.
     case 'Launched':
-      return ['game:launch', { id: change.appID }];
+      return ['game:launch', { id: change.appID, managed: change.managed }];
     case 'Exited':
-      return ['game:exit', { id: change.appID }];
+      return ['game:exit', { id: change.appID, managed: change.managed }];
     default:
       return undefined;
   }

@@ -69,6 +69,12 @@ import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { ipcServiceBoundary, runElectronSync } from '@/electron/runtime.js';
 import {
+  dropWindowHold,
+  finishOnExit,
+  holdForWindow,
+  whileWrapped,
+} from '@/electron/server/unmanaged-sessions.js';
+import {
   type AppServices,
   Database,
   Library,
@@ -380,6 +386,12 @@ const markLaunched = (appID: number) =>
     )
   );
 
+/**
+ * Starts the game. The caller already owns it: core's launcher by its claim,
+ * the desktop by `app.reserveGame`, held across its hooks. A claim and a
+ * reservation exclude each other, so a claim's `Launched` and `Exited` always
+ * belong to the session it started.
+ */
 export function launchGameFromLibrary(
   appid: number | string,
   launchEnv?: Record<string, string>
@@ -393,6 +405,18 @@ export function launchGameFromLibrary(
       return { success: false, error: 'Invalid app ID' };
     }
 
+    // Unmanaged launches run under a reservation their caller holds for the
+    // whole flow (pre hooks, game, post hooks) and releases at the end.
+    return yield* startGame(parsedAppId, launchEnv);
+  });
+}
+
+/** Spawns the game (UMU or legacy) and reports its launch and exit. */
+function startGame(
+  parsedAppId: number,
+  launchEnv?: Record<string, string>
+): Effect.Effect<LaunchGameResult, LibraryError, AppServices> {
+  return Effect.gen(function* () {
     const library = yield* Library;
     let appInfo = yield* library.get(parsedAppId);
     if (!appInfo) {
@@ -460,17 +484,30 @@ export function launchGameFromLibrary(
       // Register inside the queue so a concurrent removal cannot interleave;
       // onError cleans up if the launch fails. The launch effect has no
       // requirements, so it runs on the ambient runtime from the promise.
+      // `Exited` must follow `Launched`. A game can exit before the launch is
+      // reported (the report waits on the queue), so its exit waits for that.
+      let launchReported = false;
+      let exitPending = false;
       const launch = launchWithUmu(appInfo, {
         onExit: () => {
           runningGames.delete(appID);
-          reportGame('exit', appID);
+          if (launchReported) reportGame('exit', appID);
+          else exitPending = true;
         },
       });
       const result = yield* Effect.tryPromise({
         try: () =>
-          enqueueGameOperation(parsedAppId, () => {
+          enqueueGameOperation(parsedAppId, async () => {
             runningGames.add(appInfo.appID);
-            return Effect.runPromise(launch);
+            const result = await Effect.runPromise(launch);
+            // Spawned: report it now, before the game can exit, so `Launched`
+            // always precedes its `Exited`.
+            if (result.success) {
+              reportGame('launch', appInfo.appID);
+              launchReported = true;
+              if (exitPending) reportGame('exit', appInfo.appID);
+            }
+            return result;
           }),
         catch: (cause) =>
           new LibraryError({
@@ -491,7 +528,9 @@ export function launchGameFromLibrary(
           id: generateNotificationId(),
           type: 'error',
         });
-        reportGame('exit', appInfo.appID);
+        // No `Launched` went out, so no `Exited` either: an exit here would
+        // read as a finished session and run post hooks for a failed start.
+        // Callers clear their "launching" state from the failed result.
         return {
           success: false,
           error: result.error ?? 'Failed to launch game with UMU',
@@ -501,9 +540,6 @@ export function launchGameFromLibrary(
       // Already tracked by the pre-await add above; do not re-add here or a
       // fast crash's onExit delete would be resurrected.
       yield* markLaunched(appInfo.appID);
-      // A game that exited before this point already reported its exit;
-      // `Launched` after `Exited` would leave watchers thinking it runs.
-      if (runningGames.has(appInfo.appID)) reportGame('launch', appInfo.appID);
       return { success: true };
     }
 
@@ -605,7 +641,16 @@ export function executeWrapperCommandForApp(
   });
 }
 
+/** Runs a Steam wrapper command; the caller holds the game for the flow. */
 function executeWrapperCommandForAppSteam(
+  appid: number,
+  wrapperCommand: string,
+  launchEnv?: Record<string, string>
+): Effect.Effect<ExecuteWrapperResult, never, AppServices> {
+  return runWrapperCommandForAppSteam(appid, wrapperCommand, launchEnv);
+}
+
+function runWrapperCommandForAppSteam(
   appid: number,
   wrapperCommand: string,
   launchEnv?: Record<string, string>
@@ -871,26 +916,65 @@ let lastFoundGames = new Map<string, FoundGame>();
 let manifestsBackfilled = false;
 
 export function registerLibraryHandlers() {
+  // The desktop holds the game with `reserveGame` from before its pre hooks.
+  // Once the game starts, the main process owns ending that session (post
+  // hooks, then release), so a closed window can't leave the game locked.
   const launchGame = ipcProcedure(
     ElectronRpc.app.launchGame,
-    ipcServiceBoundary((_, appid: string) =>
+    ipcServiceBoundary((_, appid: string, token: string) =>
       Effect.gen(function* () {
-        const result = yield* launchGameFromLibrary(Number(appid));
+        const appID = Number(appid);
+        // From here the session, not the window, owns the hold.
+        dropWindowHold(token);
+        const session = yield* finishOnExit(appID, token);
+        const result = yield* launchGameFromLibrary(appID).pipe(
+          Effect.onError(() => session.cancel)
+        );
         if (!result.success) {
+          yield* session.cancel;
           return yield* Effect.fail(
             new LibraryError({
               message: result.error ?? 'Failed to launch game',
             })
           );
         }
+        // A shortcut window closes on this, not on `game:exit`: an addon's
+        // post hook may still need it for a form.
+        yield* Effect.forkDaemon(
+          session.ended.pipe(
+            Effect.flatMap(() =>
+              Effect.promise(() =>
+                sendIPCMessage('game:session-ended', { id: appID })
+              )
+            )
+          )
+        );
       })
+    )
+  );
+
+  const reserveGame = ipcProcedure(
+    ElectronRpc.app.reserveGame,
+    ipcServiceBoundary((_, appid: number) =>
+      Effect.flatMap(Library, (library) => library.reserve(appid)).pipe(
+        Effect.tap((token) => token && holdForWindow(appid, token))
+      )
+    )
+  );
+  const releaseGame = ipcProcedure(
+    ElectronRpc.app.releaseGame,
+    ipcServiceBoundary((_, appid: number, token: string) =>
+      Effect.flatMap(Library, (library) =>
+        library.unreserve(appid, token)
+      ).pipe(Effect.tap(() => dropWindowHold(token)))
     )
   );
 
   const executeWrapperCommand = ipcProcedure(
     ElectronRpc.app.executeWrapperCommand,
-    ipcServiceBoundary((_, appid: number, wrapperCommand: string) =>
-      executeWrapperCommandForAppSteam(appid, wrapperCommand)
+    ipcServiceBoundary(
+      (_, appid: number, wrapperCommand: string, token: string) =>
+        whileWrapped(token, runWrapperCommandForAppSteam(appid, wrapperCommand))
     )
   );
 
@@ -1474,6 +1558,8 @@ export function registerLibraryHandlers() {
   return router(
     launchGame,
     executeWrapperCommand,
+    reserveGame,
+    releaseGame,
     removeApp,
     getRemovalTasks,
     clearRemovalTasks,

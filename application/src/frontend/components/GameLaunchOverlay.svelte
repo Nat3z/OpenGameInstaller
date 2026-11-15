@@ -10,7 +10,6 @@ import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   gameFocused,
-  gamesExiting,
   gamesLaunched,
   launchGameTrigger,
   launchOverlayPlayPageReady,
@@ -127,6 +126,26 @@ onMount(async () => {
         `[GameLaunchOverlay] Running wrapped launch for ${gameName}: ${wrapperCommand}`
       );
 
+      // Hold the game for the whole flow (pre hooks, game, post hooks), so a
+      // core launch can't run its own hooks over ours. Refused: skip them all.
+      const token = await runFrontendEffect(
+        electronRpc.app
+          .reserveGame(gameId)
+          .pipe(Effect.orElseSucceed(() => null))
+      );
+      if (!token) {
+        setQuitHold(false);
+        status = 'error';
+        errorMessage = 'The game is already being launched';
+        onError(errorMessage);
+        if (isMounted) runFrontendEffect(electronRpc.app.quit());
+        return;
+      }
+      const release = () =>
+        runFrontendEffect(
+          electronRpc.app.releaseGame(gameId, token).pipe(Effect.ignore)
+        );
+
       const preLaunchResult = await runFrontendEffect(
         runLaunchAppAddons(libraryInfo, 'pre').pipe(Effect.either)
       );
@@ -140,6 +159,7 @@ onMount(async () => {
         // Ask the user whether to continue launching despite the addon failure
         const proceed = await addonFailurePrompt.request(failureText);
         if (!proceed) {
+          await release();
           setQuitHold(false);
           status = 'error';
           errorMessage = failureText;
@@ -157,7 +177,13 @@ onMount(async () => {
       let wrapperError: string | null = null;
       await runFrontendEffect(electronRpc.app.hideWindow());
       const wrapperResult = await runFrontendEffect(
-        electronRpc.app.executeWrapperCommand(gameId, wrapperCommand)
+        electronRpc.app
+          .executeWrapperCommand(gameId, wrapperCommand, token)
+          .pipe(
+            Effect.catchAll((error) =>
+              Effect.succeed({ success: false, error: formatError(error) })
+            )
+          )
       );
       if (!wrapperResult.success) {
         wrapperError = wrapperResult.error || 'Wrapped command failed';
@@ -176,6 +202,8 @@ onMount(async () => {
         );
         postLaunchError = formatError(error) || 'Post-launch failed';
       }
+      // Only now, after the post hooks (a save backup, say), is the game free.
+      await release();
       setQuitHold(false);
 
       if (wrapperError || postLaunchError) {
@@ -232,11 +260,10 @@ onMount(async () => {
       launchGameTrigger.set(gameId);
 
       // The launch flow is over once PlayPage has cleared the game (cancelled,
-      // failed, or exited) and GameManager has no post-launch hooks left
-      // running for it. Only then may a quit go ahead.
+      // failed, or exited). The main process holds a quit for its post hooks.
       const launchActive = derived(
-        [gamesLaunched, gamesExiting],
-        ([launched, exiting]) => !!launched[gameId] || exiting.has(gameId)
+        gamesLaunched,
+        (launched) => !!launched[gameId]
       );
       let launchSeen = false;
       unsubscribeLaunchState = launchActive.subscribe((active) => {

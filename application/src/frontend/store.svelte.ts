@@ -110,8 +110,6 @@ export const launchGameTrigger: Writable<number | undefined> =
 export const gamesLaunched: Writable<
   Record<string, 'launching' | 'launched' | 'error'>
 > = writable({});
-/** Games whose post-launch hooks are still running after they exited. */
-export const gamesExiting: Writable<Set<number>> = writable(new Set());
 export type Views =
   | 'config'
   | 'clientoptions'

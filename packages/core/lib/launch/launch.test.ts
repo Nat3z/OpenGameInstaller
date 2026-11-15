@@ -1,0 +1,375 @@
+import { describe, expect, test } from 'bun:test';
+import type { LibraryInfo } from '@ogi-sdk/connect';
+import { LibraryError } from '@ogi-sdk/errors';
+import { Deferred, Effect, Exit, Fiber, Layer, Stream } from 'effect';
+import { Library, LibraryLive, LibraryStore } from '../library/library';
+import { Prompts, PromptsLive } from '../prompts/prompts';
+import { GameRunner, Launcher, LaunchHooks, LaunchLive } from './launch';
+
+const game: LibraryInfo = {
+  appID: 1,
+  name: 'Game',
+  version: '1',
+  cwd: 'relative/1',
+  launchExecutable: 'game.exe',
+  capsuleImage: '',
+  coverImage: '',
+  storefront: 'steam',
+  addonsource: 'test',
+};
+
+/** Builds the launch stack with recording fakes for the two adapters. */
+const setup = (
+  options: {
+    failPre?: boolean;
+    failStart?: boolean;
+    /** The game exits before `start` even returns. */
+    fastExit?: boolean;
+    /** Post hooks wait on this, to relaunch while they still run. */
+    postGate?: Deferred.Deferred<void>;
+    /** Starts wait on this before reporting, to interrupt one mid-start. */
+    gate?: Deferred.Deferred<void>;
+  } = {}
+) => {
+  const calls: string[] = [];
+  const store = Layer.succeed(LibraryStore, {
+    get: (appID) => Effect.succeed(appID === 1 ? game : null),
+    list: Effect.succeed([game]),
+    save: () => Effect.void,
+    markLaunched: () => Effect.void,
+    stageRemoval: () => Effect.die('unused'),
+  });
+  const library = LibraryLive.pipe(Layer.provide(store));
+  const hooks = Layer.succeed(LaunchHooks, {
+    run: (_, stage) =>
+      Effect.sync(() => calls.push(`hook:${stage}`)).pipe(
+        Effect.andThen(
+          stage === 'post' && options.postGate
+            ? Deferred.await(options.postGate)
+            : Effect.void
+        ),
+        Effect.andThen(
+          stage === 'pre' && options.failPre
+            ? Effect.fail(new LibraryError({ message: 'save sync failed' }))
+            : Effect.void
+        )
+      ),
+  });
+  const runner = Layer.effect(
+    GameRunner,
+    Effect.map(Library, (lib) => ({
+      start: (appID: number) =>
+        Effect.sync(() => calls.push(`start:${appID}`)).pipe(
+          Effect.andThen(
+            options.gate ? Deferred.await(options.gate) : Effect.void
+          ),
+          // Like the UMU path: a spawn error reports nothing (no `Launched`,
+          // so no `Exited`); a fast game reports both before returning.
+          Effect.andThen(
+            options.failStart
+              ? Effect.fail(new LibraryError({ message: 'spawn ENOENT' }))
+              : options.fastExit
+                ? lib
+                    .notifyLaunched(appID)
+                    .pipe(Effect.andThen(lib.notifyExited(appID)))
+                : lib.notifyLaunched(appID)
+          )
+        ),
+    }))
+  ).pipe(Layer.provide(library));
+  const layer = Layer.mergeAll(
+    LaunchLive.pipe(Layer.provide(Layer.mergeAll(library, hooks, runner))),
+    library,
+    PromptsLive
+  );
+  return { calls, layer };
+};
+
+const exitGame = (appID: number) =>
+  Effect.flatMap(Library, (library) => library.notifyExited(appID)).pipe(
+    // Give the post-hook watcher a turn.
+    Effect.andThen(Effect.sleep('10 millis'))
+  );
+
+describe('Launcher', () => {
+  test('pre hooks, start, then post hooks on exit', async () => {
+    const { calls, layer } = setup();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* Launcher).launch(1);
+        yield* exitGame(1);
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
+  });
+
+  test('post hooks skip games the launcher did not start', async () => {
+    const { calls, layer } = setup();
+    await Effect.runPromise(exitGame(1).pipe(Effect.provide(layer)));
+    expect(calls).toEqual([]);
+  });
+
+  test('a failed pre hook asks, and cancelling stops the launch', async () => {
+    const { calls, layer } = setup({ failPre: true });
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        const prompts = yield* Prompts;
+        const { updates } = yield* prompts.watch;
+        // Answer "Cancel" as soon as the prompt opens.
+        yield* Effect.fork(
+          updates.pipe(
+            Stream.runForEach((change) =>
+              change._tag === 'Opened'
+                ? prompts.reply(change.prompt.id, {
+                    _tag: 'Confirm',
+                    confirmed: false,
+                  })
+                : Effect.void
+            )
+          )
+        );
+        return yield* Effect.flip((yield* Launcher).launch(1));
+      }).pipe(Effect.scoped, Effect.provide(layer))
+    );
+    expect(error.message).toBe('Launch cancelled');
+    expect(calls).toEqual(['hook:pre']);
+  });
+
+  test('a failed pre hook can be launched anyway', async () => {
+    const { calls, layer } = setup({ failPre: true });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const prompts = yield* Prompts;
+        const { updates } = yield* prompts.watch;
+        const answering = yield* Effect.fork(
+          updates.pipe(
+            Stream.runForEach((change) =>
+              change._tag === 'Opened'
+                ? prompts.reply(change.prompt.id, {
+                    _tag: 'Confirm',
+                    confirmed: true,
+                  })
+                : Effect.void
+            )
+          )
+        );
+        yield* (yield* Launcher).launch(1);
+        yield* Fiber.interrupt(answering);
+      }).pipe(Effect.scoped, Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1']);
+  });
+
+  test('managed sessions are flagged on the library feed', async () => {
+    const { layer } = setup();
+    const seen = await Effect.runPromise(
+      Effect.gen(function* () {
+        const library = yield* Library;
+        const changes = yield* library.changes;
+        const collecting = yield* Effect.fork(
+          changes.pipe(Stream.take(3), Stream.runCollect)
+        );
+        yield* (yield* Launcher).launch(1);
+        yield* library.notifyExited(1);
+        // Not started by the launcher, so not managed.
+        yield* library.notifyExited(1);
+        return [...(yield* Fiber.join(collecting))];
+      }).pipe(Effect.scoped, Effect.provide(layer))
+    );
+    expect(seen).toEqual([
+      { _tag: 'Launched', appID: 1, managed: true },
+      { _tag: 'Exited', appID: 1, managed: true },
+      { _tag: 'Exited', appID: 1, managed: false },
+    ]);
+  });
+
+  test('a running game cannot be launched again', async () => {
+    const { calls, layer } = setup();
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        yield* launcher.launch(1);
+        return yield* Effect.flip(launcher.launch(1));
+      }).pipe(Effect.provide(layer))
+    );
+    expect(error.message).toBe('Game is already running');
+    expect(calls).toEqual(['hook:pre', 'start:1']);
+  });
+
+  test('a spawn error runs no post hooks, and a retry can launch', async () => {
+    const { calls, layer } = setup({ failStart: true });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        const first = yield* Effect.flip(launcher.launch(1));
+        expect(first.message).toBe('spawn ENOENT');
+        yield* Effect.sleep('10 millis');
+        // Not 'Game is already running': the failed claim was released.
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'spawn ENOENT'
+        );
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:pre', 'start:1']);
+  });
+
+  test('a game that exits before start returns still gets its post hooks', async () => {
+    const { calls, layer } = setup({ fastExit: true });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* Launcher).launch(1);
+        yield* Effect.sleep('10 millis');
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
+  });
+
+  test('a refused unmanaged launch leaves the running core session alone', async () => {
+    const { calls, layer } = setup();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const library = yield* Library;
+        yield* (yield* Launcher).launch(1);
+        // A Steam wrapper arrives mid-session: refused, so it releases
+        // nothing (what `releaseWrappedGame` skips for `reserved: false`).
+        expect(yield* library.reserve(1)).toBeNull();
+        expect(yield* library.isRunning(1)).toBe(true);
+        // The core session still owns its exit and post hooks.
+        yield* exitGame(1);
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
+  });
+
+  test('two unmanaged launches cannot share a reservation', async () => {
+    const { layer } = setup();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const library = yield* Library;
+        const launcher = yield* Launcher;
+        const token = yield* library.reserve(1);
+        expect(token).not.toBeNull();
+        // A second desktop launch is refused, and a stale release (any other
+        // token) can't free the game under the first one.
+        expect(yield* library.reserve(1)).toBeNull();
+        yield* library.unreserve(1, 'stale');
+        expect(yield* library.reserve(1)).toBeNull();
+        yield* library.unreserve(1, token!);
+        yield* launcher.launch(1);
+      }).pipe(Effect.provide(layer))
+    );
+  });
+
+  test("a relaunch waits until the last session's post hooks finish", async () => {
+    const postGate = Effect.runSync(Deferred.make<void>());
+    const { calls, layer } = setup({ postGate });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        yield* launcher.launch(1);
+        yield* exitGame(1);
+        // Post hooks still running (a save backup, say): no new session.
+        expect(calls.at(-1)).toBe('hook:post');
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'Game is already running'
+        );
+        yield* Deferred.succeed(postGate, undefined);
+        yield* Effect.sleep('10 millis');
+        yield* launcher.launch(1);
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual([
+      'hook:pre',
+      'start:1',
+      'hook:post',
+      'hook:pre',
+      'start:1',
+    ]);
+  });
+
+  test('idle waits for running post hooks', async () => {
+    const postGate = Effect.runSync(Deferred.make<void>());
+    const { layer } = setup({ postGate });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        yield* launcher.launch(1);
+        yield* exitGame(1);
+        // A quit waiting here must not go ahead while the backup runs.
+        const idle = yield* Effect.fork(launcher.idle);
+        yield* Effect.sleep('10 millis');
+        expect(idle.unsafePoll()).toBeNull();
+        yield* Deferred.succeed(postGate, undefined);
+        yield* Fiber.join(idle);
+      }).pipe(Effect.provide(layer))
+    );
+  });
+
+  test('a game running from another client cannot be claimed', async () => {
+    const { calls, layer } = setup();
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        // Desktop-started: a plain Launched with no claim.
+        yield* (yield* Library).notifyLaunched(1);
+        return yield* Effect.flip((yield* Launcher).launch(1));
+      }).pipe(Effect.provide(layer))
+    );
+    expect(error.message).toBe('Game is already running');
+    expect(calls).toEqual([]);
+  });
+
+  test('a launch interrupted mid-start keeps the claim once the game runs', async () => {
+    const gate = Effect.runSync(Deferred.make<void>());
+    const { calls, layer } = setup({ gate });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        const fiber = yield* Effect.fork(launcher.launch(1));
+        // Wait until the runner is really starting, request the interrupt
+        // there (before the gate opens), then let the start finish.
+        while (!calls.includes('start:1')) yield* Effect.yieldNow();
+        yield* Fiber.interruptAsFork(fiber, yield* Effect.fiberId);
+        yield* Deferred.succeed(gate, undefined);
+        const exit = yield* Fiber.await(fiber);
+        expect(Exit.isInterrupted(exit)).toBe(true);
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'Game is already running'
+        );
+        yield* exitGame(1);
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
+  });
+
+  test('a core claim and a desktop reservation exclude each other', async () => {
+    const gate = Effect.runSync(Deferred.make<void>());
+    const { calls, layer } = setup({ gate });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const library = yield* Library;
+        const launcher = yield* Launcher;
+        // Core holds the game, held mid-start: the desktop can't reserve it.
+        const launching = yield* Effect.fork(launcher.launch(1));
+        while (!calls.includes('start:1')) yield* Effect.yieldNow();
+        expect(yield* library.reserve(1)).toBeNull();
+        yield* Deferred.succeed(gate, undefined);
+        yield* Fiber.join(launching);
+        yield* exitGame(1);
+        // The desktop holds the game: core can't claim it.
+        const token = yield* library.reserve(1);
+        expect(token).not.toBeNull();
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'Game is already running'
+        );
+        // Its session ends, and only once its holder lets go (after the exit
+        // is reported) can core launch again.
+        yield* library.notifyExited(1);
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'Game is already running'
+        );
+        yield* library.unreserve(1, token!);
+        yield* launcher.launch(1);
+      }).pipe(Effect.provide(layer))
+    );
+  });
+});

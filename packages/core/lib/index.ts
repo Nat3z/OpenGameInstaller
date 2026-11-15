@@ -7,9 +7,19 @@ export {
   EventsLive,
   type EventsShape,
 } from './events/events';
+// Launch
+export {
+  GameRunner,
+  type GameRunnerShape,
+  Launcher,
+  type LauncherShape,
+  LaunchHandlers,
+  LaunchHooks,
+  type LaunchHooksShape,
+  LaunchLive,
+} from './launch/launch';
 export * from './library/delete-guards';
 export { LibraryHandlers } from './library/handlers';
-
 // Library
 export {
   Library,

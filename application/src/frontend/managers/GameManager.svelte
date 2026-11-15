@@ -1,18 +1,9 @@
 <script lang="ts">
-import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect } from 'effect';
-import { getAllApps } from '@/frontend/lib/core/library';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
-import {
-  gameRemovalTasks,
-  gamesExiting,
-  gamesLaunched,
-} from '@/frontend/store.svelte';
-import { runLaunchAppAddons } from '@/frontend/utils';
+import { gameRemovalTasks, gamesLaunched } from '@/frontend/store.svelte';
 import type { GameRemovalProgress } from '@/lib/electron-rpc.js';
-
-const logger = createLogger(LOGGER_PREFIXES.frontend);
 
 const launchParams = new URLSearchParams(window.location.search);
 const shortcutLaunchGameId = (() => {
@@ -87,41 +78,24 @@ runDetached(
   'Failed to load pending game removals'
 );
 
-document.addEventListener('game:exit', async (event: Event) => {
-  const appID = (event as CustomEvent).detail.id;
-  const isShortcutLaunch = isShortcutLaunchForGame(appID);
-  gamesExiting.update((games) => new Set(games).add(appID));
+// The main process runs every session's post hooks and frees the game (the
+// window may be gone by then), so the window only clears its state. A quit
+// waits for those hooks.
+document.addEventListener('game:exit', (event: Event) => {
+  const appID = (event as CustomEvent).detail.id as number;
+  gamesLaunched.update((games) => {
+    delete games[appID];
+    return games;
+  });
+  // Unhidden so a post hook's form has somewhere to show.
+  if (isShortcutLaunchForGame(appID))
+    runDetached(electronRpc.app.showWindow(), 'Failed to show the window');
+});
 
-  try {
-    // For Steam shortcut launches, unhide first so post-launch UI is visible.
-    if (isShortcutLaunch) {
-      await runFrontendEffect(electronRpc.app.showWindow());
-    }
-    // run the addon launch-app event with launchType 'post'
-    let library = await getAllApps();
-    const libraryInfo = library.find((app) => app.appID === appID);
-    if (!libraryInfo) {
-      logger.sync.error('Library info not found for appID: ' + appID);
-      return;
-    }
-
-    await runFrontendEffect(runLaunchAppAddons(libraryInfo, 'post'));
-  } catch (error) {
-    logger.sync.error(error);
-  } finally {
-    gamesLaunched.update((games) => {
-      delete games[appID];
-      return games;
-    });
-    gamesExiting.update((games) => {
-      const next = new Set(games);
-      next.delete(appID);
-      return next;
-    });
-
-    if (isShortcutLaunch) {
-      await runFrontendEffect(electronRpc.app.close());
-    }
-  }
+// A Steam shortcut's window is done once its session's post hooks are.
+document.addEventListener('game:session-ended', (event: Event) => {
+  const appID = (event as CustomEvent).detail.id as number;
+  if (isShortcutLaunchForGame(appID))
+    runDetached(electronRpc.app.close(), 'Failed to close the window');
 });
 </script>

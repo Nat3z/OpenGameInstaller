@@ -82,7 +82,7 @@ export class OGIServer<R> {
       return new OGIServer(
         options.token,
         routes,
-        options.implementations.map(({ group }) => group.name),
+        [...new Set(options.implementations.map(({ group }) => group.name))],
         yield* Effect.runtime<R>(),
         yield* Effect.scope
       );

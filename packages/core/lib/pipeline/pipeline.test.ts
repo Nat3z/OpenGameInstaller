@@ -69,6 +69,7 @@ const harness = (options: Options = {}) => {
   );
   const library = new Map<number, LibraryInfo>();
   const sleep: boolean[] = [];
+  const stagedAtMove: string[][] = [];
   const release = Effect.runSync(Deferred.make<EngineOutcome>());
   let setupFails = options.setupFails;
   let redistFails = options.redistFails;
@@ -126,6 +127,10 @@ const harness = (options: Options = {}) => {
       stageOldFiles: (folder) =>
         Effect.sync(() => {
           calls.push(`stage:${folder}`);
+          // What a crash right now would leave on disk.
+          stagedAtMove.push(
+            [...saved.values()].map((record) => record.staged ?? '')
+          );
           return { staged: true, failed: 0 };
         }),
       revertOldFiles: (folder) =>
@@ -243,7 +248,17 @@ const harness = (options: Options = {}) => {
   const pipeline = <A, E>(f: (p: Pipeline['Type']) => Effect.Effect<A, E>) =>
     runtime.runPromise(Effect.flatMap(Pipeline, f));
 
-  return { calls, saved, library, sleep, release, runtime, until, pipeline };
+  return {
+    calls,
+    saved,
+    library,
+    sleep,
+    release,
+    runtime,
+    until,
+    pipeline,
+    stagedAtMove,
+  };
 };
 
 describe('pipeline', () => {
@@ -500,6 +515,63 @@ describe('pipeline', () => {
     expect((again as Error).message).toContain('already downloading');
     expect(h.calls.filter((call) => call.startsWith('direct'))).toHaveLength(1);
     await h.pipeline((p) => p.cancel(id));
+    await h.runtime.dispose();
+  });
+
+  test('the backup folder is saved before old files move', async () => {
+    const h = harness();
+    h.library.set(7, {
+      appID: 7,
+      name: 'Game',
+      version: '0.9',
+      cwd: '/dl/Game',
+      launchExecutable: 'game.exe',
+      capsuleImage: '',
+      coverImage: '',
+      storefront: 'steam',
+      addonsource: 'addon',
+    });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct, update: { version: '1.0' } })
+    );
+    await h.until(id, (d) => d.status === 'completed');
+    // When files moved, the saved record already pointed at the backup.
+    expect(h.stagedAtMove).toEqual([['/dl/Game']]);
+    await h.runtime.dispose();
+  });
+
+  test('a crash mid-staging restores the old files and goes on without downloading', async () => {
+    const h = harness({
+      records: [
+        {
+          id: 'mid-stage',
+          appID: 7,
+          request: direct,
+          update: { version: '1.0' },
+          path: '/dl/Game/',
+          files: [{ link: 'https://cdn/game.zip', path: '/dl/Game/game.zip' }],
+          step: 'download',
+          staged: '/dl/Game',
+          retryCount: 0,
+          updatedAt: 0,
+        },
+      ],
+    });
+    h.library.set(7, {
+      appID: 7,
+      name: 'Game',
+      version: '0.9',
+      cwd: '/dl/Game',
+      launchExecutable: 'game.exe',
+      capsuleImage: '',
+      coverImage: '',
+      storefront: 'steam',
+      addonsource: 'addon',
+    });
+    await h.until('mid-stage', (d) => d.status === 'completed');
+    expect(h.calls.some((call) => call.startsWith('direct'))).toBe(false);
+    // Half-moved files go back first, then staging runs again.
+    expect(h.calls.slice(0, 2)).toEqual(['revert:/dl/Game', 'stage:/dl/Game']);
     await h.runtime.dispose();
   });
 });

@@ -342,6 +342,11 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
         Effect.gen(function* () {
           // Before extraction, while the folder holds only old files and this
           // download: staging later would move the new content aside too.
+          // The backup folder is saved *before* anything moves, so a crash
+          // mid-move still knows where to restore from (reverting a folder
+          // with no `old_files` does nothing).
+          const intended = stagingFolder(downloaded);
+          if (intended) yield* save({ ...downloaded, staged: intended });
           const record = {
             ...downloaded,
             staged: yield* stageOldFiles(downloaded),
@@ -441,14 +446,16 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
        * in-place update). A dirty stage is reverted immediately: retrying on a
        * half-moved folder would be worse than no backup.
        */
+      /** Where an update's old files go, or undefined when it keeps them. */
+      const stagingFolder = (record: DownloadRecord) =>
+        !record.update || record.request.clearOldFilesBeforeUpdate === false
+          ? undefined
+          : folderOf(record.path);
+
       const stageOldFiles = (record: DownloadRecord) =>
         Effect.gen(function* () {
-          if (
-            !record.update ||
-            record.request.clearOldFilesBeforeUpdate === false
-          )
-            return undefined;
-          const folder = folderOf(record.path);
+          const folder = stagingFolder(record);
+          if (!folder) return undefined;
           yield* log(record.id, 'Moving old files to old_files');
           const keep = [
             ...record.files.map((file) => nameOf(file.path)),
@@ -590,6 +597,13 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           if (record.step === 'download' && record.files.length === 0)
             record = yield* save(yield* resolve(record));
 
+          // A crash during staging: the transfer is done and the backup folder
+          // was saved before files moved. Put them back and stage again.
+          if (record.step === 'download' && record.staged) {
+            yield* restoreOldFiles(record);
+            record = yield* save({ ...record, staged: undefined });
+            record = yield* save(yield* afterDownload(record));
+          }
           if (record.step === 'download') {
             const outcome = yield* download(record);
             if (outcome._tag === 'Cancelled') return;
@@ -666,7 +680,13 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
       for (const record of yield* store.list) {
         records.set(record.id, record);
         if (record.error !== undefined) continue;
-        if (record.step === 'download' && record.files.length > 0)
+        // A `staged` download finished its transfer (`run` picks it up after
+        // the transfer); only an unfinished transfer waits for a resume.
+        if (
+          record.step === 'download' &&
+          record.files.length > 0 &&
+          !record.staged
+        )
           yield* show(record, 'paused');
         else yield* launch(record);
       }

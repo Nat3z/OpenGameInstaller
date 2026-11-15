@@ -184,6 +184,8 @@ export const AddonsFromDevServer = Layer.succeed(Addons, {
 export const LaunchHooksFromDevServer = Layer.succeed(LaunchHooks, {
   run: (game: LibraryInfo, stage) =>
     Effect.all([sdk, readyAddons]).pipe(
+      // Every hook runs to the end (a save restore must not be cut short by
+      // another addon failing); the first failure is reported after.
       Effect.flatMap(([client, addons]) =>
         Effect.forEach(
           addons.filter((addon) =>
@@ -192,10 +194,15 @@ export const LaunchHooksFromDevServer = Layer.succeed(LaunchHooks, {
           (addon) =>
             client
               .addon(addon.id)
-              .launchApp({ libraryInfo: game, launchType: stage }),
-          { concurrency: 'unbounded', discard: true }
+              .launchApp({ libraryInfo: game, launchType: stage })
+              .pipe(Effect.either),
+          { concurrency: 'unbounded' }
         )
       ),
+      Effect.flatMap((results) => {
+        const failed = results.find((result) => result._tag === 'Left');
+        return failed?._tag === 'Left' ? Effect.fail(failed.left) : Effect.void;
+      }),
       Effect.mapError(
         (error) =>
           new LibraryError({

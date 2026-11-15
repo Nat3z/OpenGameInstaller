@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.0",
   "description": "Client protocol for OpenGameInstaller: schemas, wire envelope, and method groups shared by every frontend and backend.",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "author": {
     "name": "Nat3z",
     "email": "me@nat3z.com",

@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.0",
   "description": "The OpenGameInstaller engine: protocol server, library, and (over time) the download, setup, and launch pipeline. Hosts plug in adapters and mount it on a socket.",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "author": {
     "name": "Nat3z",
     "email": "me@nat3z.com",

@@ -84,7 +84,7 @@ const downloadTorrent = (url: string, path: string) =>
     });
   });
 
-export default function handler(mainWindow: Electron.BrowserWindow) {
+export default function handler() {
   return router(
     procedure(ElectronRpc.realdebrid.setKey, (key: string) =>
       run(
@@ -151,13 +151,15 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
             .addTorrent(stream, hostName(host))
             .pipe(Effect.ensuring(Effect.sync(() => stream.destroy())));
         }).pipe(
+          // No download exists yet, so this is a notice, not a download error.
           Effect.tapError((error) =>
-            Effect.sync(() => {
-              mainWindow?.webContents?.send('ddl:download-error', {
+            Effect.sync(() =>
+              sendNotification({
+                message: `Real-Debrid: ${formatError(error)}`,
                 id: Math.random().toString(36).slice(2),
-                error: formatError(error),
-              });
-            })
+                type: 'error',
+              })
+            )
           ),
           Effect.ensuring(
             Effect.promise(() => fsAsync.rm(tempPath, { force: true }))

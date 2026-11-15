@@ -18,7 +18,7 @@ const fresh = (refuse = 0) => {
         refuse-- > 0
           ? Effect.fail(new Error('not ready'))
           : Effect.sync(() => {
-              addon.eventsAvailable = ['search'];
+              addon.eventsAvailable = ['search', 'launch-app'];
               return { args: { success: true } };
             }),
       search: (): Effect.Effect<{ args: unknown }> =>
@@ -28,6 +28,7 @@ const fresh = (refuse = 0) => {
   return addon;
 };
 let connection = fresh();
+const hooksRun: string[] = [];
 // Like the real server: remembers accepted configs and replays the last one
 // to a reconnecting addon, ignoring a failed replay.
 const lastConfigs = new Map<string, unknown>();
@@ -45,16 +46,23 @@ const server = {
 mock.module('../src/electron/server/addon-server.js', () => ({
   getAddonServer: () => server,
 }));
+// No addon processes in tests: readiness is just what's connected.
+mock.module('../src/electron/manager/manager.addon-readiness.js', () => ({
+  waitForAddonManifests: () => Effect.sync(() => [connection]),
+}));
+
+const database = async () => {
+  const { Database } = await import('../src/electron/services/index.js');
+  return Layer.succeed(Database, {
+    addonConfig: { get: () => Effect.succeed({}), set: () => Effect.void },
+  } as never);
+};
 
 const layer = async () => {
   const { AddonsFromAddonServer } = await import(
     '../src/electron/server/addons-adapter.js'
   );
-  const { Database } = await import('../src/electron/services/index.js');
-  const database = Layer.succeed(Database, {
-    addonConfig: { get: () => Effect.succeed({}), set: () => Effect.void },
-  } as never);
-  return AddonsFromAddonServer.pipe(Layer.provide(database));
+  return AddonsFromAddonServer.pipe(Layer.provide(await database()));
 };
 
 const search = async () => {
@@ -162,4 +170,37 @@ test("another addon's question does not pause this addon's deadline", async () =
     ) as Effect.Effect<{ message: string }>
   );
   expect(error.message).toContain('did not answer search');
+});
+
+test('launch hooks reach an addon that announces them while configuring', async () => {
+  connection = fresh();
+  const layer = await database();
+  // Like the real one: picks its addons when called, not when run.
+  mock.module('../src/electron/server/addon-lifecycle.js', () => ({
+    runLaunchAppHooks: () => {
+      const picked = connection.eventsAvailable.includes('launch-app');
+      return Effect.sync(() => {
+        if (picked) hooksRun.push('launch-app');
+        return { success: true };
+      });
+    },
+  }));
+  mock.module('../src/electron/handlers/handler.library.js', () => ({
+    launchGameFromLibrary: () => Effect.succeed({ success: true }),
+  }));
+  mock.module('../src/electron/runtime.js', () => ({
+    runElectronEffect: (effect: Effect.Effect<unknown, unknown, never>) =>
+      Effect.runPromise(effect.pipe(Effect.provide(layer))),
+  }));
+  const { LaunchHooksFromAddonServer } = await import(
+    '../src/electron/server/launch-adapters.js'
+  );
+  const { LaunchHooks } = await import('@ogi-sdk/core');
+
+  await Effect.runPromise(
+    Effect.flatMap(LaunchHooks, (hooks) =>
+      hooks.run({ appID: 1 } as never, 'pre')
+    ).pipe(Effect.provide(LaunchHooksFromAddonServer))
+  );
+  expect(hooksRun).toEqual(['launch-app']);
 });

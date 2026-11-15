@@ -6,6 +6,7 @@ import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron';
 import { join } from 'path';
 import { closeDatabase, getOpenDatabase } from '@/electron/database/index.js';
 import { startAddons } from '@/electron/handlers/handler.addon.js';
+import { shutdownDirectDownloads } from '@/electron/handlers/handler.ddl.js';
 import {
   awaitPendingFileDeletions,
   type ExecuteWrapperResult,
@@ -53,6 +54,7 @@ import {
   startAddonServer,
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
+import { configureAddons } from '@/electron/server/addons-adapter.js';
 import {
   awaitManagedPostHooks,
   startClientServer,
@@ -291,12 +293,15 @@ function registerClientReadyListener() {
   clientReadyListenerRegistered = true;
 
   forwardEventsToRenderer(sendIPCMessage);
-  const prompts = showPromptsInWindow(() => mainWindow, sendIPCMessage);
+  // Headless prompts stay on the protocol: no forms, no native dialogs.
+  const prompts = isHeadless()
+    ? undefined
+    : showPromptsInWindow(() => mainWindow, sendIPCMessage);
   let rendererLoads = 0;
   ipcMain.on('client-ready-for-events', () => {
     rendererEventReadiness.markReady();
     // Every load after the first is a reload that dropped open forms.
-    if (rendererLoads++ > 0) prompts.replayInputs();
+    if (rendererLoads++ > 0) prompts?.replayInputs();
   });
 }
 
@@ -321,20 +326,30 @@ async function ensureAddonServerRunning() {
 }
 
 /** The window works without the protocol, so its failure must not stop startup. */
-async function startClientProtocol(): Promise<void> {
+async function startClientProtocol(): Promise<boolean> {
   try {
     await startClientServer();
+    return true;
   } catch (error) {
     logger.sync.error('[client] Could not start the client protocol', error);
+    // Headless has no window to fall back on: without the protocol it's
+    // useless. Quit through the normal path so addons are stopped too.
+    if (isHeadless()) {
+      process.exitCode = 1;
+      app.quit();
+      return false;
+    }
     sendNotification({
       message: 'Other OpenGameInstaller clients cannot connect this session.',
       id: Math.random().toString(36).substring(7),
       type: 'warning',
     });
+    return false;
   }
 }
 
-async function startAddonRuntime() {
+/** `serveClients: false` leaves `/client` for the caller to start later. */
+async function startAddonRuntime({ serveClients = true } = {}) {
   if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
   sendNotification({
     message: 'Addons Starting...',
@@ -344,7 +359,7 @@ async function startAddonRuntime() {
   await runElectronEffect(startAddons());
   // After the addons spawn, so a launch from a client that just read
   // `client.json` waits on their manifests (and hooks) instead of none.
-  if (isAddonServerListening) await startClientProtocol();
+  if (serveClients && isAddonServerListening) await startClientProtocol();
 }
 
 async function onMainAppReady() {
@@ -526,6 +541,66 @@ async function startAppFlow(win: BrowserWindow) {
     }
     win.once('ready-to-show', onMainAppReady);
   }
+}
+
+/** `--headless`: the backend without a window, driven over the protocol. */
+const isHeadless = (): boolean => process.argv.includes('--headless');
+
+/**
+ * Starts everything a protocol client needs (database, migrations, addons,
+ * the /client socket) and no window. Startup progress goes to the log; quit
+ * with SIGTERM / SIGINT, which Electron turns into app.quit().
+ */
+async function startHeadless(): Promise<void> {
+  logger.sync.info('[headless] Starting without a window');
+  // `/client` rides on the addon server, so without it nothing could reach
+  // this process. Refuse up front instead of starting a backend nobody can use.
+  hookArgs = parseLaunchHookArgs();
+  if (hookArgs.noAddonServer) {
+    logger.sync.error(
+      '[headless] --no-server leaves no endpoint for clients; drop the flag'
+    );
+    process.exitCode = 1;
+    app.quit();
+    return;
+  }
+  // The desktop IPC router is never served (the protocol socket replaces
+  // it), but building it registers the download engines core controls.
+  createElectronRouter(null);
+  const startup = await runElectronEffect(runStartupTasks(null, false));
+  if (startup.shutdownPending) {
+    app.quit();
+    return;
+  }
+  await startAddonRuntime({ serveClients: false });
+  // Optional, and it must not hold up `/client` if the marketplace hangs.
+  await runElectronEffect(
+    checkForAddonUpdates().pipe(
+      Effect.timeout('30 seconds'),
+      Effect.catchAll((error) =>
+        logger.warn('[headless] Skipped the addon update check', error)
+      )
+    )
+  );
+  publishEvent({ _tag: 'AddonsStarted' });
+  await runElectronEffect(waitForAddonManifests());
+  // The renderer's config-update is the addon handshake (`connect`, saved
+  // settings, events); headless sends it from here, before any client can
+  // launch a game whose hooks aren't announced yet.
+  await runElectronEffect(configureAddons);
+  // Without the addon server there's no `/client` to serve: nothing could
+  // drive this process, so stop rather than report a readiness it lacks.
+  if (!isAddonServerListening) {
+    logger.sync.error('[headless] The addon server is not running; quitting');
+    process.exitCode = 1;
+    app.quit();
+    return;
+  }
+  if (!(await startClientProtocol())) return;
+  publishEvent({ _tag: 'AddonManifestsReady' });
+  logger.sync.info(
+    '[headless] Ready; client.json written to the data directory'
+  );
 }
 
 function shutdownAfterStartup(win: BrowserWindow): void {
@@ -768,6 +843,17 @@ app.on('ready', async () => {
   await startupEnvironmentReady;
   registerClientReadyListener();
 
+  if (isHeadless()) {
+    // Any startup failure (the addon server's port taken, say) quits through
+    // the normal cleanup, so addons it already started don't outlive it.
+    await startHeadless().catch((error) => {
+      logger.sync.error('[headless] Startup failed', error);
+      process.exitCode = 1;
+      app.quit();
+    });
+    return;
+  }
+
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
   hookArgs = parseLaunchHookArgs();
@@ -819,7 +905,8 @@ app.on('ready', async () => {
 // Quit when all windows are closed. No renderer is left to finish a held
 // launch flow, so drop the hold rather than waiting it out.
 app.on('window-all-closed', () => {
-  if (!gotTheLock || process.platform === 'darwin') return;
+  // Headless has no windows to close; it quits on SIGTERM / SIGINT.
+  if (!gotTheLock || process.platform === 'darwin' || isHeadless()) return;
   setQuitHold(false);
   app.quit();
 });
@@ -853,6 +940,7 @@ async function shutdown(): Promise<void> {
         yield* instance.stop().pipe(Effect.ignore);
       }
       for (const interval of torrentIntervals) clearInterval(interval);
+      yield* shutdownDirectDownloads();
       stopClientServer();
       if (isAddonServerListening) yield* stopAddonServer();
       yield* Effect.sync(closeDatabase);
@@ -887,6 +975,13 @@ app.on('will-quit', (event) => {
   event.preventDefault();
   logger.sync.info('Waiting for pending game file deletions before quitting');
   void awaitPendingFileDeletions().finally(() => app.quit());
+});
+
+// `app.quit()` exits 0 whatever `process.exitCode` says. Once cleanup is done
+// (this fires last), carry a recorded failure (headless startup) to the OS.
+app.on('quit', () => {
+  const code = Number(process.exitCode ?? 0);
+  if (code !== 0) app.exit(code);
 });
 
 app.on('activate', async function () {

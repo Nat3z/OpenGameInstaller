@@ -4,6 +4,7 @@ import { Addons } from '@ogi-sdk/core';
 import { AddonError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { type Context, Effect, Layer } from 'effect';
+import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { addonDeadline } from '@/electron/server/addon-prompts.js';
 import { getAddonServer } from '@/electron/server/addon-server.js';
 import { Database } from '@/electron/services/index.js';
@@ -101,6 +102,27 @@ const ready = (
   configureOne(database, connection).pipe(
     Effect.catchAll(warnFailure(connection))
   );
+
+/**
+ * Sends every running addon its config, after waiting for all manifests.
+ * Headless startup runs this before serving `/client`, since there is no
+ * renderer to do the handshake.
+ */
+export const configureAddons: Effect.Effect<void, never, Database> = Effect.gen(
+  function* () {
+    const database = yield* Database;
+    const connections = yield* waitForAddonManifests();
+    yield* Effect.forEach(
+      connections,
+      (connection) =>
+        // `configureOne` is bounded, so a silent addon can't hold up `/client`.
+        configureOne(database, connection).pipe(
+          Effect.catchAll(warnFailure(connection))
+        ),
+      { concurrency: 'unbounded', discard: true }
+    );
+  }
+);
 
 /**
  * Core's addon adapter: talks to the in-process addon server directly, the

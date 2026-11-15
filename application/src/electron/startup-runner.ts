@@ -61,6 +61,7 @@ let splashTargetWindow: BrowserWindow | null = null;
  * @param subtext - Optional secondary text (e.g., download speed, file name)
  */
 function updateSplashStatus(text: string, subtext?: string) {
+  logger.sync.info(`[startup] ${text}${subtext ? ` (${subtext})` : ''}`);
   if (splashTargetWindow && !splashTargetWindow.isDestroyed()) {
     splashTargetWindow.webContents.send('splash-status', text, subtext);
   }
@@ -118,7 +119,9 @@ export type StartupTasksResult = {
  * @param mainWindow - Optional. When provided, use this window for splash UI instead of creating a separate splash window.
  */
 export function runStartupTasks(
-  mainWindow?: BrowserWindow | null
+  mainWindow?: BrowserWindow | null,
+  /** False for `--headless`: progress goes to the log, not a splash window. */
+  showSplash = true
 ): Effect.Effect<StartupTasksResult, never, AppServices> {
   let shutdownPending = false;
 
@@ -126,6 +129,7 @@ export function runStartupTasks(
     Effect.gen(function* () {
       yield* Effect.acquireRelease(
         Effect.sync(() => {
+          if (!showSplash) return;
           if (mainWindow && !mainWindow.isDestroyed()) {
             splashTargetWindow = mainWindow;
           } else {
@@ -236,22 +240,31 @@ export function runStartupTasks(
 
       return { shutdownPending };
     })
-  ).pipe(Effect.catchTag('UpdateError', reportFatalStartupError));
+  ).pipe(
+    Effect.catchTag('UpdateError', (error) =>
+      reportFatalStartupError(error, showSplash)
+    )
+  );
 }
 
 /**
  * A failed startup step leaves the app unusable, so tell the user why and quit
- * rather than leaving them on the splash screen.
+ * rather than leaving them on the splash screen. Headless only logs: nobody
+ * is there to dismiss a dialog.
  */
 function reportFatalStartupError(
-  error: UpdateError
+  error: UpdateError,
+  showDialog: boolean
 ): Effect.Effect<StartupTasksResult> {
   return Effect.gen(function* () {
     yield* logger.error('[startup] Fatal startup error', error);
-    dialog.showErrorBox(
-      'OpenGameInstaller failed to start',
-      `${error.message}\n\nThe app will now close. Check the logs for details.`
-    );
+    if (showDialog)
+      dialog.showErrorBox(
+        'OpenGameInstaller failed to start',
+        `${error.message}\n\nThe app will now close. Check the logs for details.`
+      );
+    // A failed start must not look like a clean exit to whatever ran us.
+    process.exitCode = 1;
     app.quit();
     return { shutdownPending: true };
   });

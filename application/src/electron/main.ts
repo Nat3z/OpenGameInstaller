@@ -558,7 +558,15 @@ async function startHeadless(): Promise<void> {
     return;
   }
   await startAddonRuntime({ serveClients: false });
-  await runElectronEffect(checkForAddonUpdates());
+  // Optional, and it must not hold up `/client` if the marketplace hangs.
+  await runElectronEffect(
+    checkForAddonUpdates().pipe(
+      Effect.timeout('30 seconds'),
+      Effect.catchAll((error) =>
+        logger.warn('[headless] Skipped the addon update check', error)
+      )
+    )
+  );
   publishEvent({ _tag: 'AddonsStarted' });
   await runElectronEffect(waitForAddonManifests());
   // The renderer's config-update is the addon handshake (`connect`, saved

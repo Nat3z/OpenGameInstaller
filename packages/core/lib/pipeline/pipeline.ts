@@ -403,15 +403,19 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           clearOldFilesBeforeUpdate: request.clearOldFilesBeforeUpdate,
           appID: record.appID,
           storefront: request.storefront,
-          multiPartFiles:
-            request.downloadType === 'direct'
-              ? record.files.map((file, index) => ({
-                  name: request.files[index]?.name ?? nameOf(file.path),
-                  path: file.path,
-                  downloadURL: file.link,
-                  headers: file.headers,
-                }))
-              : [],
+          // Every HTTP-fetched file (direct or via debrid), as the renderer
+          // sent; a local torrent's files are the client's, not ours.
+          multiPartFiles: isLocalTorrent(record)
+            ? []
+            : record.files.map((file, index) => ({
+                name:
+                  (request.downloadType === 'direct'
+                    ? request.files?.[index]?.name
+                    : undefined) ?? nameOf(file.path),
+                path: file.path,
+                downloadURL: file.link,
+                headers: file.headers,
+              })),
           manifest: request.manifest ?? {},
         };
         return record.update && current

@@ -208,7 +208,7 @@ const legacyRequest = (info: DownloadStatusAndInfo): DownloadRequest => {
     error: _error,
     usedDebridService: _debrid,
     downloadPath: _path,
-    files: _files,
+    files,
     downloadSpeed: _speed,
     downloadSize: _size,
     ratio: _ratio,
@@ -223,10 +223,14 @@ const legacyRequest = (info: DownloadStatusAndInfo): DownloadRequest => {
     isAddonDownload: _isAddonDownload,
     ...request
   } = info;
+  // A direct download's `files` were its request too (setup reads their
+  // names); a debrid one's `originalFiles` were, when it had them.
+  const requestFiles =
+    originalFiles ?? (info.downloadType === 'direct' ? files : undefined);
   return {
     ...request,
     ...(originalDownloadURL ? { downloadURL: originalDownloadURL } : {}),
-    ...(originalFiles ? { files: originalFiles } : {}),
+    ...(requestFiles ? { files: requestFiles } : {}),
   } as DownloadRequest;
 };
 

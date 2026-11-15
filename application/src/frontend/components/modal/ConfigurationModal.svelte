@@ -86,8 +86,12 @@ document.addEventListener('input-asked', (e) => {
   if (!isCustomEvent(e)) return;
   const { detail } = e;
   const { config, id, name, description, reply }: PendingInputScreen = detail;
+  // A reload can deliver the same prompt twice (the held send and the replay).
+  if (activeScreen?.id === id) return;
   listOfScreensQueued.update((screens) =>
-    screens.concat({ config, id, name, description, reply })
+    screens.some((screen) => screen.id === id)
+      ? screens
+      : screens.concat({ config, id, name, description, reply })
   );
   processQueue();
 });

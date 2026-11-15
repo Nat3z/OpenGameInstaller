@@ -157,17 +157,21 @@ async function handleSubmit(actionKey?: string) {
 
   isSubmitting = true;
   submitError = undefined;
+  // `input-closed` for this answer can land mid-await and move on to the next
+  // form; only ever close the one that was submitted.
+  const screen = activeScreen;
 
   try {
-    if (activeScreen.reply) {
-      await activeScreen.reply(data);
+    if (screen.reply) {
+      await screen.reply(data);
     } else {
-      await runFrontendEffect(electronRpc.app.inputSend(activeScreen.id, data));
+      await runFrontendEffect(electronRpc.app.inputSend(screen.id, data));
     }
-    closeModal();
+    if (activeScreen === screen) closeModal();
   } catch (error) {
     logger.sync.error('Failed to submit configuration:', error);
-    submitError = error instanceof Error ? error.message : String(error);
+    if (activeScreen === screen)
+      submitError = error instanceof Error ? error.message : String(error);
   } finally {
     isSubmitting = false;
   }

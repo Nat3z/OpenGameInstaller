@@ -122,8 +122,9 @@ export const AddonsFromAddonServer = Layer.effect(
         Effect.suspend(() => {
           const connection = getAddonServer().getClient(addonId);
           if (!connection) return Effect.succeed(null);
+          // Read after `ready`: configuring is what announces the events.
           return ready(database, connection).pipe(
-            Effect.as(describe(connection))
+            Effect.map(() => describe(connection))
           );
         }),
       call: (addonId, event, args) =>

@@ -1,9 +1,10 @@
+import type { OGIClient } from '@ogi-sdk/client-kit';
 import type {
   Download,
   FailedSetup as WireFailedSetup,
 } from '@ogi-sdk/protocol';
 import { get } from 'svelte/store';
-import { ogi } from '@/frontend/lib/core/ogi';
+import { ogi, onConnected } from '@/frontend/lib/core/ogi';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { updatesManager } from '@/frontend/states.svelte';
 import {
@@ -82,11 +83,18 @@ const toFailed = (setup: WireFailedSetup) => ({
 
 let started = false;
 
-/** Mirrors core's download state into the stores. Call once at startup. */
+/**
+ * Mirrors core's download state into the stores. Call once at startup; it
+ * subscribes again on each reconnect, and each new snapshot replaces the
+ * cards, so nothing stays frozen after a drop.
+ */
 export const syncDownloads = async (): Promise<void> => {
   if (started) return;
   started = true;
-  const client = await ogi();
+  onConnected(subscribe);
+};
+
+const subscribe = (client: OGIClient): void => {
   const cards = new Map<string, DownloadStatusAndInfo>();
   const publish = () => currentDownloads.set([...cards.values()]);
 

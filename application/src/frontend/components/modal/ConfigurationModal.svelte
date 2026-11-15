@@ -82,14 +82,33 @@ function processQueue() {
   listOfScreensQueued.set(screens.slice(1));
 }
 
+// Prompts this window already answered or saw closed. A reload can deliver
+// the same prompt twice (the held send and the replay), even after the first
+// copy was answered.
+const finished = new Set<string>();
+
 document.addEventListener('input-asked', (e) => {
   if (!isCustomEvent(e)) return;
   const { detail } = e;
   const { config, id, name, description, reply }: PendingInputScreen = detail;
+  if (activeScreen?.id === id || finished.has(id)) return;
   listOfScreensQueued.update((screens) =>
-    screens.concat({ config, id, name, description, reply })
+    screens.some((screen) => screen.id === id)
+      ? screens
+      : screens.concat({ config, id, name, description, reply })
   );
   processQueue();
+});
+
+// Another client answered this prompt: drop it, queued or showing.
+document.addEventListener('input-closed', (e) => {
+  if (!isCustomEvent(e)) return;
+  const { id }: { id: string } = e.detail;
+  finished.add(id);
+  listOfScreensQueued.update((screens) =>
+    screens.filter((screen) => screen.id !== id)
+  );
+  if (activeScreen?.id === id) closeModal();
 });
 
 listOfScreensQueued.subscribe(() => {
@@ -147,19 +166,25 @@ async function handleSubmit(actionKey?: string) {
 
   isSubmitting = true;
   submitError = undefined;
+  // `input-closed` for this answer can land mid-await and move on to the next
+  // form; only ever close the one that was submitted.
+  const screen = activeScreen;
 
   try {
-    if (activeScreen.reply) {
-      await activeScreen.reply(data);
+    if (screen.reply) {
+      await screen.reply(data);
     } else {
-      await runFrontendEffect(electronRpc.app.inputSend(activeScreen.id, data));
+      await runFrontendEffect(electronRpc.app.inputSend(screen.id, data));
     }
-    closeModal();
+    finished.add(screen.id);
+    if (activeScreen === screen) closeModal();
   } catch (error) {
     logger.sync.error('Failed to submit configuration:', error);
-    submitError = error instanceof Error ? error.message : String(error);
+    if (activeScreen === screen)
+      submitError = error instanceof Error ? error.message : String(error);
   } finally {
-    isSubmitting = false;
+    // A newer form may already be submitting; leave its state alone.
+    if (activeScreen === screen) isSubmitting = false;
   }
 }
 

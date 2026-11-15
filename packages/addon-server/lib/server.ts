@@ -18,12 +18,23 @@ import { DeferredTasksManager } from './deffered';
 
 const logger = createLogger(LOGGER_PREFIXES.addonServer);
 
+export type InputAnswer = Record<string, string | number | boolean>;
+
 export type AddonConfig = {
   securityCheck: boolean;
   port: number;
   secret?: string;
   /** Refuses websocket upgrades from anything but this machine. */
   localOnly?: boolean;
+  /**
+   * Who answers an addon's `input-asked`. Defaults to the first SDK
+   * connection; a host can route it elsewhere (core's `Prompts`).
+   */
+  askInput?: (
+    name: string,
+    description: string,
+    config: ConfigurationFile
+  ) => Effect.Effect<InputAnswer>;
 };
 
 const isLoopback = (address: string | undefined): boolean =>
@@ -105,11 +116,13 @@ export class AddonServer {
           ) => void | Promise<void>,
         ];
         const [connection] = this.sdkConnections;
-        const answer = connection
-          ? yield* connection
-              .askInput(name, description, config)
-              .pipe(Effect.catchAll(() => Effect.succeed({})))
-          : {};
+        const answer: InputAnswer = this.config.askInput
+          ? yield* this.config.askInput(name, description, config)
+          : connection
+            ? yield* connection
+                .askInput(name, description, config)
+                .pipe(Effect.catchAll(() => Effect.succeed({})))
+            : {};
         yield* Effect.tryPromise({
           try: () => Promise.resolve(reply(answer)),
           catch: (cause) => cause,

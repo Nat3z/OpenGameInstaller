@@ -17,7 +17,6 @@ import { registerRedistributableHandlers } from '@/electron/handlers/handler.red
 import { registerSteamHandlers } from '@/electron/handlers/handler.steam.js';
 import { getEffectiveOnlineState } from '@/electron/lib/online.js';
 import { setQuitHold } from '@/electron/lib/quit-hold.js';
-import { currentScreens, screenInputCallbacks } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import {
   ipcProcedure,
@@ -27,6 +26,7 @@ import {
 } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
 import { getAddonServer } from '@/electron/server/addon-server.js';
+import { answerInputPrompt } from '@/electron/server/prompts-bridge.js';
 import {
   getUpdateChannel,
   relaunchThroughSetup,
@@ -160,13 +160,7 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
       )
     ),
     ipcProcedure(ElectronRpc.app.inputSend, (_, id: string, data: any) =>
-      runBoundary(
-        Effect.sync(() => {
-          currentScreens.set(id, data);
-          screenInputCallbacks.get(id)?.(data);
-          screenInputCallbacks.delete(id);
-        })
-      )
+      runBoundary(answerInputPrompt(id, data).pipe(Effect.asVoid))
     ),
     procedure(ElectronRpc.app.isOnline, () =>
       runBoundary(Effect.sync(() => getEffectiveOnlineState().effectiveOnline))
@@ -257,8 +251,8 @@ export default function handler(mainWindow: Electron.BrowserWindow) {
 
   return mergeRouters(
     appRouter,
-    registerSteamHandlers(mainWindow),
-    registerLibraryHandlers(mainWindow),
-    registerRedistributableHandlers(mainWindow)
+    registerSteamHandlers(),
+    registerLibraryHandlers(),
+    registerRedistributableHandlers()
   );
 }

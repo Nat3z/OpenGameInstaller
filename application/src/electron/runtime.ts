@@ -33,9 +33,11 @@ export class EffectBoundaryError {
 /** An effect that may depend on any application service. */
 export type AppEffect<A, E = never> = Effect.Effect<A, E, AppServices>;
 
+/** `signal` interrupts the effect, e.g. when the caller's own fiber is. */
 export const runElectronEffect = <A, E>(
-  effect: Effect.Effect<A, E, AppServices>
-): Promise<A> => electronRuntime.runPromise(logger.observe(effect));
+  effect: Effect.Effect<A, E, AppServices>,
+  signal?: AbortSignal
+): Promise<A> => electronRuntime.runPromise(logger.observe(effect), { signal });
 
 export const forkElectronEffect = <A, E>(
   effect: Effect.Effect<A, E, AppServices>

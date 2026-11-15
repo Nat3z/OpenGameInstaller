@@ -78,6 +78,11 @@ interface TorrentJob {
   link: string;
   path: string;
   type: 'torrent' | 'magnet';
+  /** How the transfer ended; a seeding torrent counts as completed. */
+  onTerminal?: (
+    outcome: 'completed' | 'failed' | 'cancelled',
+    error?: string
+  ) => void;
 }
 
 interface WebTorrentControls {
@@ -616,6 +621,7 @@ class TorrentDownload {
         { channel: 'torrent:download-cancelled', data: payload }
       );
       this.sendIpc('torrent:download-cancelled', payload);
+      this.job.onTerminal?.('cancelled');
       logger.sync.info('[torrent] Download Cancelled', this.id);
 
       if (this.lifecycleFiber) {
@@ -656,6 +662,7 @@ class TorrentDownload {
         { channel: 'torrent:download-complete', data: payload }
       );
       this.sendIpc('torrent:download-complete', payload);
+      this.job.onTerminal?.('completed');
       sendNotification({
         message: 'Download completed, now seeding.',
         id: this.id,
@@ -683,6 +690,7 @@ class TorrentDownload {
         { channel: 'torrent:download-error', data: payload }
       );
       this.sendIpc('torrent:download-error', payload);
+      this.job.onTerminal?.('failed', error.message);
       sendNotification({
         message: error.message || 'Download failed',
         id: this.id,
@@ -761,6 +769,20 @@ class TorrentDownload {
   }
 }
 
+/** Starts a torrent and resolves once it is queued or downloading. */
+export const startTorrent = (
+  job: TorrentJob
+): Effect.Effect<DownloadHandshakeResult, TorrentError, Settings> =>
+  Effect.gen(function* () {
+    const download = new TorrentDownload(job);
+    yield* download.start();
+    return yield* download.waitForReady();
+  });
+
+/** Cancels a torrent for good; nothing if it is already gone. */
+export const cancelTorrent = (id: string): Effect.Effect<void> =>
+  (downloads.get(id)?.cancel() ?? Effect.void).pipe(Effect.ignore);
+
 export default function handler() {
   registerDownloadEngine({
     pause: (id) => downloads.get(id)?.pause() ?? Effect.void,
@@ -768,23 +790,16 @@ export default function handler() {
     abort: (id) => downloads.get(id)?.cancel() ?? Effect.void,
     has: (id) => downloads.has(id),
   });
-  const startDownload = (job: TorrentJob) =>
-    Effect.gen(function* () {
-      const download = new TorrentDownload(job);
-      yield* download.start();
-      return yield* download.waitForReady();
-    });
-
   return router(
     procedure(
       ElectronRpc.torrent.downloadTorrent,
       (link: string, path: string) =>
-        run(startDownload({ link, path, type: 'torrent' }))
+        run(startTorrent({ link, path, type: 'torrent' }))
     ),
     procedure(
       ElectronRpc.torrent.downloadMagnet,
       (link: string, path: string) =>
-        run(startDownload({ link, path, type: 'magnet' }))
+        run(startTorrent({ link, path, type: 'magnet' }))
     ),
     procedure(ElectronRpc.torrent.pauseDownload, (id: string) =>
       run(downloads.get(id)?.pause() ?? Effect.void)

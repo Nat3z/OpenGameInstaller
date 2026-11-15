@@ -28,6 +28,7 @@ export const toPatch = (
         queuePosition: num('queuePosition'),
         part: num('part'),
         totalParts: num('totalParts'),
+        ratio: num('ratio'),
         status:
           data.processingPhase === 'Merging chunks'
             ? 'merging'
@@ -38,17 +39,6 @@ export const toPatch = (
         status: 'extracting',
         progress: num('progress'),
         speed: 0,
-      };
-    // Extraction ended: the files are on disk again (setup itself still runs
-    // in the renderer), or it failed and the card shows why.
-    case 'processing:complete':
-      // A retry that worked clears the failure of the attempt before it.
-      return { status: 'completed', progress: 1, speed: 0, error: null };
-    case 'processing:error':
-      return {
-        status: 'error',
-        speed: 0,
-        error: typeof data.error === 'string' ? data.error : undefined,
       };
     case 'ddl:download-paused':
     case 'torrent:download-paused':

@@ -135,6 +135,12 @@ export const ElectronRpc = {
     quit: rpc('app.quit', [], Void),
     setQuitHold: rpc('app.setQuitHold', [Schema.Boolean], Void),
     getOS: rpc('app.getOS', [], OperatingSystem),
+    /** The core protocol socket and its token; null until it is up. */
+    clientConnection: rpc(
+      'app.clientConnection',
+      [],
+      Schema.NullOr(Schema.Struct({ url: Schema.String, token: Schema.String }))
+    ),
     grantRootPassword: rpc('app.grantRootPassword', [Schema.String], Void),
     openSteamKeyboard: rpc(
       'app.openSteamKeyboard',

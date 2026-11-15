@@ -17,11 +17,11 @@ import NotificationSideView from '@/frontend/components/NotificationSideView.sve
 import StorePage from '@/frontend/components/StorePage.svelte';
 import { runDetached, runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { appState, loadPersistedState } from '@/frontend/lib/core/state.svelte';
+import { syncDownloads } from '@/frontend/lib/downloads/protocol';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import AppUpdateManager from '@/frontend/managers/AppUpdateManager.svelte';
 import ChangelogManager from '@/frontend/managers/ChangelogManager.svelte';
 import Debug from '@/frontend/managers/Debug.svelte';
-import DownloadManager from '@/frontend/managers/DownloadManager.svelte';
 import GameManager from '@/frontend/managers/GameManager.svelte';
 import { GamepadNavigator } from '@/frontend/managers/GamepadManager';
 import Notifications from '@/frontend/managers/NotificationManager.svelte';
@@ -51,8 +51,6 @@ import {
 import {
   fetchAddonsWithConfigure,
   getAddonServerPromise,
-  initDownloadPersistence,
-  initSleepLock,
   isAddonEventAvailable,
   queryConnectedAddons,
 } from '@/frontend/utils';
@@ -115,6 +113,9 @@ const activeDownloadsCount = derived(
       (download) =>
         download.status === 'downloading' ||
         download.status === 'rd-downloading' ||
+        download.status === 'requesting' ||
+        download.status === 'merging' ||
+        download.status === 'completed' ||
         download.status === 'paused'
     ).length
 );
@@ -179,13 +180,9 @@ onMount(async () => {
 
   // Initialize search-related data
   initializeSearch();
-  runDetached(
-    initDownloadPersistence(),
-    'Failed to initialize download persistence'
-  );
-  initSleepLock((effect) =>
-    runDetached(effect, 'Failed to synchronize sleep lock')
-  );
+  // Downloads, their persistence and the sleep lock all live in core; the
+  // window only mirrors `downloads.watch`.
+  void syncDownloads();
   runDetached(
     loadPersistedUpdateState().pipe(Effect.asVoid),
     'Failed to load persisted update state'
@@ -1098,7 +1095,6 @@ document.addEventListener('migration:event:install-steam-addon', async () => {
       </main>
     </div>
 
-    <DownloadManager />
     <ConfigurationModal />
     <GameManager />
     <Debug />

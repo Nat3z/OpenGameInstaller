@@ -83,7 +83,7 @@ const requireWithin = (
   );
 
 /** A path inside a download directory; the only place setup may write. */
-const requireDownloadPath = (
+export const requireDownloadPath = (
   value: string
 ): Effect.Effect<
   string,
@@ -91,7 +91,7 @@ const requireDownloadPath = (
   Database | Settings
 > => Effect.flatMap(downloadRoots(), (roots) => requireWithin(value, roots));
 
-const resolveContentRoot = (
+export const resolveContentRoot = (
   directory: string
 ): Effect.Effect<string, FileSystemError> =>
   fsTry(directory, () => {
@@ -122,7 +122,7 @@ const requireReadablePath = (
     ]);
   });
 
-const stageOldFiles = (arg: { directory: string; keep: string[] }) =>
+export const stageOldFiles = (arg: { directory: string; keep: string[] }) =>
   Effect.gen(function* () {
     const directory = yield* requireDownloadPath(arg.directory);
     const keep = new Set([...arg.keep, OLD_FILES]);
@@ -157,7 +157,7 @@ const stageOldFiles = (arg: { directory: string; keep: string[] }) =>
     return { staged: true, moved, failed };
   });
 
-const revertOldFiles = (directory: string) =>
+export const revertOldFiles = (directory: string) =>
   Effect.gen(function* () {
     const root = yield* requireDownloadPath(directory);
     const source = join(root, OLD_FILES);
@@ -183,10 +183,12 @@ const revertOldFiles = (directory: string) =>
     return allMoved;
   });
 
-const extractArchive = (arg: {
+export const extractArchive = (arg: {
   archivePath: string;
   outputDir: string;
   downloadId?: string;
+  /** False leaves the archive for the caller (the pipeline deletes it later). */
+  deleteArchive?: boolean;
 }) =>
   Effect.gen(function* () {
     const archivePath = yield* requireDownloadPath(arg.archivePath);
@@ -240,10 +242,6 @@ const extractArchive = (arg: {
               id: arg.downloadId,
               log: [`Archive extraction failed: ${formatError(error)}`],
             });
-            emitDownload('processing:error', {
-              id: arg.downloadId,
-              error: `Archive extraction failed: ${formatError(error)}`,
-            });
           }
         })
       )
@@ -253,10 +251,10 @@ const extractArchive = (arg: {
         id: arg.downloadId,
         log: ['Archive extraction completed successfully'],
       });
-      emitDownload('processing:complete', { id: arg.downloadId });
     }
     // The archive is dead weight once extracted; a failure to remove it must
     // not fail the setup.
+    if (arg.deleteArchive === false) return outputDir;
     yield* fsTryPromise(archivePath, () =>
       fsAsync.rm(archivePath, { force: true })
     ).pipe(

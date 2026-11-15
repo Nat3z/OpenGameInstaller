@@ -7,14 +7,16 @@ import type {
   OGIAddonSDKEventListener,
 } from '@ogi-sdk/connect';
 import { EventResponseSocket, type WebSocketLike } from '@ogi-sdk/connect';
-import type { NetworkError, ValidationError } from '@ogi-sdk/errors';
+import { NetworkError, type ValidationError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Deferred, Effect } from 'effect';
+import { randomUUID } from 'crypto';
+import { Deferred, Duration, Effect, Fiber, Schedule } from 'effect';
 import {
   buildEventMessage,
   eventAliases,
   type SendEventProxy,
 } from '../_generated/event-proxy';
+import { DeferrableTask } from '../deffered';
 import { createClientMessageHandlers } from '../handlers/client-message-handlers';
 import type { ClientMessageHandlers } from '../handlers/types';
 import type { AddonConfig, AddonServer } from '../server';
@@ -23,6 +25,12 @@ import { bindWebSocketLifecycle } from './websocket-lifecycle';
 const logger = createLogger(LOGGER_PREFIXES.addonServer);
 
 export type AddonConnectionError = NetworkError | ValidationError;
+
+/** What a deferred addon event has reported so far. */
+export type DeferredProgress = {
+  readonly progress: number;
+  readonly logs: readonly string[];
+};
 
 /** Effect-based connection to one addon process. */
 export class AddonConnection {
@@ -129,6 +137,63 @@ export class AddonConnection {
                 );
                 return false;
               })
+        )
+      );
+    });
+  }
+
+  /**
+   * Sends an event the addon answers later (`setup`, `request-dl`) and waits
+   * for its result. The addon's `defer-update`s land on a task with the
+   * message's id; `onProgress` sees each change while it runs.
+   */
+  public deferred<Event extends keyof AddonServerToClientEventArgs>(
+    event: Event,
+    args: AddonServerToClientEventArgs[Event],
+    onProgress: (progress: DeferredProgress) => Effect.Effect<void> = () =>
+      Effect.void
+  ): Effect.Effect<unknown, AddonConnectionError> {
+    return Effect.gen(this, function* () {
+      const message = buildEventMessage(event, args);
+      message.id = randomUUID();
+      const tasks = this.server.getDeferredTasksManager();
+      const task = new DeferrableTask(
+        () => Effect.never,
+        this.addonInfo?.id ?? ''
+      );
+      task.id = message.id;
+      yield* tasks.startTask(task);
+
+      let last = '';
+      const report = Effect.suspend(() => {
+        const key = `${task.progress}:${task.logs.length}`;
+        if (key === last) return Effect.void;
+        last = key;
+        return onProgress({ progress: task.progress, logs: task.logs });
+      });
+      const reporter = yield* Effect.fork(
+        Effect.repeat(report, Schedule.spaced(Duration.millis(250)))
+      );
+      // The addon either replies on the socket or reports failure on the task.
+      const failed = Effect.gen(function* () {
+        while (task.failed === undefined) yield* Effect.sleep('250 millis');
+        return yield* Effect.fail(new NetworkError({ message: task.failed }));
+      });
+      return yield* Effect.raceFirst(
+        this.sendEventMessage(message).pipe(
+          Effect.flatMap((response) =>
+            response.statusError
+              ? Effect.fail(new NetworkError({ message: response.statusError }))
+              : Effect.succeed(response.args)
+          )
+        ),
+        failed
+      ).pipe(
+        Effect.ensuring(
+          report.pipe(
+            Effect.zipRight(Fiber.interrupt(reporter)),
+            Effect.zipRight(tasks.removeTask(task.id))
+          )
         )
       );
     });

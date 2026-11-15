@@ -1,6 +1,11 @@
 import { EffectConnection } from '@ogi-sdk/client-kit';
-import type { ConfigurationFile, LibraryInfo } from '@ogi-sdk/connect';
-import { Addons, LaunchHooks } from '@ogi-sdk/core';
+import type {
+  ConfigurationFile,
+  LibraryInfo,
+  SearchResult,
+  SetupEventResponse,
+} from '@ogi-sdk/connect';
+import { AddonCalls, Addons, LaunchHooks } from '@ogi-sdk/core';
 import { AddonError, LibraryError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Layer } from 'effect';
@@ -289,6 +294,44 @@ export const connectDevAddons = (): Effect.Effect<void> =>
     Effect.tapError((error) => logger.warn(`[ogi dev] ${error.message}`)),
     Effect.ignore
   );
+
+/**
+ * Core's addon-calls adapter under `ogi dev`: deferred tasks on the CLI's
+ * server, polled for progress like any SDK client.
+ */
+export const AddonCallsFromDevServer = Layer.succeed(AddonCalls, {
+  requestDownload: (addonId, appID, result) =>
+    readyAddons.pipe(
+      Effect.zipRight(sdk),
+      Effect.flatMap((client) =>
+        client.deferToAddonAndWait(addonId, 'request-dl', [
+          appID,
+          JSON.parse(JSON.stringify(result)) as SearchResult,
+        ])
+      ),
+      Effect.mapError(toAddonError),
+      Effect.flatMap((reply) =>
+        reply
+          ? Effect.succeed(reply as SearchResult)
+          : Effect.fail(
+              new AddonError({ message: 'The addon returned no download' })
+            )
+      )
+    ),
+  // Configured first: a restored setup can run before anything else asked.
+  setup: (addonId, data, onProgress) =>
+    readyAddons.pipe(
+      Effect.zipRight(sdk),
+      Effect.flatMap((client) =>
+        client.deferToAddonAndWait(addonId, 'setup', [data], {
+          onProgress: (progress, task) =>
+            onProgress({ progress, logs: task.logs }),
+        })
+      ),
+      Effect.map((reply) => reply as SetupEventResponse),
+      Effect.mapError(toAddonError)
+    ),
+});
 
 export const closeDevAddons = (): void => {
   const open = connection;

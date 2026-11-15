@@ -77,13 +77,9 @@ const handleDeferUpdate: ClientMessageHandler = (context, message) =>
     const task = context.server.getDeferredTasksManager().getTasks()[
       args.deferID
     ];
-    if (!task) {
-      closeProtocolError(
-        context,
-        'Client attempted to send defer-update with an invalid ID'
-      );
-      return;
-    }
+    // A task the server dropped (cancelled, finished) can still get one late
+    // progress report from the addon; ignore it rather than close the socket.
+    if (!task) return;
     if (task.addonOwner !== context.connection.addonInfo!.id) return;
     task.logs = args.logs;
     task.progress = args.progress;

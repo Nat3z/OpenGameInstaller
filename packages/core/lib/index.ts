@@ -4,6 +4,7 @@
 export { Addons, AddonsHandlers, type AddonsShape } from './addons/addons';
 // Downloads
 export {
+  controlEngine,
   DownloadControl,
   type DownloadControlShape,
   type DownloadPatch,
@@ -42,6 +43,16 @@ export {
   type StagedRemoval,
 } from './library/library';
 export * from './library/manifest';
+// Pipeline
+export * from './pipeline/adapters';
+export * as paths from './pipeline/paths';
+export {
+  Pipeline,
+  PipelineHandlers,
+  PipelineLive,
+  type PipelineServices,
+  type PipelineShape,
+} from './pipeline/pipeline';
 // Prompts
 export {
   type PromptRequest,

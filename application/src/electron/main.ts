@@ -370,8 +370,9 @@ async function startAddonRuntime({ serveClients = true } = {}) {
     type: 'success',
   });
   await runElectronEffect(startAddons());
-  // After the addons spawn, so a launch from a client that just read
-  // `client.json` waits on their manifests (and hooks) instead of none.
+  // After the addons spawn: a launch from a client that just read
+  // `client.json` waits on their hooks, and restored setups on the addons
+  // they need.
   if (serveClients) await serveClientProtocol();
 }
 

@@ -408,6 +408,21 @@ describe('pipeline', () => {
     await h.runtime.dispose();
   });
 
+  test('a retried setup cannot be dismissed from a stale list', async () => {
+    const redist = Effect.runSync(Deferred.make<void>());
+    const h = harness({ setupFails: 'addon crashed', hold: { redist } });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct })
+    );
+    await h.until(id, (d) => d.status === 'error');
+    // The retry is now running; another client still lists it as failed.
+    await h.pipeline((p) => p.retry(id));
+    const refused = await h.pipeline((p) => Effect.flip(p.dismiss(id)));
+    expect(refused.message).toContain('Only a failed setup');
+    await Effect.runPromise(Deferred.succeed(redist, undefined));
+    await h.runtime.dispose();
+  });
+
   test('a step that fails to save leaves its inputs on disk', async () => {
     const h = harness({ torrents: 'torbox', saveFailsAt: 'setup' });
     const id = await h.pipeline((p) =>

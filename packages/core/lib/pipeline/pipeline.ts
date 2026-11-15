@@ -65,8 +65,8 @@ export type PipelineShape = {
     readonly update?: { readonly version: string };
   }) => Effect.Effect<string, DownloadError>;
   readonly retry: (id: string) => Effect.Effect<void, DownloadError>;
-  /** Forgets a failed setup. */
-  readonly dismiss: (id: string) => Effect.Effect<void>;
+  /** Forgets a failed setup; refuses one that isn't failed (retried since). */
+  readonly dismiss: (id: string) => Effect.Effect<void, DownloadError>;
   /** Restarts a download whose engine is gone (paused across a restart). */
   readonly restart: (id: string) => Effect.Effect<boolean>;
   /**
@@ -772,6 +772,14 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
         // the old install back.
         dismiss: (id) =>
           Effect.gen(function* () {
+            // A stale failed list (another client retried it) must not tear
+            // down a setup that is writing files again.
+            const current = records.get(id);
+            if (
+              current &&
+              (current.error === undefined || (yield* FiberMap.has(fibers, id)))
+            )
+              return yield* failure(id, 'Only a failed setup can be dismissed');
             yield* FiberMap.remove(fibers, id);
             const record = records.get(id);
             if (record) yield* restoreOldFiles(record);

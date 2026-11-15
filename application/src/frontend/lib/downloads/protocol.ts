@@ -4,6 +4,7 @@ import type {
 } from '@ogi-sdk/protocol';
 import { ogi } from '@/frontend/lib/core/ogi';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
+import { updatesManager } from '@/frontend/states.svelte';
 import {
   createNotification,
   currentDownloads,
@@ -59,7 +60,7 @@ const toCard = (download: Download): DownloadStatusAndInfo =>
     capsuleImage: download.capsuleImage ?? '',
     coverImage: download.coverImage ?? '',
     isUpdate: download.isUpdate,
-    downloadPath: '',
+    downloadPath: download.path ?? '',
     files: [],
     storefront: '',
     downloadType: 'direct',
@@ -96,7 +97,18 @@ export const syncDownloads = async (): Promise<void> => {
     } else {
       const change = event.value;
       if (change._tag === 'Removed') cards.delete(change.id);
-      else cards.set(change.download.id, toCard(change.download));
+      else {
+        const { download } = change;
+        // An installed update is no longer available.
+        if (
+          download.isUpdate &&
+          download.status === 'completed' &&
+          download.appID !== undefined &&
+          cards.get(download.id)?.status !== 'setup-complete'
+        )
+          updatesManager.removeAppUpdate(download.appID);
+        cards.set(download.id, toCard(download));
+      }
     }
     publish();
     // A card in setup shows its log panel.

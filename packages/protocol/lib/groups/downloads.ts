@@ -54,6 +54,8 @@ export const Download = Schema.Struct({
   phase: Schema.optional(Schema.String),
   /** Torrent upload ratio while seeding. */
   ratio: Schema.optional(Schema.Number),
+  /** Where the content is on the backend's disk, once known. */
+  path: Schema.optional(Schema.String),
   /** Per-redistributable state while they install. */
   redistributables: Schema.optional(
     Schema.Array(

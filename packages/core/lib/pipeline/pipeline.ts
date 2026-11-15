@@ -181,6 +181,7 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           coverImage: record.request.coverImage,
           isUpdate: record.update !== undefined,
           debrid: record.debrid,
+          path: record.path || undefined,
           error: null,
         });
 
@@ -300,16 +301,26 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
 
       const download = (record: DownloadRecord) =>
         Effect.gen(function* () {
-          const started = isLocalTorrent(record)
-            ? yield* engines.torrent(
-                record.request.downloadType as 'torrent' | 'magnet',
-                record.files[0]?.link ?? '',
-                record.path
-              )
-            : yield* engines.direct(record.files, record.part);
-          // From here the engine's progress shows on this download's card.
-          yield* downloads.alias(started.id, record.id);
-          return yield* started.done;
+          // Starting and aliasing can't be interrupted apart: a cancel during
+          // the handshake would otherwise leave an engine nobody can find.
+          // It lands right after, and the engine is stopped with the fiber.
+          const started = yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              const engine = isLocalTorrent(record)
+                ? yield* engines.torrent(
+                    record.request.downloadType as 'torrent' | 'magnet',
+                    record.files[0]?.link ?? '',
+                    record.path
+                  )
+                : yield* engines.direct(record.files, record.part);
+              // From here the engine's progress shows on this card.
+              yield* downloads.alias(engine.id, record.id);
+              return engine;
+            })
+          );
+          return yield* started.done.pipe(
+            Effect.onInterrupt(() => engines.cancel(started.id))
+          );
         });
 
       // ---- after the download: where the content really is --------------------
@@ -412,7 +423,7 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             !record.update ||
             record.request.clearOldFilesBeforeUpdate === false
           )
-            return false;
+            return undefined;
           const folder = folderOf(record.path);
           yield* log(record.id, 'Moving old files to old_files');
           const keep = [
@@ -427,10 +438,16 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             .pipe(Effect.orElseSucceed(() => ({ staged: true, failed: 1 })));
           if (result.failed > 0) {
             yield* files.revertOldFiles(folder).pipe(Effect.ignore);
-            return false;
+            return undefined;
           }
-          return result.staged;
+          return result.staged ? folder : undefined;
         });
+
+      /** Puts staged old files back (an update that did not finish). */
+      const restoreOldFiles = (record: DownloadRecord) =>
+        record.staged
+          ? files.revertOldFiles(record.staged).pipe(Effect.ignore)
+          : Effect.void;
 
       const setup = (record: DownloadRecord) =>
         Effect.gen(function* () {
@@ -443,47 +460,35 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           if (record.update && !current)
             return yield* new GameNotFound({ gameId: record.appID });
 
-          const staged = record.staged ?? false;
           yield* show(record, 'setting-up');
           yield* downloads.report(record.id, { progress: 0, speed: 0 });
-          const result = yield* (yield* AddonCalls)
-            .setup(
-              record.request.addonSource,
-              setupData(record, current),
-              (progress) =>
-                downloads
-                  .report(record.id, {
-                    progress: progress.progress / 100,
-                  })
-                  .pipe(
-                    Effect.zipRight(downloads.setLogs(record.id, progress.logs))
-                  )
-            )
-            .pipe(
-              Effect.tapError(() =>
-                staged
-                  ? files
-                      .revertOldFiles(folderOf(record.path))
-                      .pipe(Effect.ignore)
-                  : Effect.void
-              )
-            );
+          const result = yield* (yield* AddonCalls).setup(
+            record.request.addonSource,
+            setupData(record, current),
+            (progress) =>
+              downloads
+                .report(record.id, {
+                  progress: progress.progress / 100,
+                })
+                .pipe(
+                  Effect.zipRight(downloads.setLogs(record.id, progress.logs))
+                )
+          );
 
           if (record.update) {
-            yield* installer.update(
-              record.appID,
-              result,
-              record.request.addonSource
-            );
-            if (staged)
-              yield* files
-                .discardOldFiles(folderOf(record.path))
-                .pipe(Effect.ignore);
             if (result.version !== record.update.version)
               return yield* failure(
                 record.id,
                 `Version mismatch: expected ${record.update.version}, got ${result.version}`
               );
+            yield* installer.update(
+              record.appID,
+              result,
+              record.request.addonSource
+            );
+            // Only now is the old install dead weight.
+            if (record.staged)
+              yield* files.discardOldFiles(record.staged).pipe(Effect.ignore);
             yield* notify(
               'success',
               `Updated ${record.request.name} to version ${result.version}`
@@ -521,12 +526,17 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             record.appID,
             record.id
           );
-          yield* result === 'success'
-            ? notify('success', `Setup complete for ${record.request.name}!`)
-            : notify(
-                'warning',
-                `${record.request.name} was installed, but some redistributables failed.`
-              );
+          // The game is already in the library; failing here keeps the record
+          // at this step, so retrySetup reruns only the redistributables.
+          if (result !== 'success')
+            return yield* failure(
+              record.id,
+              `${record.request.name} was installed, but some redistributables failed.`
+            );
+          yield* notify(
+            'success',
+            `Setup complete for ${record.request.name}!`
+          );
         });
 
       // ---- the state machine ------------------------------------------------
@@ -664,9 +674,13 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             yield* launch(next);
           }),
 
+        // A failed update keeps its backup for the retry; giving up on it puts
+        // the old install back.
         dismiss: (id) =>
           Effect.gen(function* () {
             yield* FiberMap.remove(fibers, id);
+            const record = records.get(id);
+            if (record) yield* restoreOldFiles(record);
             yield* forget(id);
             yield* downloads.remove(id);
           }),
@@ -687,9 +701,12 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             const engine = yield* downloads.engineOf(id);
             yield* FiberMap.remove(fibers, id);
             if (engine) yield* engines.cancel(engine);
+            // The latest record: the fiber may have staged since `record`.
+            const latest = records.get(id) ?? record;
             yield* files
-              .remove(record.files.map((file) => file.path))
+              .remove(latest.files.map((file) => file.path))
               .pipe(Effect.ignore);
+            yield* restoreOldFiles(latest);
             yield* forget(id);
             yield* downloads.remove(id);
             yield* notify('info', `Cancelled download: ${record.request.name}`);

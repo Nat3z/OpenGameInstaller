@@ -94,8 +94,13 @@ let sub_logs = currentDownloads.subscribe((downloads) => {
   );
   for (const id of settingUp) {
     if (logWatches.has(id)) continue;
-    logWatches.set(id, () => {});
-    void watchLogs(id).then((stop) => logWatches.set(id, stop));
+    const pending = () => {};
+    logWatches.set(id, pending);
+    // Keep the watch only if nothing stopped it while it was connecting.
+    void watchLogs(id).then((stop) => {
+      if (logWatches.get(id) === pending) logWatches.set(id, stop);
+      else stop();
+    });
   }
   for (const [id, stop] of logWatches) {
     if (settingUp.has(id)) continue;
@@ -280,6 +285,7 @@ onDestroy(() => {
   sub_sortedDownloads();
   sub_logs();
   for (const stop of logWatches.values()) stop();
+  logWatches.clear();
 });
 </script>
 

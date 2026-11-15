@@ -53,6 +53,10 @@ type Options = {
   /** Outcome of the engine; `hold` never finishes until released. */
   engine?: EngineOutcome | 'hold';
   setupFails?: string;
+  /** Version the addon's setup reports. */
+  setupVersion?: string;
+  /** Redistributables fail once, then succeed. */
+  redistFails?: boolean;
   records?: DownloadRecord[];
 };
 
@@ -65,6 +69,7 @@ const harness = (options: Options = {}) => {
   const sleep: boolean[] = [];
   const release = Effect.runSync(Deferred.make<EngineOutcome>());
   let setupFails = options.setupFails;
+  let redistFails = options.redistFails;
   let engineCount = 0;
 
   const engineDone = (): Effect.Effect<EngineOutcome> =>
@@ -121,8 +126,13 @@ const harness = (options: Options = {}) => {
           calls.push(`stage:${folder}`);
           return { staged: true, failed: 0 };
         }),
-      revertOldFiles: () => Effect.succeed(true),
-      discardOldFiles: () => Effect.void,
+      revertOldFiles: (folder) =>
+        Effect.sync(() => {
+          calls.push(`revert:${folder}`);
+          return true;
+        }),
+      discardOldFiles: (folder) =>
+        Effect.sync(() => void calls.push(`discard:${folder}`)),
       contentRoot: (directory) => Effect.succeed(`${directory}/Game`),
       findArchive: (path, kind) =>
         Effect.succeed(kind === 'zip' ? `${path}/game.zip` : null),
@@ -146,7 +156,7 @@ const harness = (options: Options = {}) => {
             return yield* new AddonError({ message });
           }
           return {
-            version: '1.0',
+            version: options.setupVersion ?? '1.0',
             cwd: data.path,
             launchExecutable: 'game.exe',
           };
@@ -157,10 +167,18 @@ const harness = (options: Options = {}) => {
         Effect.sync(() => {
           library.set(info.appID, info);
           calls.push(`install:${info.name}`);
-          return 'installed' as const;
+          return options.redistFails
+            ? ('needs-redistributables' as const)
+            : ('installed' as const);
         }),
       update: () => Effect.sync(() => void calls.push('update')),
-      redistributables: () => Effect.succeed('success' as const),
+      redistributables: () =>
+        Effect.sync(() => {
+          calls.push('redist');
+          const failed = redistFails;
+          redistFails = false;
+          return failed ? ('partial' as const) : ('success' as const);
+        }),
     }),
     Layer.succeed(DownloadStore, {
       list: Effect.sync(() => [...saved.values()]),
@@ -301,7 +319,48 @@ describe('pipeline', () => {
       'stage:/dl/Game',
       'extract:/dl/Game/game.zip',
     ]);
-    expect(h.calls.at(-1)).toBe('update');
+    // The backup goes only once the update is applied.
+    expect(h.calls.slice(-2)).toEqual(['update', 'discard:/dl/Game']);
+    await h.runtime.dispose();
+  });
+
+  test('a mismatched update keeps its backup; dismissing restores it', async () => {
+    const h = harness({ setupVersion: '0.5' });
+    h.library.set(7, {
+      appID: 7,
+      name: 'Game',
+      version: '0.9',
+      cwd: '/dl/Game',
+      launchExecutable: 'game.exe',
+      capsuleImage: '',
+      coverImage: '',
+      storefront: 'steam',
+      addonsource: 'addon',
+    });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct, update: { version: '1.0' } })
+    );
+    const failed = await h.until(id, (d) => d.status === 'error');
+    expect(failed.error).toContain('Version mismatch');
+    // Neither applied nor thrown away: a retry still has the old install.
+    expect(h.calls).not.toContain('update');
+    expect(h.calls.some((call) => call.startsWith('discard'))).toBe(false);
+    await h.pipeline((p) => p.dismiss(id));
+    expect(h.calls.at(-1)).toBe('revert:/dl/Game');
+    await h.runtime.dispose();
+  });
+
+  test('failed redistributables retry without setting up again', async () => {
+    const h = harness({ redistFails: true });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct })
+    );
+    await h.until(id, (d) => d.status === 'error');
+    expect(h.saved.get(id)?.step).toBe('redistributables');
+    await h.pipeline((p) => p.retry(id));
+    await h.until(id, (d) => d.status === 'completed');
+    expect(h.calls.filter((call) => call.startsWith('setup'))).toHaveLength(1);
+    expect(h.calls.filter((call) => call === 'redist')).toHaveLength(2);
     await h.runtime.dispose();
   });
 

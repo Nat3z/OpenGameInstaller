@@ -241,8 +241,11 @@ export type DownloadRecord = {
   /** The step to resume from. */
   readonly step: PipelineStep;
   readonly part?: number;
-  /** Old files were moved to `old_files`; discarded on success, restored on failure. */
-  readonly staged?: boolean;
+  /**
+   * The folder whose old files were moved to its `old_files`: discarded once
+   * the update fully succeeds, restored on any failure or cancel.
+   */
+  readonly staged?: string;
   readonly error?: string;
   readonly retryCount: number;
   readonly updatedAt: number;

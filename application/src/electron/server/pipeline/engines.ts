@@ -21,6 +21,32 @@ const outcome = (
       ? { _tag: 'Failed', error: error ?? 'Download failed' }
       : { _tag: 'Cancelled' };
 
+const cancelEngine = (id: string): Effect.Effect<void> =>
+  directDownloads()?.has(id)
+    ? (directDownloads()?.abort(id) ?? Effect.void).pipe(Effect.ignore)
+    : cancelTorrent(id);
+
+/** Turns an engine's start handshake into a started engine (or a failure). */
+const started = (
+  handshake: Promise<
+    | { _tag: 'Left'; left: unknown }
+    | {
+        _tag: 'Right';
+        right: { status: string; id: string; error?: string };
+      }
+  >,
+  ended: Deferred.Deferred<EngineOutcome>
+) =>
+  Effect.promise(() => handshake).pipe(
+    Effect.flatMap((result) =>
+      result._tag === 'Left'
+        ? Effect.fail(startFailed(result.left))
+        : result.right.status === 'error'
+          ? Effect.fail(startFailed(result.right.error))
+          : Effect.succeed({ id: result.right.id, done: Deferred.await(ended) })
+    )
+  );
+
 const startFailed = (cause: unknown) =>
   new DownloadError({
     message: `Failed to start download: ${formatError(cause)}`,
@@ -39,7 +65,7 @@ export const EnginesFromHandlers = Layer.succeed(Engines, {
       if (!service)
         return yield* startFailed('the download engine is not running');
       const ended = yield* Deferred.make<EngineOutcome>();
-      const handshake = yield* Effect.promise(() =>
+      return yield* started(
         runElectronEffect(
           service
             .start(files as DownloadJob[], part, {
@@ -50,17 +76,14 @@ export const EnginesFromHandlers = Layer.succeed(Engines, {
                 ),
             })
             .pipe(Effect.either)
-        )
+        ),
+        ended
       );
-      if (handshake._tag === 'Left') return yield* startFailed(handshake.left);
-      if (handshake.right.status === 'error')
-        return yield* startFailed(handshake.right.error);
-      return { id: handshake.right.id, done: Deferred.await(ended) };
     }),
   torrent: (kind, link, folder) =>
     Effect.gen(function* () {
       const ended = yield* Deferred.make<EngineOutcome>();
-      const handshake = yield* Effect.promise(() =>
+      return yield* started(
         runElectronEffect(
           startTorrent({
             link,
@@ -72,15 +95,9 @@ export const EnginesFromHandlers = Layer.succeed(Engines, {
                 Effect.succeed(outcome(result, error))
               ),
           }).pipe(Effect.either)
-        )
+        ),
+        ended
       );
-      if (handshake._tag === 'Left') return yield* startFailed(handshake.left);
-      if (handshake.right.status === 'error')
-        return yield* startFailed(handshake.right.error);
-      return { id: handshake.right.id, done: Deferred.await(ended) };
     }),
-  cancel: (id) =>
-    directDownloads()?.has(id)
-      ? (directDownloads()?.abort(id) ?? Effect.void).pipe(Effect.ignore)
-      : cancelTorrent(id),
+  cancel: cancelEngine,
 });

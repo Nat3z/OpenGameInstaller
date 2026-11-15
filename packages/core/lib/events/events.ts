@@ -11,14 +11,16 @@ import {
 import { type Implementation, implement } from '../server/router';
 
 /**
- * Fire-and-forget notices for every connected client. Replaces the renderer
- * push channel (`webContents.send`) one event at a time; see core README.
+ * Fire-and-forget notices for every connected client (and, in the Electron
+ * host, the renderer's IPC channels). Producers call `publish`; nothing in
+ * core or the host talks to a window directly.
  */
 export type EventsShape = {
+  /** Synchronous for an unbounded PubSub, so publish order is delivery order. */
   readonly publish: (event: AppEvent) => Effect.Effect<void>;
   /**
    * A queue receiving every event published after this returns. Lives as
-   * long as the scope, so subscribe first, then send the snapshot.
+   * long as the scope, so subscribe first, then start anything that publishes.
    */
   readonly subscribe: Effect.Effect<
     Queue.Dequeue<AppEvent>,

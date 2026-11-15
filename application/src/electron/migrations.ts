@@ -9,8 +9,9 @@ import semver from 'semver';
 import { addToDesktop } from '@/electron/handlers/helpers.app/desktop-shortcut.js';
 import { normalizeAddonLink } from '@/electron/lib/addon-links.js';
 import { migrateLegacySteamGridDbKey } from '@/electron/lib/steam-grid-db.js';
-import { sendIPCMessage, sendNotification, VERSION } from '@/electron/main.js';
+import { sendNotification, VERSION } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
+import { publishEvent } from '@/electron/server/events-bridge.js';
 import {
   type AppServices,
   Database,
@@ -45,8 +46,8 @@ let migrations: {
             'https://github.com/Nat3z/steam-integration',
           ]);
         }
-        yield* Effect.promise(() =>
-          sendIPCMessage('migration:event', 'install-steam-addon')
+        yield* Effect.sync(() =>
+          publishEvent({ _tag: 'Migration', name: 'install-steam-addon' })
         );
       }),
   },
@@ -56,7 +57,7 @@ let migrations: {
     description: `Launches the steamgriddb modal to fix the issue involving no images being resolved.`,
     platform: 'linux',
     run: async () => {
-      await sendIPCMessage('migration:event', 'steamgriddb-launch');
+      publishEvent({ _tag: 'Migration', name: 'steamgriddb-launch' });
     },
   },
   'install-steam-addon-repair': {
@@ -91,8 +92,8 @@ let migrations: {
         }
 
         logger.sync.info('repairing steam-integration through installation...');
-        yield* Effect.promise(() =>
-          sendIPCMessage('migration:event', 'install-steam-addon')
+        yield* Effect.sync(() =>
+          publishEvent({ _tag: 'Migration', name: 'install-steam-addon' })
         );
       }),
   },
@@ -233,7 +234,7 @@ let migrations: {
     description: 'Shows the changelog modal for the 2.5.0 update.',
     platform: 'all',
     run: async () => {
-      await sendIPCMessage('app:show-changelog', '2.5.0');
+      publishEvent({ _tag: 'ShowChangelog', version: '2.5.0' });
     },
   },
   'add-to-desktop-2.5.0': {

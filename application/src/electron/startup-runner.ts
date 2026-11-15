@@ -263,6 +263,8 @@ function reportFatalStartupError(
         'OpenGameInstaller failed to start',
         `${error.message}\n\nThe app will now close. Check the logs for details.`
       );
+    // A failed start must not look like a clean exit to whatever ran us.
+    process.exitCode = 1;
     app.quit();
     return { shutdownPending: true };
   });

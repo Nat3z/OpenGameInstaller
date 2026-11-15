@@ -28,7 +28,9 @@ const isShortcutLaunchForGame = (appID: number) =>
 document.addEventListener('game:launch-requested', (event: Event) => {
   const appID = (event as CustomEvent).detail.id;
   gamesLaunched.update((games) => {
-    games[appID] = 'launching';
+    // Events and launch changes arrive on separate feeds; a request that lands
+    // after its own `game:launch` must not mark the running game as waiting.
+    if (games[appID] !== 'launched') games[appID] = 'launching';
     return games;
   });
 });

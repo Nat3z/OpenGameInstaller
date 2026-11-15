@@ -31,6 +31,8 @@ export type DownloadsShape = {
   readonly engineOf: (id: string) => Effect.Effect<string | undefined>;
   readonly report: (id: string, patch: DownloadPatch) => Effect.Effect<void>;
   readonly remove: (id: string) => Effect.Effect<void>;
+  /** Removes a finished card for good: later engine reports for it are ignored. */
+  readonly clear: (id: string) => Effect.Effect<void>;
   readonly log: (id: string, lines: readonly string[]) => Effect.Effect<void>;
   /**
    * Replaces the log with `lines`, publishing only what is new. Addons report
@@ -79,12 +81,17 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
     /** engine id → pipeline id, and back. */
     const aliases = new Map<string, string>();
     const engines = new Map<string, string>();
+    /** How much of each addon's own log (`setLogs`) has been published. */
+    const addonLogs = new Map<string, number>();
+    /** Cleared cards; a seeding engine's next report must not bring them back. */
+    const cleared = new Set<string>();
     const changes = yield* PubSub.unbounded<DownloadChange>();
     const lines = yield* PubSub.unbounded<{ id: string; line: string }>();
 
     const drop = (id: string) =>
       Effect.suspend(() => {
         logLines.delete(id);
+        addonLogs.delete(id);
         return downloads.delete(id)
           ? PubSub.publish(changes, { _tag: 'Removed', id })
           : Effect.void;
@@ -95,13 +102,42 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
         Effect.suspend(() => {
           aliases.set(engineId, id);
           engines.set(id, engineId);
-          // Anything the engine reported before it was linked was a stray card.
-          return drop(engineId);
+          // What the engine reported before it was linked (a queue position)
+          // moves onto this card; its own card goes.
+          const early = downloads.get(engineId);
+          if (!early) return Effect.void;
+          const target = downloads.get(id) ?? blank(id);
+          const moved: Download = {
+            ...target,
+            status: TRANSFER.has(early.status) ? early.status : target.status,
+            progress: early.progress,
+            speed: early.speed,
+            size: early.size || target.size,
+            ...(early.queuePosition !== undefined && {
+              queuePosition: early.queuePosition,
+            }),
+          };
+          downloads.set(id, moved);
+          return drop(engineId).pipe(
+            Effect.zipRight(
+              PubSub.publish(changes, { _tag: 'Upsert', download: moved })
+            )
+          );
         }),
       engineOf: (id) => Effect.sync(() => engines.get(id)),
       report: (reportedId, patch) =>
         Effect.suspend(() => {
           const id = aliases.get(reportedId) ?? reportedId;
+          const current = downloads.get(id);
+          // An engine only speaks for the transfer. Once the card has moved on
+          // (setup, seeding after setup), a seeding torrent's reports would
+          // only overwrite setup progress; a cleared card stays gone.
+          if (
+            id !== reportedId &&
+            ((current && !TRANSFER.has(current.status)) || cleared.has(id))
+          )
+            return Effect.void;
+          if (cleared.has(reportedId)) return Effect.void;
           // Drop undefined so a partial report never erases known fields.
           const defined = Object.fromEntries(
             Object.entries(patch).filter(
@@ -115,7 +151,7 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
             )
           );
           const next: Record<string, unknown> = {
-            ...(downloads.get(id) ?? blank(id)),
+            ...(current ?? blank(id)),
             ...defined,
           };
           for (const [key, value] of Object.entries(next))
@@ -127,6 +163,12 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
           });
         }).pipe(Effect.asVoid),
       remove: (reportedId) => drop(aliases.get(reportedId) ?? reportedId),
+      clear: (reportedId) =>
+        Effect.suspend(() => {
+          const id = aliases.get(reportedId) ?? reportedId;
+          cleared.add(id);
+          return drop(id);
+        }),
       log: (reportedId, newLines) =>
         Effect.suspend(() => {
           const id = aliases.get(reportedId) ?? reportedId;
@@ -138,11 +180,12 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
         }).pipe(Effect.asVoid),
       setLogs: (id, all) =>
         Effect.suspend(() => {
-          const known = logLines.get(id) ?? [];
-          // An addon's log only grows; a shorter one is a fresh run.
-          const fresh =
-            all.length >= known.length ? all.slice(known.length) : all;
-          logLines.set(id, [...all]);
+          // An addon's log only grows; a shorter one is a fresh run. Counted
+          // apart from the pipeline's own lines, which share `logLines`.
+          const seen = addonLogs.get(id) ?? 0;
+          const fresh = all.length >= seen ? all.slice(seen) : all;
+          addonLogs.set(id, all.length);
+          logLines.set(id, [...(logLines.get(id) ?? []), ...fresh]);
           return PubSub.publishAll(
             lines,
             fresh.map((line) => ({ id, line }))
@@ -215,6 +258,6 @@ export const DownloadsHandlers: Implementation<Downloads | DownloadControl> =
         Effect.flatMap(Downloads, (downloads) => downloads.logs(id)),
       pause: ({ id }) => controlEngine('pause', id),
       clear: ({ id }) =>
-        Effect.flatMap(Downloads, (downloads) => downloads.remove(id)),
+        Effect.flatMap(Downloads, (downloads) => downloads.clear(id)),
     }
   );

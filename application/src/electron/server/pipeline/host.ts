@@ -30,7 +30,11 @@ const onApp = <A, E, E2>(
   effect: AppEffect<A, E>,
   toError: (cause: unknown) => E2
 ): Effect.Effect<A, E2> =>
-  Effect.promise(() => runElectronEffect(Effect.either(effect))).pipe(
+  // The signal ties host work to the caller: cancelling a download stops its
+  // extraction or install instead of letting it run on unseen.
+  Effect.promise((signal) =>
+    runElectronEffect(Effect.either(effect), signal)
+  ).pipe(
     Effect.flatMap((result) =>
       result._tag === 'Right'
         ? Effect.succeed(result.right)

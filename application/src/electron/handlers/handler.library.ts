@@ -68,7 +68,11 @@ import { resolveSpawnInvocation } from '@/electron/lib/spawn-shell.js';
 import { sendIPCMessage, sendNotification } from '@/electron/main.js';
 import { __dirname } from '@/electron/manager/manager.paths.js';
 import { ipcServiceBoundary, runElectronSync } from '@/electron/runtime.js';
-import { finishOnExit } from '@/electron/server/unmanaged-sessions.js';
+import {
+  dropWindowHold,
+  finishOnExit,
+  holdForWindow,
+} from '@/electron/server/unmanaged-sessions.js';
 import {
   type AppServices,
   Database,
@@ -919,6 +923,8 @@ export function registerLibraryHandlers() {
     ipcServiceBoundary((_, appid: string, token: string) =>
       Effect.gen(function* () {
         const appID = Number(appid);
+        // From here the session, not the window, owns the hold.
+        dropWindowHold(token);
         const session = yield* finishOnExit(appID, token);
         const result = yield* launchGameFromLibrary(appID).pipe(
           Effect.onError(() => session.cancel)
@@ -949,13 +955,17 @@ export function registerLibraryHandlers() {
   const reserveGame = ipcProcedure(
     ElectronRpc.app.reserveGame,
     ipcServiceBoundary((_, appid: number) =>
-      Effect.flatMap(Library, (library) => library.reserve(appid))
+      Effect.flatMap(Library, (library) => library.reserve(appid)).pipe(
+        Effect.tap((token) => token && holdForWindow(appid, token))
+      )
     )
   );
   const releaseGame = ipcProcedure(
     ElectronRpc.app.releaseGame,
     ipcServiceBoundary((_, appid: number, token: string) =>
-      Effect.flatMap(Library, (library) => library.unreserve(appid, token))
+      Effect.flatMap(Library, (library) =>
+        library.unreserve(appid, token)
+      ).pipe(Effect.tap(() => dropWindowHold(token)))
     )
   );
 

@@ -41,6 +41,7 @@ import { createElectronRouter } from '@/electron/rpc/router.js';
 import { registerElectronRpcHandlers } from '@/electron/rpc/server.js';
 import {
   disposeElectronRuntime,
+  forkElectronEffect,
   runElectronEffect,
 } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
@@ -53,6 +54,7 @@ import {
   stopAddonServer,
 } from '@/electron/server/addon-server.js';
 import {
+  awaitManagedPostHooks,
   startClientServer,
   stopClientServer,
 } from '@/electron/server/client-server.js';
@@ -64,6 +66,7 @@ import { showPromptsInWindow } from '@/electron/server/prompts-bridge.js';
 import {
   awaitEndingSessions,
   finishOnExit,
+  releaseWindowHolds,
 } from '@/electron/server/unmanaged-sessions.js';
 import { Library } from '@/electron/services/index.js';
 import {
@@ -446,8 +449,11 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
 
   mainWindow.webContents.on(
     'did-start-navigation',
-    (_event, _url, _isInPlace, isMainFrame) => {
-      if (isMainFrame) rendererEventReadiness.reset();
+    (_event, _url, isInPlace, isMainFrame) => {
+      if (!isMainFrame) return;
+      rendererEventReadiness.reset();
+      // A reload drops the page's launch flows; free the games they held.
+      if (!isInPlace) forkElectronEffect(releaseWindowHolds);
     }
   );
 
@@ -465,6 +471,8 @@ function createWindow(options: { gameLaunchMode?: boolean } = {}) {
 
   mainWindow.on('closed', function () {
     mainWindow = null;
+    // A launch flow waiting on a hook or prompt died with the window.
+    forkElectronEffect(releaseWindowHolds);
   });
 
   // renderer messages already include the prefix and level, so forward as-is
@@ -828,8 +836,15 @@ async function shutdown(): Promise<void> {
   }
   await runElectronEffect(
     Effect.gen(function* () {
-      // A game that just exited may still be backing up its saves.
-      yield* awaitEndingSessions(QUIT_HOLD_TIMEOUT_MS);
+      // A game that just exited may still be backing up its saves, whether
+      // the window or a client started it.
+      yield* Effect.all(
+        [
+          awaitEndingSessions(QUIT_HOLD_TIMEOUT_MS),
+          awaitManagedPostHooks(QUIT_HOLD_TIMEOUT_MS),
+        ],
+        { concurrency: 'unbounded', discard: true }
+      );
       releasePowerSaveBlock();
       logger.sync.info('Stopping torrent client...');
       yield* stopClient();

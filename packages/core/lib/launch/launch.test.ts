@@ -287,6 +287,24 @@ describe('Launcher', () => {
     ]);
   });
 
+  test('idle waits for running post hooks', async () => {
+    const postGate = Effect.runSync(Deferred.make<void>());
+    const { layer } = setup({ postGate });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        yield* launcher.launch(1);
+        yield* exitGame(1);
+        // A quit waiting here must not go ahead while the backup runs.
+        const idle = yield* Effect.fork(launcher.idle);
+        yield* Effect.sleep('10 millis');
+        expect(idle.unsafePoll()).toBeNull();
+        yield* Deferred.succeed(postGate, undefined);
+        yield* Fiber.join(idle);
+      }).pipe(Effect.provide(layer))
+    );
+  });
+
   test('a game running from another client cannot be claimed', async () => {
     const { calls, layer } = setup();
     const error = await Effect.runPromise(

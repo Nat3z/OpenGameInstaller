@@ -7,6 +7,34 @@ import { Library, Settings } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
+/**
+ * Desktop holds taken by the window (`reserveGame`) and not yet handed to a
+ * session (`launchGame`) or released. If the window goes away mid-flow (a
+ * closed macOS window, a reload) nobody else knows the token, so main frees
+ * them.
+ */
+const windowHolds = new Map<string, number>();
+
+export const holdForWindow = (appID: number, token: string): void =>
+  void windowHolds.set(token, appID);
+
+/** The window handed the hold to a session, or released it itself. */
+export const dropWindowHold = (token: string): void =>
+  void windowHolds.delete(token);
+
+/** The window that held these is gone: free every hold it still had. */
+export const releaseWindowHolds: Effect.Effect<void, never, Library> =
+  Effect.flatMap(Library, (library) =>
+    Effect.forEach(
+      [...windowHolds].splice(0),
+      ([token, appID]) =>
+        Effect.sync(() => windowHolds.delete(token)).pipe(
+          Effect.zipRight(library.unreserve(appID, token))
+        ),
+      { discard: true }
+    )
+  );
+
 /** Sessions whose game has exited and whose post hooks are still running. */
 const ending = new Set<Deferred.Deferred<void>>();
 

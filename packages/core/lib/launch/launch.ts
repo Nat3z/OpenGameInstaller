@@ -2,7 +2,7 @@ import type { LibraryInfo } from '@ogi-sdk/connect';
 import { LibraryError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { LibraryGroup } from '@ogi-sdk/protocol';
-import { Context, Effect, Layer, Stream } from 'effect';
+import { Context, Effect, FiberSet, Layer, Stream } from 'effect';
 import { Library } from '../library/library';
 import { Prompts } from '../prompts/prompts';
 import { type Implementation, implement } from '../server/router';
@@ -48,6 +48,8 @@ export type LauncherShape = {
   readonly launch: (
     appID: number
   ) => Effect.Effect<void, LibraryError, Library | Prompts>;
+  /** Settles once no post hooks are running; a host awaits it before quitting. */
+  readonly idle: Effect.Effect<void>;
 };
 
 export class Launcher extends Context.Tag('@ogi-sdk/core/Launcher')<
@@ -71,7 +73,8 @@ export const LaunchLive: Layer.Layer<
     const runner = yield* GameRunner;
     const library = yield* Library;
 
-    const scope = yield* Effect.scope;
+    // Post hooks in flight; they end with the layer, and `idle` waits on them.
+    const ending = yield* FiberSet.make();
     const postHooks = (appID: number) =>
       library.get(appID).pipe(
         Effect.flatMap((game) =>
@@ -92,7 +95,7 @@ export const LaunchLive: Layer.Layer<
       (yield* library.changes).pipe(
         Stream.runForEach((change) =>
           change._tag === 'Exited' && change.managed
-            ? Effect.forkIn(postHooks(change.appID), scope)
+            ? FiberSet.run(ending, postHooks(change.appID))
             : Effect.void
         )
       )
@@ -129,6 +132,7 @@ export const LaunchLive: Layer.Layer<
       });
 
     return {
+      idle: FiberSet.awaitEmpty(ending),
       launch: (appID) =>
         Effect.gen(function* () {
           const game = yield* library.require(appID).pipe(

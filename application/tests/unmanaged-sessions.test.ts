@@ -86,3 +86,24 @@ test('a cancelled session frees the game without running hooks', async () => {
   expect(hooks).toEqual([]);
   expect(after).not.toBeNull();
 });
+
+test('a window gone mid-launch frees its holds, but not one handed to a session', async () => {
+  const { dropWindowHold, holdForWindow, releaseWindowHolds } = await import(
+    '../src/electron/server/unmanaged-sessions.js'
+  );
+  const [waiting, started] = await run(
+    Effect.gen(function* () {
+      const library = yield* Library;
+      // Game 3's flow is stuck in a pre hook; game 4 already launched.
+      const pending = (yield* library.reserve(3)) as string;
+      holdForWindow(3, pending);
+      const handed = (yield* library.reserve(4)) as string;
+      holdForWindow(4, handed);
+      dropWindowHold(handed);
+      yield* releaseWindowHolds;
+      return [yield* library.reserve(3), yield* library.reserve(4)];
+    })
+  );
+  expect(waiting).not.toBeNull();
+  expect(started).toBeNull();
+});

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import {
   EventsHandlers,
   fromWs,
-  type Launcher,
+  Launcher,
   LaunchHandlers,
   LaunchLive,
   LibraryHandlers,
@@ -12,7 +12,7 @@ import {
   PromptsHandlers,
 } from '@ogi-sdk/core';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { type Context, Effect, Exit, Layer, Scope } from 'effect';
+import { Context, type Duration, Effect, Exit, Layer, Scope } from 'effect';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import { port, routeUpgrade } from '@/electron/server/addon-server.js';
@@ -96,6 +96,14 @@ export const startClientServer = (): Promise<void> =>
       )
     )
   );
+
+/** For a quit: lets core-launched games' post hooks (a save backup) finish, bounded. */
+export const awaitManagedPostHooks = (
+  timeout: Duration.DurationInput
+): Effect.Effect<void> =>
+  Effect.suspend(() =>
+    launcher ? Context.get(launcher, Launcher).idle : Effect.void
+  ).pipe(Effect.timeout(timeout), Effect.ignore);
 
 export const stopClientServer = (): void => {
   rmSync(join(dataDirectory, CLIENT_FILE), { force: true });

@@ -35,6 +35,8 @@ export const startClientServer = (): Promise<void> =>
       scope = undefined;
       const token = randomBytes(32).toString('hex');
       const serverScope = yield* Scope.make();
+      // Owned from the start, so a failure below still leaves it closable.
+      scope = serverScope;
       const server = yield* OGIServer.make({
         token,
         implementations: [LibraryHandlers, EventsHandlers],
@@ -48,9 +50,17 @@ export const startClientServer = (): Promise<void> =>
       );
       // `mode` only applies on create; tighten a file left by an older run.
       chmodSync(file, 0o600);
-      scope = serverScope;
       logger.sync.info(`[client] protocol served at ${CLIENT_PATH}`);
-    })
+    }).pipe(
+      // Half-started (e.g. client.json unwritable): close what was built.
+      Effect.tapErrorCause(() =>
+        Effect.suspend(() => {
+          const open = scope;
+          scope = undefined;
+          return open ? Scope.close(open, Exit.void) : Effect.void;
+        })
+      )
+    )
   );
 
 export const stopClientServer = (): void => {

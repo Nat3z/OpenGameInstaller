@@ -468,9 +468,14 @@ export function launchGameFromLibrary(
       });
       const result = yield* Effect.tryPromise({
         try: () =>
-          enqueueGameOperation(parsedAppId, () => {
+          enqueueGameOperation(parsedAppId, async () => {
             runningGames.add(appInfo.appID);
-            return Effect.runPromise(launch);
+            const result = await Effect.runPromise(launch);
+            // Spawned: report it now, before the game can exit, so `Launched`
+            // always precedes its `Exited`.
+            if (result.success && runningGames.has(appInfo.appID))
+              reportGame('launch', appInfo.appID);
+            return result;
           }),
         catch: (cause) =>
           new LibraryError({
@@ -501,9 +506,6 @@ export function launchGameFromLibrary(
       // Already tracked by the pre-await add above; do not re-add here or a
       // fast crash's onExit delete would be resurrected.
       yield* markLaunched(appInfo.appID);
-      // A game that exited before this point already reported its exit;
-      // `Launched` after `Exited` would leave watchers thinking it runs.
-      if (runningGames.has(appInfo.appID)) reportGame('launch', appInfo.appID);
       return { success: true };
     }
 

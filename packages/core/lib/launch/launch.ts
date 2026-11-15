@@ -72,9 +72,6 @@ export const LaunchLive: Layer.Layer<
     const library = yield* Library;
 
     const scope = yield* Effect.scope;
-    // Managed sessions that really started; a launch that fails still
-    // reports an exit, and that one must not run post hooks.
-    const started = new Set<number>();
     const postHooks = (appID: number) =>
       library.get(appID).pipe(
         Effect.flatMap((game) =>
@@ -85,17 +82,16 @@ export const LaunchLive: Layer.Layer<
         )
       );
 
-    // Lives as long as the layer. Each exit's hooks get their own fiber, so
-    // one unanswered prompt cannot hold up another game's.
+    // Lives as long as the layer. `managed` exits come only from sessions
+    // that really launched, so a failed start runs no post hooks. Each exit's
+    // hooks get their own fiber: one unanswered prompt holds up no other game.
     yield* Effect.forkScoped(
       (yield* library.changes).pipe(
-        Stream.runForEach((change) => {
-          if (change._tag === 'Launched' && change.managed)
-            started.add(change.appID);
-          if (change._tag !== 'Exited' || !started.delete(change.appID))
-            return Effect.void;
-          return Effect.forkIn(postHooks(change.appID), scope);
-        })
+        Stream.runForEach((change) =>
+          change._tag === 'Exited' && change.managed
+            ? Effect.forkIn(postHooks(change.appID), scope)
+            : Effect.void
+        )
       )
     );
 
@@ -145,8 +141,8 @@ export const LaunchLive: Layer.Layer<
             )
           );
 
-          // Claimed before the hooks so a second launch can't start the
-          // same game and share (then drop) this session's post hooks.
+          // Claimed before the hooks so a second launch (or a running
+          // desktop session) can't share, then drop, this session's hooks.
           if (!(yield* library.claimHooks(appID)))
             return yield* Effect.fail(
               new LibraryError({
@@ -155,7 +151,9 @@ export const LaunchLive: Layer.Layer<
               })
             );
           yield* startClaimed(game).pipe(
-            // Whatever stops the launch (hooks, cancel, runner) frees the claim.
+            // Whatever stops the launch (hooks, cancel, runner) frees the
+            // claim; a game that did start keeps it (`releaseHooks` only drops
+            // a claim still pending) until its own exit.
             Effect.onError(() => library.releaseHooks(appID))
           );
         }),

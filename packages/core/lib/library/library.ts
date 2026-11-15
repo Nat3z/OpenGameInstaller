@@ -54,11 +54,14 @@ export type LibraryShape = {
   readonly notifyExited: (appID: number) => Effect.Effect<void>;
   /**
    * Marks the next session of `appID` as managed: core runs its hooks, and
-   * its Launched/Exited changes say so. Cleared when it exits, or with
-   * `releaseHooks` if it never starts. False if a session already holds it.
+   * its Launched/Exited changes say so. False when the game is running (from
+   * any client) or another launch already holds it. `releaseHooks` frees a
+   * claim whose game never started; a started one ends with its exit.
    */
   readonly claimHooks: (appID: number) => Effect.Effect<boolean>;
   readonly releaseHooks: (appID: number) => Effect.Effect<void>;
+  /** Whether a session of `appID` is running right now. */
+  readonly isRunning: (appID: number) => Effect.Effect<boolean>;
   /** Live changes only, from now on. Needs no database read. */
   readonly changes: Effect.Effect<
     Stream.Stream<LibraryChange>,
@@ -87,7 +90,9 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
     Effect.gen(function* () {
       const store = yield* LibraryStore;
       const changes = yield* PubSub.unbounded<LibraryChange>();
-      const managed = new Set<number>();
+      // Claimed by a launch: `pending` until its game reports `Launched`.
+      const managed = new Map<number, 'pending' | 'active'>();
+      const running = new Set<number>();
       const publish = (change: LibraryChange) =>
         PubSub.publish(changes, change).pipe(Effect.asVoid);
 
@@ -138,17 +143,32 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
             };
           }),
         notifyLaunched: (appID) =>
-          Effect.suspend(() =>
-            publish({ _tag: 'Launched', appID, managed: managed.has(appID) })
-          ),
+          Effect.suspend(() => {
+            running.add(appID);
+            const claimed = managed.has(appID);
+            if (claimed) managed.set(appID, 'active');
+            return publish({ _tag: 'Launched', appID, managed: claimed });
+          }),
+        // Only the session a claim launched gives it up; an exit that comes
+        // before its `Launched` (a failed spawn) is not that session.
         notifyExited: (appID) =>
           Effect.suspend(() => {
-            const wasManaged = managed.delete(appID);
-            return publish({ _tag: 'Exited', appID, managed: wasManaged });
+            running.delete(appID);
+            const owned = managed.get(appID) === 'active';
+            if (owned) managed.delete(appID);
+            return publish({ _tag: 'Exited', appID, managed: owned });
           }),
         claimHooks: (appID) =>
-          Effect.sync(() => !managed.has(appID) && !!managed.add(appID)),
-        releaseHooks: (appID) => Effect.sync(() => void managed.delete(appID)),
+          Effect.sync(() => {
+            if (managed.has(appID) || running.has(appID)) return false;
+            managed.set(appID, 'pending');
+            return true;
+          }),
+        releaseHooks: (appID) =>
+          Effect.sync(() => {
+            if (managed.get(appID) === 'pending') managed.delete(appID);
+          }),
+        isRunning: (appID) => Effect.sync(() => running.has(appID)),
         changes: PubSub.subscribe(changes).pipe(Effect.map(Stream.fromQueue)),
         watch: Effect.gen(function* () {
           const subscription = yield* PubSub.subscribe(changes);

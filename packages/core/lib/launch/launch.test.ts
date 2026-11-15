@@ -190,4 +190,35 @@ describe('Launcher', () => {
     );
     expect(calls).toEqual(['hook:pre', 'start:1', 'hook:pre', 'start:1']);
   });
+
+  test('a game running from another client cannot be claimed', async () => {
+    const { calls, layer } = setup();
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        // Desktop-started: a plain Launched with no claim.
+        yield* (yield* Library).notifyLaunched(1);
+        return yield* Effect.flip((yield* Launcher).launch(1));
+      }).pipe(Effect.provide(layer))
+    );
+    expect(error.message).toBe('Game is already running');
+    expect(calls).toEqual([]);
+  });
+
+  test('a launch interrupted after its game started keeps the claim', async () => {
+    const { calls, layer } = setup();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const launcher = yield* Launcher;
+        // Interrupt right away: the start itself is uninterruptible.
+        const fiber = yield* Effect.fork(launcher.launch(1));
+        yield* Effect.yieldNow();
+        yield* Fiber.interrupt(fiber);
+        expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
+          'Game is already running'
+        );
+        yield* exitGame(1);
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
+  });
 });

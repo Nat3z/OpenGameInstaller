@@ -326,21 +326,25 @@ async function ensureAddonServerRunning() {
 }
 
 /** The window works without the protocol, so its failure must not stop startup. */
-async function startClientProtocol(): Promise<void> {
+async function startClientProtocol(): Promise<boolean> {
   try {
     await startClientServer();
+    return true;
   } catch (error) {
     logger.sync.error('[client] Could not start the client protocol', error);
-    // Headless has no window to fall back on: without the protocol it's useless.
+    // Headless has no window to fall back on: without the protocol it's
+    // useless. Quit through the normal path so addons are stopped too.
     if (isHeadless()) {
-      app.exit(1);
-      return;
+      process.exitCode = 1;
+      app.quit();
+      return false;
     }
     sendNotification({
       message: 'Other OpenGameInstaller clients cannot connect this session.',
       id: Math.random().toString(36).substring(7),
       type: 'warning',
     });
+    return false;
   }
 }
 
@@ -573,7 +577,7 @@ async function startHeadless(): Promise<void> {
   // settings, events); headless sends it from here, before any client can
   // launch a game whose hooks aren't announced yet.
   await runElectronEffect(configureAddons);
-  if (isAddonServerListening) await startClientProtocol();
+  if (isAddonServerListening && !(await startClientProtocol())) return;
   publishEvent({ _tag: 'AddonManifestsReady' });
   logger.sync.info(
     '[headless] Ready; client.json written to the data directory'

@@ -62,6 +62,11 @@ export type LibraryShape = {
   readonly releaseHooks: (appID: number) => Effect.Effect<void>;
   /** Whether a session of `appID` is running right now. */
   readonly isRunning: (appID: number) => Effect.Effect<boolean>;
+  /**
+   * Whether a core launch holds `appID` (claimed, not yet exited). Other
+   * launch paths refuse then, so the claim only ever meets its own session.
+   */
+  readonly isClaimed: (appID: number) => Effect.Effect<boolean>;
   /** Live changes only, from now on. Needs no database read. */
   readonly changes: Effect.Effect<
     Stream.Stream<LibraryChange>,
@@ -169,6 +174,7 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
             if (managed.get(appID) === 'pending') managed.delete(appID);
           }),
         isRunning: (appID) => Effect.sync(() => running.has(appID)),
+        isClaimed: (appID) => Effect.sync(() => managed.has(appID)),
         changes: PubSub.subscribe(changes).pipe(Effect.map(Stream.fromQueue)),
         watch: Effect.gen(function* () {
           const subscription = yield* PubSub.subscribe(changes);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { LibraryError } from '@ogi-sdk/errors';
-import { Effect, Fiber, Layer, Stream } from 'effect';
+import { Deferred, Effect, Fiber, Layer, Stream } from 'effect';
 import { Library, LibraryLive, LibraryStore } from '../library/library';
 import { Prompts, PromptsLive } from '../prompts/prompts';
 import { GameRunner, Launcher, LaunchHooks, LaunchLive } from './launch';
@@ -19,7 +19,14 @@ const game: LibraryInfo = {
 };
 
 /** Builds the launch stack with recording fakes for the two adapters. */
-const setup = (options: { failPre?: boolean; failStart?: boolean } = {}) => {
+const setup = (
+  options: {
+    failPre?: boolean;
+    failStart?: boolean;
+    /** Starts wait on this before reporting, to interrupt one mid-start. */
+    gate?: Deferred.Deferred<void>;
+  } = {}
+) => {
   const calls: string[] = [];
   const store = Layer.succeed(LibraryStore, {
     get: (appID) => Effect.succeed(appID === 1 ? game : null),
@@ -44,6 +51,9 @@ const setup = (options: { failPre?: boolean; failStart?: boolean } = {}) => {
     Effect.map(Library, (lib) => ({
       start: (appID: number) =>
         Effect.sync(() => calls.push(`start:${appID}`)).pipe(
+          Effect.andThen(
+            options.gate ? Deferred.await(options.gate) : Effect.void
+          ),
           // A failed start still reports an exit, like the UMU path does.
           Effect.andThen(
             options.failStart
@@ -204,15 +214,18 @@ describe('Launcher', () => {
     expect(calls).toEqual([]);
   });
 
-  test('a launch interrupted after its game started keeps the claim', async () => {
-    const { calls, layer } = setup();
+  test('a launch interrupted mid-start keeps the claim once the game runs', async () => {
+    const gate = Effect.runSync(Deferred.make<void>());
+    const { calls, layer } = setup({ gate });
     await Effect.runPromise(
       Effect.gen(function* () {
         const launcher = yield* Launcher;
-        // Interrupt right away: the start itself is uninterruptible.
         const fiber = yield* Effect.fork(launcher.launch(1));
-        yield* Effect.yieldNow();
-        yield* Fiber.interrupt(fiber);
+        // Wait until the runner is really starting, then interrupt it there.
+        while (!calls.includes('start:1')) yield* Effect.yieldNow();
+        const interrupting = yield* Effect.fork(Fiber.interrupt(fiber));
+        yield* Deferred.succeed(gate, undefined);
+        yield* Fiber.join(interrupting);
         expect((yield* Effect.flip(launcher.launch(1))).message).toBe(
           'Game is already running'
         );
@@ -220,5 +233,23 @@ describe('Launcher', () => {
       }).pipe(Effect.provide(layer))
     );
     expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
+  });
+
+  test('a desktop launch is refused while a core launch holds the game', async () => {
+    const gate = Effect.runSync(Deferred.make<void>());
+    const { layer } = setup({ gate });
+    const claimed = await Effect.runPromise(
+      Effect.gen(function* () {
+        const library = yield* Library;
+        const launching = yield* Effect.fork((yield* Launcher).launch(1));
+        while (!(yield* library.isClaimed(1))) yield* Effect.yieldNow();
+        // What the desktop path checks before it spawns anything.
+        const held = yield* library.isClaimed(1);
+        yield* Deferred.succeed(gate, undefined);
+        yield* Fiber.join(launching);
+        return held;
+      }).pipe(Effect.provide(layer))
+    );
+    expect(claimed).toBe(true);
   });
 });

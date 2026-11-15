@@ -380,9 +380,15 @@ const markLaunched = (appID: number) =>
     )
   );
 
+/**
+ * `managed`: core's launcher is starting this session under its claim. Every
+ * other path (desktop, Steam shortcut) is refused while that claim is held,
+ * so the claim's `Launched`/`Exited` always belong to the session it started.
+ */
 export function launchGameFromLibrary(
   appid: number | string,
-  launchEnv?: Record<string, string>
+  launchEnv?: Record<string, string>,
+  options: { managed?: boolean } = {}
 ): Effect.Effect<LaunchGameResult, LibraryError, AppServices> {
   return Effect.gen(function* () {
     logger.sync.info('[launch] Launching game', appid);
@@ -394,6 +400,8 @@ export function launchGameFromLibrary(
     }
 
     const library = yield* Library;
+    if (!options.managed && (yield* library.isClaimed(parsedAppId)))
+      return { success: false, error: 'The game is already being launched' };
     let appInfo = yield* library.get(parsedAppId);
     if (!appInfo) {
       logger.sync.info('[launch] Game not found');

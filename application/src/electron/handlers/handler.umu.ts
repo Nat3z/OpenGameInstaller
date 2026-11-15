@@ -561,8 +561,7 @@ export function launchWithUmu(
       error?: string;
       pid?: number;
     }>((resume) => {
-      // `spawn` emits 'error' after the synchronous resolve below, so the
-      // first outcome wins just as it did with the original promise.
+      // The child's `spawn` or `error`, whichever comes first, settles this.
       let resolved = false;
       const resolve = (result: {
         success: boolean;
@@ -600,10 +599,13 @@ export function launchWithUmu(
 
       const onExitCallback = options?.onExit;
 
+      // Resolved on the child's own outcome: `spawn` means the game started,
+      // `error` means it never did, so a failed start is never reported as a
+      // launch (and never gets a managed exit or post hooks).
+      child.once('spawn', () => resolve({ success: true, pid: child.pid }));
       child.on('error', (error) => {
         logger.sync.error('[umu] Failed to launch game:', error);
-        // Spawn errors arrive after the resolve below: end the session the
-        // caller already counted as started (no 'exit' follows an error).
+        // An error after a successful spawn (rare) ends that session.
         if (resolved) onExitCallback?.(null, null);
         resolve({ success: false, error: error.message });
       });
@@ -620,9 +622,6 @@ export function launchWithUmu(
           );
         }
       });
-
-      // Resolve immediately after successful spawn so caller can return; onExit runs when process exits
-      resolve({ success: true, pid: child.pid });
     });
   }).pipe(
     // Prefix helpers throw synchronously (no home dir, EACCES); keep that a

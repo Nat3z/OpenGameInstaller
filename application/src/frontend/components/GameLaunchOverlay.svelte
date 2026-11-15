@@ -178,7 +178,7 @@ onMount(async () => {
       await runFrontendEffect(electronRpc.app.hideWindow());
       const wrapperResult = await runFrontendEffect(
         electronRpc.app
-          .executeWrapperCommand(gameId, wrapperCommand)
+          .executeWrapperCommand(gameId, wrapperCommand, token)
           .pipe(
             Effect.catchAll((error) =>
               Effect.succeed({ success: false, error: formatError(error) })

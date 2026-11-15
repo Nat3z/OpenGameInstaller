@@ -199,9 +199,10 @@ export const ElectronRpc = {
       Schema.NullOr(Schema.String)
     ),
     releaseGame: rpc('app.releaseGame', [Schema.Number, Schema.String], Void),
+    /** `token`: the caller's `reserveGame` hold, kept while the game runs. */
     executeWrapperCommand: rpc(
       'app.executeWrapperCommand',
-      [Schema.Number, Schema.String],
+      [Schema.Number, Schema.String, Schema.String],
       opaque<{
         success: boolean;
         exitCode?: number;

@@ -8,31 +8,96 @@ import { Library, Settings } from '@/electron/services/index.js';
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
 /**
+ * A desktop session's post hooks, from the main process. An addon that
+ * crashed while the game ran comes back first (the server replays its
+ * config), so its save backup still runs.
+ */
+const runPostHooks = (
+  appID: number
+): Effect.Effect<void, never, Library | Settings> =>
+  Effect.gen(function* () {
+    const game = yield* (yield* Library).get(appID);
+    if (!game) return;
+    yield* startAddons().pipe(
+      Effect.catchAll((error) =>
+        logger.warn('[launch] could not restart addons', error)
+      )
+    );
+    yield* waitForAddonManifests();
+    const result = yield* runLaunchAppHooks(game, 'post');
+    if (!result.success)
+      yield* logger.warn(`[launch] post hooks failed for ${appID}`);
+  }).pipe(
+    Effect.catchAllCause((cause) =>
+      logger.error(`[launch] post hooks for ${appID} failed`, cause)
+    )
+  );
+
+/**
  * Desktop holds taken by the window (`reserveGame`) and not yet handed to a
  * session (`launchGame`) or released. If the window goes away mid-flow (a
  * closed macOS window, a reload) nobody else knows the token, so main frees
- * them.
+ * them. A hold whose wrapped game is still running (`busy`) is freed only
+ * once that game exits.
  */
-const windowHolds = new Map<string, number>();
+const windowHolds = new Map<
+  string,
+  { readonly appID: number; busy: boolean; abandoned: boolean }
+>();
 
 export const holdForWindow = (appID: number, token: string): void =>
-  void windowHolds.set(token, appID);
+  void windowHolds.set(token, { appID, busy: false, abandoned: false });
 
 /** The window handed the hold to a session, or released it itself. */
 export const dropWindowHold = (token: string): void =>
   void windowHolds.delete(token);
 
-/** The window that held these is gone: free every hold it still had. */
+const free = (token: string) =>
+  Effect.flatMap(Library, (library) => {
+    const hold = windowHolds.get(token);
+    windowHolds.delete(token);
+    return hold ? library.unreserve(hold.appID, token) : Effect.void;
+  });
+
+/** The window that held these is gone: free every hold not in use. */
 export const releaseWindowHolds: Effect.Effect<void, never, Library> =
-  Effect.flatMap(Library, (library) =>
+  // Suspended: the holds are read when the window goes, not at import.
+  Effect.suspend(() =>
     Effect.forEach(
-      [...windowHolds].splice(0),
-      ([token, appID]) =>
-        Effect.sync(() => windowHolds.delete(token)).pipe(
-          Effect.zipRight(library.unreserve(appID, token))
-        ),
+      [...windowHolds],
+      ([token, hold]) =>
+        hold.busy
+          ? Effect.sync(() => {
+              hold.abandoned = true;
+            })
+          : free(token),
       { discard: true }
     )
+  );
+
+/**
+ * Runs a wrapped game under the window's hold. If the window went away while
+ * it ran, nobody is left to run its post hooks or release, so main does both.
+ */
+export const whileWrapped = <A, E, R>(
+  token: string,
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E, R | Library | Settings> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const hold = windowHolds.get(token);
+      if (hold) hold.busy = true;
+    }),
+    () => effect,
+    () =>
+      Effect.suspend(() => {
+        const hold = windowHolds.get(token);
+        if (!hold) return Effect.void;
+        hold.busy = false;
+        return hold.abandoned
+          ? runPostHooks(hold.appID).pipe(Effect.ensuring(free(token)))
+          : Effect.void;
+      })
   );
 
 /** Sessions whose game has exited and whose post hooks are still running. */
@@ -61,23 +126,10 @@ export const finishOnExit = (
     const subscribed = yield* Deferred.make<void>();
     const stop = yield* Deferred.make<boolean>();
     const ended = yield* Deferred.make<void>();
-
-    const postHooks = Effect.gen(function* () {
-      const game = yield* library.get(appID);
-      if (!game) return;
-      // An addon that crashed while the game ran comes back first (the server
-      // replays its config), so its save backup still runs.
-      yield* startAddons().pipe(
-        Effect.provideService(Settings, settings),
-        Effect.catchAll((error) =>
-          logger.warn('[launch] could not restart addons', error)
-        )
-      );
-      yield* waitForAddonManifests();
-      const result = yield* runLaunchAppHooks(game, 'post');
-      if (!result.success)
-        yield* logger.warn(`[launch] post hooks failed for ${appID}`);
-    });
+    const postHooks = runPostHooks(appID).pipe(
+      Effect.provideService(Library, library),
+      Effect.provideService(Settings, settings)
+    );
 
     const session = Effect.gen(function* () {
       const changes = yield* library.changes;

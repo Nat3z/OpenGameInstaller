@@ -72,6 +72,7 @@ import {
   dropWindowHold,
   finishOnExit,
   holdForWindow,
+  whileWrapped,
 } from '@/electron/server/unmanaged-sessions.js';
 import {
   type AppServices,
@@ -971,8 +972,9 @@ export function registerLibraryHandlers() {
 
   const executeWrapperCommand = ipcProcedure(
     ElectronRpc.app.executeWrapperCommand,
-    ipcServiceBoundary((_, appid: number, wrapperCommand: string) =>
-      runWrapperCommandForAppSteam(appid, wrapperCommand)
+    ipcServiceBoundary(
+      (_, appid: number, wrapperCommand: string, token: string) =>
+        whileWrapped(token, runWrapperCommandForAppSteam(appid, wrapperCommand))
     )
   );
 

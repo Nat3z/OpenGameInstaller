@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test';
 import { Library, LibraryLive, LibraryStore } from '@ogi-sdk/core';
-import { Effect, Layer } from 'effect';
+import { Deferred, Effect, Fiber, Layer } from 'effect';
 
 mock.module('electron', () => ({
   app: { isPackaged: false, getAppPath: () => process.cwd() },
@@ -106,4 +106,32 @@ test('a window gone mid-launch frees its holds, but not one handed to a session'
   );
   expect(waiting).not.toBeNull();
   expect(started).toBeNull();
+});
+
+test('a wrapped game outlives its window: main runs its post hooks, then frees it', async () => {
+  hooks.length = 0;
+  const { holdForWindow, releaseWindowHolds, whileWrapped } = await import(
+    '../src/electron/server/unmanaged-sessions.js'
+  );
+  const result = await run(
+    Effect.gen(function* () {
+      const library = yield* Library;
+      const token = (yield* library.reserve(5)) as string;
+      holdForWindow(5, token);
+      const gameExit = yield* Deferred.make<void>();
+      const game = yield* Effect.fork(
+        whileWrapped(token, Deferred.await(gameExit))
+      );
+      yield* Effect.sleep('5 millis');
+      // The window closes while the wrapped game runs: still held.
+      yield* releaseWindowHolds;
+      const whileRunning = yield* library.reserve(5);
+      yield* Deferred.succeed(gameExit, undefined);
+      yield* Fiber.join(game);
+      return { whileRunning, after: yield* library.reserve(5) };
+    })
+  );
+  expect(result.whileRunning).toBeNull();
+  expect(hooks).toEqual([5]);
+  expect(result.after).not.toBeNull();
 });

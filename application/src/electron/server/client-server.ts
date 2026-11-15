@@ -11,6 +11,7 @@ import {
   LaunchLive,
   LibraryHandlers,
   OGIServer,
+  type Pipeline,
   PipelineHandlers,
   PipelineLive,
   PromptsHandlers,
@@ -99,10 +100,11 @@ const listenStandalone = (
 /**
  * Process-lifetime services the server only borrows. A new server (macOS
  * reopening its window) must not reset them: the launcher remembers which
- * running games are managed, and loses their post hooks if rebuilt.
+ * running games are managed, and the pipeline owns every running download.
  */
 const services = Effect.runSync(Scope.make());
 let launcher: Context.Context<Launcher> | undefined;
+let pipeline: Context.Context<Pipeline> | undefined;
 
 /**
  * Mounts the client protocol on the addon server's port, or, when another
@@ -137,8 +139,9 @@ export const startClientServer = (
         ),
         services
       );
-      // The pipeline too: closing the server scope stops every download fiber.
-      const pipeline = yield* Layer.buildWithScope(
+      // The pipeline too: rebuilding it would interrupt every running
+      // download and restore them all again.
+      pipeline ??= yield* Layer.buildWithScope(
         PipelineLive.pipe(
           Layer.provide(
             Layer.mergeAll(
@@ -156,7 +159,7 @@ export const startClientServer = (
             )
           )
         ),
-        serverScope
+        services
       );
       const server = yield* OGIServer.make({
         token,

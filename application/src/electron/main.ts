@@ -577,7 +577,15 @@ async function startHeadless(): Promise<void> {
   // settings, events); headless sends it from here, before any client can
   // launch a game whose hooks aren't announced yet.
   await runElectronEffect(configureAddons);
-  if (isAddonServerListening && !(await startClientProtocol())) return;
+  // Without the addon server there's no `/client` to serve: nothing could
+  // drive this process, so stop rather than report a readiness it lacks.
+  if (!isAddonServerListening) {
+    logger.sync.error('[headless] The addon server is not running; quitting');
+    process.exitCode = 1;
+    app.quit();
+    return;
+  }
+  if (!(await startClientProtocol())) return;
   publishEvent({ _tag: 'AddonManifestsReady' });
   logger.sync.info(
     '[headless] Ready; client.json written to the data directory'

@@ -146,12 +146,14 @@ schema.
 
 ## Commands
 
+All from the repo root:
+
 ```sh
-bun run build                 # all packages (protocol before core)
-cd application && bun run build  # the Electron app, after a host change
-bun run typecheck             # whole repo
-cd packages/core && bun test  # core + contract tests
-cd application && bun test    # app tests
+bun run build                      # all packages (protocol before core)
+(cd application && bun run build)  # the Electron app, after a host change
+bun run typecheck                  # whole repo
+(cd packages/core && bun test)     # core + contract tests
+(cd application && bun test)       # app tests
 ```
 
 A package change is only visible to the app after `bun run build` in that

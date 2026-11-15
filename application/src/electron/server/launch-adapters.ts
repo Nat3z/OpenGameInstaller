@@ -2,18 +2,19 @@ import { GameRunner, LaunchHooks } from '@ogi-sdk/core';
 import { LibraryError } from '@ogi-sdk/errors';
 import { Effect, Layer } from 'effect';
 import { launchGameFromLibrary } from '@/electron/handlers/handler.library.js';
-import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { runElectronEffect } from '@/electron/runtime.js';
 import { runLaunchAppHooks } from '@/electron/server/addon-lifecycle.js';
+import { configureAddons } from '@/electron/server/addons-adapter.js';
 
 /**
  * Core's hook adapter: the in-process addon server's `launch-app` event.
- * Waits for running addons to connect first, so an early launch (a client
- * that read `client.json` during startup) still gets their hooks.
+ * First waits for running addons and sends any unconfigured one its settings
+ * (bounded): an addon only announces `launch-app` after its first config, so
+ * an early or late-connecting addon would otherwise be silently skipped.
  */
 export const LaunchHooksFromAddonServer = Layer.succeed(LaunchHooks, {
   run: (game, stage) =>
-    waitForAddonManifests().pipe(
+    Effect.promise(() => runElectronEffect(configureAddons)).pipe(
       Effect.zipRight(runLaunchAppHooks(game, stage)),
       Effect.flatMap((result) =>
         result.success

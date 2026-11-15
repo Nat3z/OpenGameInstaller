@@ -152,6 +152,12 @@ describe('OGIServer <-> OGIClient', () => {
     silent.server.stop(true);
   });
 
+  test('disconnected settles when the connection goes away', async () => {
+    const client = await OGIClient.connect({ url, token: TOKEN });
+    await client.close();
+    expect(typeof (await client.disconnected)).toBe('string');
+  });
+
   test('a rejected hello hangs up even if the server keeps the socket', async () => {
     const rude = handshakeServer(
       JSON.stringify({

@@ -93,6 +93,12 @@ export class EffectOGIClient {
   /** Why the socket closed; set once, then every send fails. */
   private closed: string | undefined;
   private readonly pending = new Map<number, Pending>();
+  private readonly hungUp = Promise.withResolvers<string>();
+  /**
+   * Settles (with the reason) once the connection is gone, whoever closed
+   * it. A frontend that keeps a client around reconnects from here.
+   */
+  readonly disconnected: Promise<string> = this.hungUp.promise;
 
   private constructor(
     private readonly socket: WebSocket,
@@ -318,6 +324,7 @@ export class EffectOGIClient {
 
   private failAll(reason: string): void {
     this.closed ??= reason;
+    this.hungUp.resolve(this.closed);
     const error = new ProtocolError({
       tag: ProtocolErrorTags.Disconnected,
       message: reason,
@@ -387,6 +394,11 @@ export class OGIClient {
   readonly prompts: PromiseGroupClient<Groups['prompts']>;
   readonly events: PromiseGroupClient<Groups['events']>;
   readonly addons: PromiseGroupClient<Groups['addons']>;
+
+  /** Settles with the reason once the connection is gone. */
+  get disconnected(): Promise<string> {
+    return this.effect.disconnected;
+  }
 
   private constructor(
     readonly effect: EffectOGIClient,

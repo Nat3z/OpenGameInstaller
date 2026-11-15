@@ -10,7 +10,7 @@ import {
   MANIFEST_FILE,
   readManifest,
   writeManifests,
-} from '../src/electron/lib/library-manifest.js';
+} from './manifest';
 
 const game = (appID: number, cwd: string): LibraryInfo => ({
   appID,
@@ -40,6 +40,7 @@ describe('library manifests', () => {
     fs.mkdirSync(join(root, 'sd-b'));
     fs.renameSync(before, after);
     const [found] = await Effect.runPromise(findManifests([root]));
+    if (!found) throw new Error('manifest not found');
 
     expect(found.path).toBe(after);
     expect(found.game.cwd).toBe(after);

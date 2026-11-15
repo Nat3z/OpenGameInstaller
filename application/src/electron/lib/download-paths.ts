@@ -1,6 +1,6 @@
 import * as path from 'node:path';
+import { normalizeDeletePath } from '@ogi-sdk/core';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { normalizeDeletePath } from '@/electron/lib/delete-guards.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 

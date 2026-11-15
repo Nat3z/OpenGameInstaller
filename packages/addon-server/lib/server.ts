@@ -62,6 +62,11 @@ export class AddonServer {
     res: http.ServerResponse
   ) => void;
   private runtime?: Runtime.Runtime<never>;
+  /** Upgrades for these paths go to another protocol (e.g. core's /client). */
+  private readonly upgradeRoutes = new Map<
+    string,
+    (ws: WebSocket, request: http.IncomingMessage) => void
+  >();
 
   public constructor(private readonly config: AddonConfig) {
     this.config.secret ??= randomUUID();
@@ -165,6 +170,19 @@ export class AddonServer {
     return this;
   }
 
+  /**
+   * Hands WebSocket upgrades on `path` to `handler` instead of the addon
+   * protocol, so other protocols can share this port. Routed paths only
+   * accept this machine, whatever `localOnly` says for addons.
+   */
+  public routeUpgrade(
+    path: string,
+    handler: (ws: WebSocket, request: http.IncomingMessage) => void
+  ): this {
+    this.upgradeRoutes.set(path, handler);
+    return this;
+  }
+
   public extend(server: http.Server): this {
     this.server = server;
     return this;
@@ -200,6 +218,8 @@ export class AddonServer {
 
       if (this.wss) {
         const wss = this.wss;
+        // Routed sockets (e.g. /client) aren't in `connections`; close them too.
+        for (const ws of wss.clients) ws.close();
         yield* Effect.async<void, NetworkError>((resume) => {
           wss.close((error) =>
             resume(
@@ -308,8 +328,12 @@ export class AddonServer {
       this.upgradeListener = (req, socket, head) => {
         if (this.config.localOnly && !isLoopback(req.socket.remoteAddress))
           return void socket.destroy();
+        const route = this.upgradeRoutes.get(req.url?.split('?')[0] ?? '');
+        if (route && !isLoopback(req.socket.remoteAddress))
+          return void socket.destroy();
         this.wss!.handleUpgrade(req, socket, head, (ws) => {
-          this.supervise(this.handleWebSocketConnection(ws, req));
+          if (route) route(ws, req);
+          else this.supervise(this.handleWebSocketConnection(ws, req));
         });
       };
       this.server.on('upgrade', this.upgradeListener);

@@ -49,9 +49,10 @@ function initialize(server: Connection): Effect.Effect<void, NetworkError> {
 
 export function connectClientSdk() {
   // a dev launch passes the port of the addon server it runs on
-  const devPort: string | null = new URLSearchParams(
-    window.location.search
-  ).get('addonServerPort');
+  const devPort: string | null =
+    typeof window === 'undefined'
+      ? null
+      : new URLSearchParams(window.location.search).get('addonServerPort');
   const url = devPort
     ? `ws://127.0.0.1:${devPort}`
     : settings.clientSdkUrl || 'ws://127.0.0.1:7654';

@@ -92,6 +92,32 @@ const withEngine = (
       );
 };
 
+/** Setup still running in the app after the transfer: it keeps reporting. */
+const SETTING_UP = new Set(['extracting', 'installing-redistributables']);
+
+/**
+ * Removes a card with no engine left. One still being set up can't go: its
+ * next progress report would bring it back while setup keeps running.
+ */
+const clearCard = (id: string): Effect.Effect<void, DownloadError> =>
+  Effect.suspend(() => {
+    const status = runElectronSync(
+      Effect.flatMap(Downloads, (downloads) => downloads.get(id))
+    )?.status;
+    return status && SETTING_UP.has(status)
+      ? Effect.fail(
+          new DownloadError({
+            message: 'Setup is still running for this download',
+            downloadId: id,
+          })
+        )
+      : Effect.sync(() =>
+          runElectronSync(
+            Effect.flatMap(Downloads, (downloads) => downloads.remove(id))
+          )
+        );
+  });
+
 /** Core's control adapter: routes to whichever engine owns the download. */
 export const DownloadControlFromEngines = Layer.succeed(DownloadControl, {
   pause: (id) => withEngine(id, (engine) => engine.pause(id)),
@@ -106,9 +132,5 @@ export const DownloadControlFromEngines = Layer.succeed(DownloadControl, {
       ? Effect.promise(() => cancelQueuedDownload(id))
       : engines.some((engine) => engine.has(id))
         ? withEngine(id, (engine) => engine.abort(id))
-        : Effect.sync(() =>
-            runElectronSync(
-              Effect.flatMap(Downloads, (downloads) => downloads.remove(id))
-            )
-          ),
+        : clearCard(id),
 });

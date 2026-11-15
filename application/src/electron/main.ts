@@ -342,9 +342,23 @@ async function ensureAddonServerRunning() {
   }
 }
 
+/** The window works without the protocol, so its failure must not stop startup. */
+async function startClientProtocol(): Promise<void> {
+  try {
+    await startClientServer();
+  } catch (error) {
+    logger.sync.error('[client] Could not start the client protocol', error);
+    sendNotification({
+      message: 'Other OpenGameInstaller clients cannot connect this session.',
+      id: Math.random().toString(36).substring(7),
+      type: 'warning',
+    });
+  }
+}
+
 async function startAddonRuntime() {
   if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
-  if (isAddonServerListening) await startClientServer();
+  if (isAddonServerListening) await startClientProtocol();
   sendNotification({
     message: 'Addons Starting...',
     id: Math.random().toString(36).substring(7),

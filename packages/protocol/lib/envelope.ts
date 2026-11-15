@@ -2,7 +2,7 @@ import { Schema } from 'effect';
 
 /**
  * Wire envelope for the client protocol. Every frame is one JSON object with a
- * `type` discriminator. Payloads (`params`, `result`, `snapshot`, `update`) are
+ * `_tag` discriminator (`{"_tag":"hello",...}`). Payloads (`params`, `result`, `snapshot`, `update`) are
  * `Unknown` here and decoded against the method's own schema, so this file is
  * the only thing a new client (Rust, Python, ...) must implement by hand.
  */

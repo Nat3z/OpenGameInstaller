@@ -100,17 +100,29 @@ export const LibraryLive: Layer.Layer<Library, never, LibraryStore> =
           ),
         markLaunched: store.markLaunched,
         // The change is published on commit, not on staging, so a rolled-back
-        // removal never flickers out of a subscriber's list.
+        // removal never flickers out of a subscriber's list. A watch opened
+        // while staged doesn't see the game, so rollback re-announces it.
         stageRemoval: (appID) =>
-          store.stageRemoval(appID).pipe(
-            Effect.map((removal) => ({
+          Effect.gen(function* () {
+            const game = yield* store.get(appID);
+            const removal = yield* store.stageRemoval(appID);
+            let settled = false;
+            return {
               commit: () => {
+                if (settled) return;
+                settled = true;
                 removal.commit();
                 Effect.runSync(publish({ _tag: 'Removed', appID }));
               },
-              rollback: removal.rollback,
-            }))
-          ),
+              rollback: () => {
+                if (settled) return;
+                settled = true;
+                removal.rollback();
+                if (game)
+                  Effect.runSync(publish({ _tag: 'Saved', entry: game }));
+              },
+            };
+          }),
         notifyLaunched: (appID) => publish({ _tag: 'Launched', appID }),
         notifyExited: (appID) => publish({ _tag: 'Exited', appID }),
         watch: Effect.gen(function* () {

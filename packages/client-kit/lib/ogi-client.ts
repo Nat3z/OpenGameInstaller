@@ -21,6 +21,7 @@ import {
 import {
   Cause,
   Deferred,
+  type Duration,
   Effect,
   Exit,
   Fiber,
@@ -62,6 +63,8 @@ export type OGIClientOptions = {
   readonly webSocket?: new (
     url: string
   ) => WebSocket;
+  /** How long to wait for `welcome`. Defaults to 10 seconds. */
+  readonly handshakeTimeout?: Duration.DurationInput;
 };
 
 type Pending =
@@ -156,7 +159,17 @@ export class EffectOGIClient {
           );
       });
       return Effect.sync(() => socket.close());
-    });
+    }).pipe(
+      // A server that accepts the socket but never answers `hello`.
+      Effect.timeoutFail({
+        duration: options.handshakeTimeout ?? '10 seconds',
+        onTimeout: () =>
+          new ProtocolError({
+            tag: ProtocolErrorTags.Disconnected,
+            message: 'No handshake reply',
+          }),
+      })
+    );
   }
 
   close(): void {
@@ -237,11 +250,11 @@ export class EffectOGIClient {
 
   private send(message: ClientMessage): Effect.Effect<void, ProtocolError> {
     // Closed sockets drop sends silently, so a late call would wait forever.
-    if (this.closed !== undefined)
+    if (this.closed !== undefined || this.socket.readyState !== 1)
       return Effect.fail(
         new ProtocolError({
           tag: ProtocolErrorTags.Disconnected,
-          message: this.closed,
+          message: this.closed ?? 'Socket is not open',
         })
       );
     return Effect.try({

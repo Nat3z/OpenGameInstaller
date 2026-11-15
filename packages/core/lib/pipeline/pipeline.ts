@@ -69,8 +69,11 @@ export type PipelineShape = {
   readonly dismiss: (id: string) => Effect.Effect<void>;
   /** Restarts a download whose engine is gone (paused across a restart). */
   readonly restart: (id: string) => Effect.Effect<boolean>;
-  /** Stops a download for good and deletes what it wrote. */
-  readonly cancel: (id: string) => Effect.Effect<boolean>;
+  /**
+   * Stops a download for good and deletes what it wrote. Fails while the
+   * addon's setup runs (it can't be stopped from core).
+   */
+  readonly cancel: (id: string) => Effect.Effect<boolean, DownloadError>;
   readonly failedSetups: Effect.Effect<
     { snapshot: FailedSetup[]; updates: Stream.Stream<FailedSetup[]> },
     never,
@@ -787,6 +790,15 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           Effect.gen(function* () {
             const record = records.get(id);
             if (!record) return false;
+            // An addon's setup can't be stopped from here: its handler keeps
+            // writing to the folder. Refuse instead of deleting under it (a
+            // failed setup can still be dismissed once it ends).
+            const card = yield* downloads.get(id);
+            if (record.step === 'setup' && card?.status === 'setting-up')
+              return yield* failure(
+                id,
+                'Setup is running in the addon and cannot be cancelled'
+              );
             const engine = yield* downloads.engineOf(id);
             yield* FiberMap.remove(fibers, id);
             if (engine) yield* engines.cancel(engine);
@@ -795,10 +807,15 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             // Only what this transfer wrote. A local torrent's "file" is its
             // whole folder, which for an update is also the installed game and
             // its `old_files`; deleting it would leave nothing to restore.
-            const owned = [
-              ...latest.files.map((file) => file.path),
-              ...(latest.extracted ? [latest.extracted] : []),
-            ].filter((path) => !holdsInstall(path, latest));
+            // Past setup the game is installed (and in the library): a cancel
+            // then only stops the redistributables, it deletes nothing.
+            const installed = latest.step === 'redistributables';
+            const owned = installed
+              ? []
+              : [
+                  ...latest.files.map((file) => file.path),
+                  ...(latest.extracted ? [latest.extracted] : []),
+                ].filter((path) => !holdsInstall(path, latest));
             if (owned.length > 0)
               yield* files.remove(owned).pipe(Effect.ignore);
             yield* restoreOldFiles(latest);

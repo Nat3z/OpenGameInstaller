@@ -57,6 +57,8 @@ type Options = {
   setupVersion?: string;
   /** Redistributables fail once, then succeed. */
   redistFails?: boolean;
+  /** Setup (or redistributables) waits on this, to act mid-step. */
+  hold?: { setup?: Deferred.Deferred<void>; redist?: Deferred.Deferred<void> };
   /** Saving a record at this step fails (a full disk, say). */
   saveFailsAt?: DownloadRecord['step'];
   records?: DownloadRecord[];
@@ -156,6 +158,7 @@ const harness = (options: Options = {}) => {
       setup: (_, data: SetupCommandData, onProgress) =>
         Effect.gen(function* () {
           calls.push(`setup:${data.path}`);
+          if (options.hold?.setup) yield* Deferred.await(options.hold.setup);
           yield* onProgress({ progress: 50, logs: ['unpacking'] });
           if (setupFails) {
             const message = setupFails;
@@ -174,18 +177,25 @@ const harness = (options: Options = {}) => {
         Effect.sync(() => {
           library.set(info.appID, info);
           calls.push(`install:${info.name}`);
-          return options.redistFails
+          return options.redistFails || options.hold?.redist
             ? ('needs-redistributables' as const)
             : ('installed' as const);
         }),
       update: () => Effect.sync(() => void calls.push('update')),
       redistributables: () =>
-        Effect.sync(() => {
-          calls.push('redist');
-          const failed = redistFails;
-          redistFails = false;
-          return failed ? ('partial' as const) : ('success' as const);
-        }),
+        (options.hold?.redist
+          ? Deferred.await(options.hold.redist)
+          : Effect.void
+        ).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              calls.push('redist');
+              const failed = redistFails;
+              redistFails = false;
+              return failed ? ('partial' as const) : ('success' as const);
+            })
+          )
+        ),
     }),
     Layer.succeed(DownloadStore, {
       list: Effect.sync(() => [...saved.values()]),
@@ -572,6 +582,36 @@ describe('pipeline', () => {
     expect(h.calls.some((call) => call.startsWith('direct'))).toBe(false);
     // Half-moved files go back first, then staging runs again.
     expect(h.calls.slice(0, 2)).toEqual(['revert:/dl/Game', 'stage:/dl/Game']);
+    await h.runtime.dispose();
+  });
+
+  test('a running addon setup cannot be cancelled', async () => {
+    const hold = Effect.runSync(Deferred.make<void>());
+    const h = harness({ hold: { setup: hold } });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct })
+    );
+    await h.until(id, (d) => d.status === 'setting-up');
+    const refused = await h
+      .pipeline((p) => p.cancel(id))
+      .catch((error: Error) => error);
+    expect((refused as Error).message).toContain('cannot be cancelled');
+    expect(h.calls.some((call) => call.startsWith('remove:'))).toBe(false);
+    await Effect.runPromise(Deferred.succeed(hold, undefined));
+    await h.until(id, (d) => d.status === 'completed');
+    await h.runtime.dispose();
+  });
+
+  test('cancelling redistributables keeps the installed game', async () => {
+    const hold = Effect.runSync(Deferred.make<void>());
+    const h = harness({ hold: { redist: hold } });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct })
+    );
+    while (h.saved.get(id)?.step !== 'redistributables') await Bun.sleep(1);
+    expect(await h.pipeline((p) => p.cancel(id))).toBe(true);
+    expect(h.calls.some((call) => call.startsWith('remove:'))).toBe(false);
+    expect(h.library.has(7)).toBe(true);
     await h.runtime.dispose();
   });
 });

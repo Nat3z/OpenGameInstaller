@@ -2915,7 +2915,9 @@ const makeDownloadService = (): Effect.Effect<DownloadServiceShape> =>
         }),
       pause: (id) => {
         const active = activeDownloads.get(id);
-        if (!active) {
+        // Only a transfer can pause. Interrupting a queued one would abandon
+        // its queue entry, which then blocks the slot for later downloads.
+        if (!active || active.download.status !== 'downloading') {
           return Effect.fail(new DownloadNotActive({ downloadId: id }));
         }
         return active.operationLock.withPermits(1)(

@@ -17,6 +17,16 @@ import { toPatch } from '@/electron/server/download-patch.js';
  * Engines call this instead of `webContents.send`, so they no longer hold a
  * window. Once the renderer reads `downloads.watch`, the IPC half is deleted.
  */
+/** Past the transfer: a seeding torrent's progress must not overwrite these. */
+const SETUP: ReadonlySet<string> = new Set([
+  'extracting',
+  'installing-redistributables',
+  'error',
+]);
+
+const isTransferReport = (channel: string): boolean =>
+  channel.endsWith(':download-progress');
+
 export const emitDownload = (
   channel: string,
   data: Record<string, unknown>
@@ -30,7 +40,17 @@ export const emitDownload = (
           ? downloads.remove(id)
           : patch === 'log'
             ? downloads.log(id, (data.log as string[]) ?? [])
-            : downloads.report(id, patch)
+            : downloads
+                .get(id)
+                .pipe(
+                  Effect.flatMap((current) =>
+                    current &&
+                    SETUP.has(current.status) &&
+                    isTransferReport(channel)
+                      ? Effect.void
+                      : downloads.report(id, patch)
+                  )
+                )
       )
     );
   }

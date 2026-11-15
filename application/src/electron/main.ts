@@ -331,6 +331,11 @@ async function startClientProtocol(): Promise<void> {
     await startClientServer();
   } catch (error) {
     logger.sync.error('[client] Could not start the client protocol', error);
+    // Headless has no window to fall back on: without the protocol it's useless.
+    if (isHeadless()) {
+      app.exit(1);
+      return;
+    }
     sendNotification({
       message: 'Other OpenGameInstaller clients cannot connect this session.',
       id: Math.random().toString(36).substring(7),

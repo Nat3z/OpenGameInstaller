@@ -28,7 +28,7 @@ import {
   spawn,
   spawnSync,
 } from 'child_process';
-import { Effect } from 'effect';
+import { Effect, Exit } from 'effect';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { homedir } from 'os';
@@ -367,6 +367,8 @@ export type ExecuteWrapperResult = {
   exitCode?: number;
   signal?: string;
   error?: string;
+  /** False when another session held the game: nothing to release. */
+  reserved?: boolean;
 };
 
 /**
@@ -654,9 +656,13 @@ function executeWrapperCommandForAppSteam(
   return Effect.gen(function* () {
     const library = yield* Library;
     if (!(yield* library.reserve(appid)))
-      return { success: false, error: 'The game is already being launched' };
-    // Held past the return: the caller runs post hooks and then reports the
-    // exit (`releaseWrappedGame`), which is when the game is free again.
+      return {
+        success: false,
+        error: 'The game is already being launched',
+        reserved: false,
+      };
+    // Held past the return: the caller runs post hooks and then calls
+    // `releaseWrappedGame`, which is when the game is free again.
     return yield* runWrapperCommandForAppSteam(
       appid,
       wrapperCommand,
@@ -665,9 +671,17 @@ function executeWrapperCommandForAppSteam(
   });
 }
 
-/** Reports a wrapped game's exit and frees it (after its post hooks ran). */
-export const releaseWrappedGame = (appid: number): void =>
-  reportGame('exit', appid);
+/**
+ * Frees a wrapped run's reservation once its caller's post hooks are done.
+ * No `Exited` is published: the wrapper never reported `Launched`, and its
+ * caller runs the post hooks itself (an exit would make `GameManager` run
+ * them a second time). Only call it for a run that got its reservation.
+ */
+export const releaseWrappedGame = (appid: number): void => {
+  runElectronSync(
+    Effect.flatMap(Library, (library) => library.unreserve(appid))
+  );
+};
 
 function runWrapperCommandForAppSteam(
   appid: number,
@@ -957,7 +971,12 @@ export function registerLibraryHandlers() {
     // once the wrapped run returns.
     ipcServiceBoundary((_, appid: number, wrapperCommand: string) =>
       executeWrapperCommandForAppSteam(appid, wrapperCommand).pipe(
-        Effect.ensuring(Effect.sync(() => releaseWrappedGame(appid)))
+        Effect.onExit((exit) =>
+          Effect.sync(() => {
+            if (!(Exit.isSuccess(exit) && exit.value.reserved === false))
+              releaseWrappedGame(appid);
+          })
+        )
       )
     )
   );

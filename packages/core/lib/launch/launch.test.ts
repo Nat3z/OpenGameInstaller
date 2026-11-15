@@ -224,6 +224,23 @@ describe('Launcher', () => {
     expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
   });
 
+  test('a refused unmanaged launch leaves the running core session alone', async () => {
+    const { calls, layer } = setup();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const library = yield* Library;
+        yield* (yield* Launcher).launch(1);
+        // A Steam wrapper arrives mid-session: refused, so it releases
+        // nothing (what `releaseWrappedGame` skips for `reserved: false`).
+        expect(yield* library.reserve(1)).toBe(false);
+        expect(yield* library.isRunning(1)).toBe(true);
+        // The core session still owns its exit and post hooks.
+        yield* exitGame(1);
+      }).pipe(Effect.provide(layer))
+    );
+    expect(calls).toEqual(['hook:pre', 'start:1', 'hook:post']);
+  });
+
   test('two unmanaged launches cannot share a reservation', async () => {
     const { layer } = setup();
     await Effect.runPromise(

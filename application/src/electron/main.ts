@@ -640,8 +640,8 @@ async function handleRemoteLaunchRequest(
       focusMainWindow();
     }
 
-    // The wrapper keeps the game reserved; it's freed (and its exit
-    // reported) only after the post hooks, whatever happens below.
+    // A run that got its reservation keeps the game until here, after the
+    // post hooks; one that was refused never owned it and frees nothing.
     try {
       if (!wrapperResult.success) {
         sendLaunchErrorToRenderer(payload.gameId);
@@ -656,9 +656,11 @@ async function handleRemoteLaunchRequest(
         sendLaunchErrorToRenderer(payload.gameId);
         return postResult;
       }
+      // The game is done: the window clears its "running" state, as before.
+      void sendIPCMessage('game:exit', { id: payload.gameId });
       return { success: true };
     } finally {
-      releaseWrappedGame(payload.gameId);
+      if (wrapperResult.reserved !== false) releaseWrappedGame(payload.gameId);
     }
   }
 

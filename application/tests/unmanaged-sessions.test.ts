@@ -7,12 +7,16 @@ mock.module('electron', () => ({
 }));
 
 const hooks: number[] = [];
+// Set to hold post hooks open, like a slow save backup.
+let hooksGate: Deferred.Deferred<void> | undefined;
 mock.module('../src/electron/server/addon-lifecycle.js', () => ({
   runLaunchAppHooks: (game: { appID: number }) =>
-    Effect.sync(() => {
-      hooks.push(game.appID);
-      return { success: true };
-    }),
+    (hooksGate ? Deferred.await(hooksGate) : Effect.void).pipe(
+      Effect.map(() => {
+        hooks.push(game.appID);
+        return { success: true };
+      })
+    ),
 }));
 
 // No addon processes here: nothing to restart or wait for.
@@ -134,4 +138,41 @@ test('a wrapped game outlives its window: main runs its post hooks, then frees i
   expect(result.whileRunning).toBeNull();
   expect(hooks).toEqual([5]);
   expect(result.after).not.toBeNull();
+});
+
+test("a quit waits for an abandoned wrapped game's post hooks", async () => {
+  const {
+    awaitEndingSessions,
+    holdForWindow,
+    releaseWindowHolds,
+    whileWrapped,
+  } = await import('../src/electron/server/unmanaged-sessions.js');
+  hooksGate = Effect.runSync(Deferred.make<void>());
+  const gate = hooksGate;
+  const waited = await run(
+    Effect.gen(function* () {
+      const library = yield* Library;
+      const token = (yield* library.reserve(6)) as string;
+      holdForWindow(6, token);
+      const gameExit = yield* Deferred.make<void>();
+      const game = yield* Effect.fork(
+        whileWrapped(token, Deferred.await(gameExit))
+      );
+      yield* Effect.sleep('5 millis');
+      // The window goes mid-game, then the game exits: main runs its post
+      // hooks (a backup), held open here.
+      yield* releaseWindowHolds;
+      yield* Deferred.succeed(gameExit, undefined);
+      yield* Effect.sleep('20 millis');
+      const quit = yield* Effect.fork(awaitEndingSessions('5 seconds'));
+      yield* Effect.sleep('20 millis');
+      const early = quit.unsafePoll() !== null;
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(quit);
+      yield* Fiber.join(game);
+      return early;
+    })
+  );
+  hooksGate = undefined;
+  expect(waited).toBe(false);
 });

@@ -7,6 +7,24 @@ import { Library, Settings } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
+/** Sessions whose game has exited and whose post hooks are still running. */
+const ending = new Set<Deferred.Deferred<void>>();
+
+/** Counts `effect` as an ending session, so a quit waits for it. */
+const tracked = <A, E, R>(
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E, R> =>
+  Effect.acquireUseRelease(
+    Effect.tap(Deferred.make<void>(), (done) =>
+      Effect.sync(() => ending.add(done))
+    ),
+    () => effect,
+    (done) =>
+      Effect.sync(() => ending.delete(done)).pipe(
+        Effect.zipRight(Deferred.succeed(done, undefined))
+      )
+  );
+
 /**
  * A desktop session's post hooks, from the main process. An addon that
  * crashed while the game ran comes back first (the server replays its
@@ -95,13 +113,10 @@ export const whileWrapped = <A, E, R>(
         if (!hold) return Effect.void;
         hold.busy = false;
         return hold.abandoned
-          ? runPostHooks(hold.appID).pipe(Effect.ensuring(free(token)))
+          ? tracked(runPostHooks(hold.appID).pipe(Effect.ensuring(free(token))))
           : Effect.void;
       })
   );
-
-/** Sessions whose game has exited and whose post hooks are still running. */
-const ending = new Set<Deferred.Deferred<void>>();
 
 export type UnmanagedSession = {
   /** For a start that failed: frees the game without running hooks. */

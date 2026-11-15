@@ -99,8 +99,16 @@ export const DownloadControlFromEngines = Layer.succeed(DownloadControl, {
   // While the queue holds an entry, cancel through it: aborting the engine
   // alone leaves the entry behind and it blocks the next download's slot.
   // The queue's handler cancels the engine too.
+  // Finished and failed downloads have no engine left; cancelling them only
+  // clears the card.
   cancel: (id) =>
     hasQueueCancel(id)
       ? Effect.promise(() => cancelQueuedDownload(id))
-      : withEngine(id, (engine) => engine.abort(id)),
+      : engines.some((engine) => engine.has(id))
+        ? withEngine(id, (engine) => engine.abort(id))
+        : Effect.sync(() =>
+            runElectronSync(
+              Effect.flatMap(Downloads, (downloads) => downloads.remove(id))
+            )
+          ),
 });

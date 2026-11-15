@@ -27,12 +27,21 @@ const installRedistributables = (appID: number, downloadId?: string) =>
       runElectronSync(
         Effect.flatMap(Downloads, (downloads) =>
           downloads.report(downloadId, {
+            // The game itself is installed unless it went missing; partial
+            // failures stay `completed` but keep their reason.
             status:
-              progress.kind === 'done'
-                ? 'completed'
-                : 'installing-redistributables',
+              progress.kind !== 'done'
+                ? 'installing-redistributables'
+                : progress.result === 'not-found'
+                  ? 'error'
+                  : 'completed',
             progress: progress.overallProgress / 100,
             speed: 0,
+            error:
+              progress.kind === 'done' && progress.result !== 'success'
+                ? (progress.error ??
+                  `${progress.failedCount} redistributable(s) failed`)
+                : undefined,
           })
         )
       );

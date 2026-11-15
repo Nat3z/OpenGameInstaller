@@ -3007,8 +3007,13 @@ export default function handler(mainWindow: BrowserWindow) {
   setAddonDownloadContext(service);
   registerDownloadEngine({
     pause: service.pause,
-    // Resume re-reads chunk settings, so it runs on the app runtime.
-    resume: (id) => Effect.promise(() => runElectronEffect(service.resume(id))),
+    // Resume re-reads chunk settings, so it runs on the app runtime. Its
+    // failure (settings read included) stays a typed error for the caller.
+    resume: (id) =>
+      Effect.tryPromise({
+        try: () => runElectronEffect(service.resume(id)),
+        catch: (cause) => cause,
+      }),
     abort: service.abort,
     has: (id) => service.has(id),
   });

@@ -55,6 +55,12 @@ const memoryStore = () => {
 };
 
 const TOKEN = 'test-token';
+const steamAddon = {
+  id: 'steam',
+  name: 'Steam',
+  storefronts: ['steam'],
+  events: ['search', 'game-details'],
+};
 const launched: number[] = [];
 const library = LibraryLive.pipe(Layer.provide(memoryStore()));
 const launch = LaunchLive.pipe(
@@ -92,14 +98,9 @@ const runtime = ManagedRuntime.make(
     ).pipe(Layer.provideMerge(DownloadsLive)),
     // One fake addon: supports search, not catalog.
     Layer.succeed(Addons, {
-      list: Effect.succeed([
-        {
-          id: 'steam',
-          name: 'Steam',
-          storefronts: ['steam'],
-          events: ['search', 'game-details'],
-        },
-      ]),
+      list: Effect.succeed([steamAddon]),
+      describe: (id) =>
+        Effect.succeed(id === steamAddon.id ? steamAddon : null),
       call: (_, event, args) =>
         Effect.succeed(
           event === 'search'

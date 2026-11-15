@@ -15,6 +15,10 @@ const logger = createLogger(LOGGER_PREFIXES.electron);
  * renderer used to send that; without one (headless, or before the window
  * loads) core sends the saved config, seeding defaults like the renderer does.
  */
+// Per connection, not per addon id: a reconnected addon is a new connection
+// and needs its settings again even if a replay to it failed.
+const configured = new WeakSet<AddonConnection>();
+
 const configureOne = (
   database: Context.Tag.Service<Database>,
   connection: AddonConnection
@@ -23,7 +27,12 @@ const configureOne = (
     const server = getAddonServer();
     const id = connection.addonInfo?.id;
     const template = connection.configTemplate;
-    if (!id || !template || server.isConfigured(id)) return;
+    if (!id || !template || configured.has(connection)) return;
+    // The server's reconnect replay already got an answer: nothing to send.
+    if (connection.eventsAvailable.length > 0) {
+      configured.add(connection);
+      return;
+    }
     let config = yield* database.addonConfig.get(id);
     if (!config) {
       config = buildDefaultConfig(template);
@@ -43,9 +52,10 @@ const configureOne = (
     const accepted =
       !reply.statusError &&
       (reply.args as { success?: boolean } | undefined)?.success !== false;
-    if (accepted)
+    if (accepted) {
+      configured.add(connection);
       server.rememberConfig(id, config as unknown as ConfigurationFile);
-    else
+    } else
       yield* logger.warn(
         `[addons] ${id} rejected its settings`,
         reply.statusError ?? (reply.args as { error?: string })?.error
@@ -58,21 +68,27 @@ const warnFailure = (connection: AddonConnection) => (error: unknown) =>
     error
   );
 
-/**
- * Addons that are connected now. Never waits on a slow addon's manifest; one
- * that hasn't sent it yet is configured on a later request.
- */
-const configureConnected = (database: Context.Tag.Service<Database>) =>
-  // Suspended: the connections are read per request, not when built.
-  Effect.suspend(() =>
-    Effect.forEach(
-      Array.from(getAddonServer().getConnections()),
-      (connection) =>
-        configureOne(database, connection).pipe(
-          Effect.catchAll(warnFailure(connection))
-        ),
-      { concurrency: 'unbounded', discard: true }
-    )
+const describe = (connection: AddonConnection) => {
+  const info = connection.addonInfo;
+  return info
+    ? {
+        id: info.id,
+        name: info.name,
+        version: info.version,
+        description: info.description,
+        storefronts: info.storefronts ?? [],
+        events: connection.eventsAvailable.map(String),
+      }
+    : null;
+};
+
+/** Configures one connection, bounded; a failure is logged, not raised. */
+const ready = (
+  database: Context.Tag.Service<Database>,
+  connection: AddonConnection
+) =>
+  configureOne(database, connection).pipe(
+    Effect.catchAll(warnFailure(connection))
   );
 
 /**
@@ -83,29 +99,33 @@ export const AddonsFromAddonServer = Layer.effect(
   Addons,
   Effect.map(Database, (database) => {
     return {
-      list: configureConnected(database).pipe(
-        Effect.zipRight(
-          Effect.sync(() =>
-            Array.from(getAddonServer().getConnections()).flatMap(
-              (connection) => {
-                const info = connection.addonInfo;
-                return info
-                  ? [
-                      {
-                        id: info.id,
-                        name: info.name,
-                        version: info.version,
-                        description: info.description,
-                        storefronts: info.storefronts ?? [],
-                        events: connection.eventsAvailable.map(String),
-                      },
-                    ]
-                  : [];
-              }
-            )
+      // Connected addons as they are now; listing never waits on a config.
+      // Each one is made ready in the background for the next request.
+      list: Effect.suspend(() => {
+        const connections = Array.from(getAddonServer().getConnections());
+        return Effect.forkDaemon(
+          Effect.forEach(connections, (c) => ready(database, c), {
+            concurrency: 'unbounded',
+            discard: true,
+          })
+        ).pipe(
+          Effect.as(
+            connections.flatMap((connection) => {
+              const addon = describe(connection);
+              return addon ? [addon] : [];
+            })
           )
-        )
-      ),
+        );
+      }),
+      // The one addon a call needs, configured first (bounded).
+      describe: (addonId) =>
+        Effect.suspend(() => {
+          const connection = getAddonServer().getClient(addonId);
+          if (!connection) return Effect.succeed(null);
+          return ready(database, connection).pipe(
+            Effect.as(describe(connection))
+          );
+        }),
       call: (addonId, event, args) =>
         Effect.gen(function* () {
           const connection = getAddonServer().getClient(addonId);
@@ -114,9 +134,7 @@ export const AddonsFromAddonServer = Layer.effect(
               new AddonError({ message: `Addon ${addonId} is not running` })
             );
           }
-          yield* configureOne(database, connection).pipe(
-            Effect.catchAll(warnFailure(connection))
-          );
+          yield* ready(database, connection);
           const send =
             event === 'search'
               ? connection.events.search(args as never)

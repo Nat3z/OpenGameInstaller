@@ -10,6 +10,11 @@ import { type Implementation, implement } from '../server/router';
 export type AddonsShape = {
   readonly list: Effect.Effect<ConnectedAddon[]>;
   /**
+   * One addon, made ready to take calls first (the host may need to send it
+   * its settings). Waits on that addon only, never on the others.
+   */
+  readonly describe: (addonId: string) => Effect.Effect<ConnectedAddon | null>;
+  /**
    * Sends one addon event and returns its reply. `event` is the addon
    * protocol name (`search`, `game-details`, `catalog`).
    */
@@ -27,9 +32,8 @@ export class Addons extends Context.Tag('@ogi-sdk/core/Addons')<
 
 /** Fails clearly instead of hanging when the addon can't handle an event. */
 const requireEvent = (addonId: string, event: string) =>
-  Effect.flatMap(Addons, (addons) => addons.list).pipe(
-    Effect.flatMap((list) => {
-      const addon = list.find((candidate) => candidate.id === addonId);
+  Effect.flatMap(Addons, (addons) => addons.describe(addonId)).pipe(
+    Effect.flatMap((addon) => {
       if (!addon)
         return Effect.fail(
           new AddonError({ message: `Addon ${addonId} is not running` })

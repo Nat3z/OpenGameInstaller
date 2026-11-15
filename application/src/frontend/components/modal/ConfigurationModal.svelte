@@ -173,7 +173,8 @@ async function handleSubmit(actionKey?: string) {
     if (activeScreen === screen)
       submitError = error instanceof Error ? error.message : String(error);
   } finally {
-    isSubmitting = false;
+    // A newer form may already be submitting; leave its state alone.
+    if (activeScreen === screen) isSubmitting = false;
   }
 }
 

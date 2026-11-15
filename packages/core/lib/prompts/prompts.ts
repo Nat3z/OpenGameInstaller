@@ -63,24 +63,34 @@ export const PromptsLive: Layer.Layer<Prompts> = Layer.effect(
       ).pipe(Effect.asVoid);
 
     return {
+      // Opening and its cleanup can't be split by an interruption, so an
+      // opened prompt always closes; only the wait itself is interruptible.
       ask: (request) =>
-        Effect.gen(function* () {
-          const id = `prompt-${(yield* Random.nextInt).toString(36)}`;
-          const prompt = { ...request, id } as Prompt;
-          const answer = yield* Deferred.make<PromptAnswer>();
-          open.set(id, { prompt, answer });
-          yield* PubSub.publish(changes, { _tag: 'Opened', prompt });
-          // Closes on answer and on interruption alike; close is a no-op if a
-          // reply already removed it.
-          return yield* Deferred.await(answer).pipe(Effect.ensuring(close(id)));
-        }),
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const id = `prompt-${(yield* Random.nextInt).toString(36)}`;
+            const prompt = { ...request, id } as Prompt;
+            const answer = yield* Deferred.make<PromptAnswer>();
+            open.set(id, { prompt, answer });
+            yield* PubSub.publish(changes, { _tag: 'Opened', prompt });
+            // Closes on answer and on interruption alike; close is a no-op if
+            // a reply already removed it.
+            return yield* restore(Deferred.await(answer)).pipe(
+              Effect.ensuring(close(id))
+            );
+          })
+        ),
+      // Closing and answering together: a replier hanging up in between
+      // would close the prompt yet leave its ask waiting.
       reply: (id, answer) =>
-        Effect.gen(function* () {
-          const entry = open.get(id);
-          if (!entry) return false;
-          yield* close(id);
-          return yield* Deferred.succeed(entry.answer, answer);
-        }),
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            const entry = open.get(id);
+            if (!entry) return false;
+            yield* close(id);
+            return yield* Deferred.succeed(entry.answer, answer);
+          })
+        ),
       watch: Effect.gen(function* () {
         const subscription = yield* PubSub.subscribe(changes);
         return {

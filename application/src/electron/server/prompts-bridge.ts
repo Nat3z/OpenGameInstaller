@@ -24,14 +24,25 @@ export const showPromptsInWindow = (
       Scope.extend(scope)
     )
   );
+  // Open native dialogs, so a prompt answered elsewhere closes its box too.
+  const dialogs = new Map<string, AbortController>();
+  // Prompts still open as far as the window knows; replay skips closed ones.
+  const shown = new Set<string>();
+  // Live changes and replays share one lane, so a replay can never re-show a
+  // prompt whose `Closed` was already delivered.
+  const lane = Effect.unsafeMakeSemaphore(1);
   const onChange = (
     change: PromptChange
   ): Effect.Effect<void, never, Prompts> => {
-    // Answered elsewhere (or cancelled): drop the form. Confirm dialogs can't
-    // be closed by hand; their late reply is simply refused.
-    if (change._tag === 'Closed')
+    // Answered elsewhere (or cancelled): drop the form, close the dialog.
+    if (change._tag === 'Closed') {
+      shown.delete(change.id);
+      dialogs.get(change.id)?.abort();
+      dialogs.delete(change.id);
       return Effect.promise(() => send('input-closed', { id: change.id }));
+    }
     const prompt = change.prompt;
+    shown.add(prompt.id);
     switch (prompt._tag) {
       case 'Input':
         return Effect.promise(() =>
@@ -47,6 +58,8 @@ export const showPromptsInWindow = (
         return Effect.forkDaemon(
           Effect.promise(async () => {
             const window = getWindow();
+            const abort = new AbortController();
+            dialogs.set(prompt.id, abort);
             const options = {
               type: 'warning' as const,
               title: prompt.title,
@@ -56,11 +69,15 @@ export const showPromptsInWindow = (
               defaultId: 1,
               cancelId: 0,
               noLink: true,
+              // Not honored for parentless dialogs on macOS; a late answer
+              // there is refused by `reply`.
+              signal: abort.signal,
             };
             const { response } = window
               ? await dialog.showMessageBox(window, options)
               : await dialog.showMessageBox(options);
-            return response === 1;
+            dialogs.delete(prompt.id);
+            return !abort.signal.aborted && response === 1;
           }).pipe(
             Effect.flatMap((confirmed) =>
               Effect.flatMap(Prompts, (service) =>
@@ -75,7 +92,7 @@ export const showPromptsInWindow = (
     Stream.fromIterable(prompts.snapshot).pipe(
       Stream.map((prompt): PromptChange => ({ _tag: 'Opened', prompt })),
       Stream.concat(prompts.updates),
-      Stream.runForEach(onChange)
+      Stream.runForEach((change) => lane.withPermits(1)(onChange(change)))
     )
   );
   return {
@@ -87,7 +104,14 @@ export const showPromptsInWindow = (
           Effect.flatMap(({ snapshot }) =>
             Effect.forEach(
               snapshot.filter((prompt) => prompt._tag === 'Input'),
-              (prompt) => onChange({ _tag: 'Opened', prompt }),
+              (prompt) =>
+                lane.withPermits(1)(
+                  Effect.suspend(() =>
+                    shown.has(prompt.id)
+                      ? onChange({ _tag: 'Opened', prompt })
+                      : Effect.void
+                  )
+                ),
               { discard: true }
             )
           ),

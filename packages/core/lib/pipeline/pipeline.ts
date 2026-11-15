@@ -314,8 +314,14 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
 
       // ---- after the download: where the content really is --------------------
 
-      const afterDownload = (record: DownloadRecord) =>
+      const afterDownload = (downloaded: DownloadRecord) =>
         Effect.gen(function* () {
+          // Before extraction, while the folder holds only old files and this
+          // download: staging later would move the new content aside too.
+          const record = {
+            ...downloaded,
+            staged: yield* stageOldFiles(downloaded),
+          };
           if (record.debrid === 'torbox' || record.debrid === 'premiumize')
             return { ...record, step: 'extract-zip' as const };
           if (record.debrid === 'realdebrid' || record.debrid === 'alldebrid') {
@@ -412,6 +418,9 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           const keep = [
             ...record.files.map((file) => nameOf(file.path)),
             nameOf(record.path),
+            ...(isLocalTorrent(record)
+              ? [`${nameOf(record.path)}.torrent`]
+              : []),
           ];
           const result = yield* files
             .stageOldFiles(folder, keep)
@@ -434,9 +443,8 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           if (record.update && !current)
             return yield* new GameNotFound({ gameId: record.appID });
 
-          const staged = record.staged ?? (yield* stageOldFiles(record));
-          const saved = yield* save({ ...record, staged });
-          yield* show(saved, 'setting-up');
+          const staged = record.staged ?? false;
+          yield* show(record, 'setting-up');
           yield* downloads.report(record.id, { progress: 0, speed: 0 });
           const result = yield* (yield* AddonCalls)
             .setup(

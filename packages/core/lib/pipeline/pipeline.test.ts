@@ -116,7 +116,11 @@ const harness = (options: Options = {}) => {
         }),
     }),
     Layer.succeed(SetupFiles, {
-      stageOldFiles: () => Effect.succeed({ staged: false, failed: 0 }),
+      stageOldFiles: (folder) =>
+        Effect.sync(() => {
+          calls.push(`stage:${folder}`);
+          return { staged: true, failed: 0 };
+        }),
       revertOldFiles: () => Effect.succeed(true),
       discardOldFiles: () => Effect.void,
       contentRoot: (directory) => Effect.succeed(`${directory}/Game`),
@@ -155,7 +159,7 @@ const harness = (options: Options = {}) => {
           calls.push(`install:${info.name}`);
           return 'installed' as const;
         }),
-      update: () => Effect.void,
+      update: () => Effect.sync(() => void calls.push('update')),
       redistributables: () => Effect.succeed('success' as const),
     }),
     Layer.succeed(DownloadStore, {
@@ -270,6 +274,34 @@ describe('pipeline', () => {
       'setup:/dl/Game/game/Game/',
       'install:Game',
     ]);
+    await h.runtime.dispose();
+  });
+
+  test('an update stages old files before extracting the new ones', async () => {
+    const h = harness({ torrents: 'torbox' });
+    h.library.set(7, {
+      appID: 7,
+      name: 'Game',
+      version: '0.9',
+      cwd: '/dl/Game',
+      launchExecutable: 'game.exe',
+      capsuleImage: '',
+      coverImage: '',
+      storefront: 'steam',
+      addonsource: 'addon',
+    });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: magnet, update: { version: '1.0' } })
+    );
+    await h.until(id, (d) => d.status === 'completed');
+    // Staging after extraction would move the extracted game into old_files.
+    expect(h.calls.slice(0, 4)).toEqual([
+      'debrid:torbox',
+      'direct:/dl/Game/Game.zip',
+      'stage:/dl/Game',
+      'extract:/dl/Game/game.zip',
+    ]);
+    expect(h.calls.at(-1)).toBe('update');
     await h.runtime.dispose();
   });
 

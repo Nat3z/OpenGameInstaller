@@ -304,8 +304,12 @@ const premiumize = (kind: 'torrent' | 'magnet', link: string) =>
     type Reply<A> =
       | { status: 'error'; message: string }
       | ({ status: 'success' } & A);
-    const call = <A>(request: Promise<{ data: Reply<A> }>, message: string) =>
-      Effect.tryPromise({ try: () => request, catch: fail(message) }).pipe(
+    // Lazy, so a poll sends a fresh request each time.
+    const call = <A>(
+      request: () => Promise<{ data: Reply<A> }>,
+      message: string
+    ) =>
+      Effect.tryPromise({ try: request, catch: fail(message) }).pipe(
         Effect.flatMap(({ data }) =>
           data.status === 'error'
             ? Effect.fail(
@@ -320,16 +324,18 @@ const premiumize = (kind: 'torrent' | 'magnet', link: string) =>
 
     // Everything goes in one OpenGameInstaller folder, made on first use.
     const folderId = yield* call<{ id: string }>(
-      axios.post(
-        `${PREMIUMIZE}/folder/create?${key}`,
-        new URLSearchParams({ name: 'OpenGameInstaller' })
-      ),
+      () =>
+        axios.post(
+          `${PREMIUMIZE}/folder/create?${key}`,
+          new URLSearchParams({ name: 'OpenGameInstaller' })
+        ),
       'Failed to create the folder'
     ).pipe(
       Effect.map((folder) => folder.id),
       Effect.orElse(() =>
         call<{ content: { id: string; name: string }[] }>(
-          axios.get(`${PREMIUMIZE}/folder/search?${key}&q=OpenGameInstaller`),
+          () =>
+            axios.get(`${PREMIUMIZE}/folder/search?${key}&q=OpenGameInstaller`),
           'Failed to find the folder'
         ).pipe(
           Effect.map(
@@ -346,7 +352,7 @@ const premiumize = (kind: 'torrent' | 'magnet', link: string) =>
     else form.append('src', link);
     form.append('folder_id', folderId);
     const transfer = yield* call<{ id: string }>(
-      axios.post(`${PREMIUMIZE}/transfer/create?${key}`, form),
+      () => axios.post(`${PREMIUMIZE}/transfer/create?${key}`, form),
       'Failed to create the transfer'
     );
 
@@ -354,7 +360,7 @@ const premiumize = (kind: 'torrent' | 'magnet', link: string) =>
     yield* waitUntil(
       'premiumize',
       call<{ transfers: { id: string; status: string; folder_id: string }[] }>(
-        axios.get(`${PREMIUMIZE}/transfer/list?${key}`),
+        () => axios.get(`${PREMIUMIZE}/transfer/list?${key}`),
         'Failed to check the transfer'
       ).pipe(
         Effect.map((list) => {
@@ -367,10 +373,11 @@ const premiumize = (kind: 'torrent' | 'magnet', link: string) =>
       '2500 millis'
     );
     const zip = yield* call<{ location: string }>(
-      axios.post(
-        `${PREMIUMIZE}/zip/generate?${key}`,
-        new URLSearchParams({ 'folders[]': contentFolder })
-      ),
+      () =>
+        axios.post(
+          `${PREMIUMIZE}/zip/generate?${key}`,
+          new URLSearchParams({ 'folders[]': contentFolder })
+        ),
       'Failed to generate the download'
     );
     return {

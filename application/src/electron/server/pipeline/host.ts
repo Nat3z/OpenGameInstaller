@@ -2,6 +2,7 @@ import type { SearchResult, SetupEventResponse } from '@ogi-sdk/connect';
 import {
   AddonCalls,
   type DownloadRecord,
+  type DownloadRequest,
   DownloadStore,
   Installer,
   PipelineConfig,
@@ -15,10 +16,14 @@ import {
 } from '@/electron/handlers/handler.library.js';
 import { installRedistributables } from '@/electron/handlers/handler.redists.js';
 import { setPowerSaveBlockActive } from '@/electron/lib/power-save.js';
+import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
 import { type AppEffect, runElectronEffect } from '@/electron/runtime.js';
 import { getAddonServer } from '@/electron/server/addon-server.js';
 import { Database, Settings } from '@/electron/services/index.js';
-import type { DownloadStatusAndInfo } from '@/lib/download-state.js';
+import type {
+  DownloadStatusAndInfo,
+  FailedSetup,
+} from '@/lib/download-state.js';
 
 /** Runs an app effect from an adapter, keeping failures typed. */
 const onApp = <A, E, E2>(
@@ -35,7 +40,7 @@ const onApp = <A, E, E2>(
 
 // ---- addon calls ------------------------------------------------------------
 
-const addon = (addonId: string) =>
+const lookup = (addonId: string) =>
   Effect.suspend(() => {
     const connection = getAddonServer().getClient(addonId);
     return connection
@@ -44,6 +49,15 @@ const addon = (addonId: string) =>
           new AddonError({ message: `Addon ${addonId} is not running` })
         );
   });
+
+// A setup restored at startup runs before addons have connected; wait for
+// them once before calling it a setup failure.
+const addon = (addonId: string) =>
+  lookup(addonId).pipe(
+    Effect.orElse(() =>
+      waitForAddonManifests().pipe(Effect.zipRight(lookup(addonId)))
+    )
+  );
 
 /**
  * Core's addon-calls adapter: deferred `request-dl` and `setup` straight on
@@ -179,17 +193,108 @@ const toRow = (record: DownloadRecord): StoredInfo =>
     pipeline: record,
   }) as StoredInfo;
 
+/** The request part of a renderer-era row (everything but live state). */
+const legacyRequest = (info: DownloadStatusAndInfo): DownloadRequest => {
+  const {
+    id: _id,
+    appID: _appID,
+    status: _status,
+    progress: _progress,
+    processingPhase: _phase,
+    error: _error,
+    usedDebridService: _debrid,
+    downloadPath: _path,
+    files: _files,
+    downloadSpeed: _speed,
+    downloadSize: _size,
+    ratio: _ratio,
+    part: _part,
+    totalParts: _totalParts,
+    queuePosition: _queuePosition,
+    originalDownloadURL,
+    originalFiles,
+    pausedAt: _pausedAt,
+    isUpdate: _isUpdate,
+    updateVersion: _updateVersion,
+    isAddonDownload: _isAddonDownload,
+    ...request
+  } = info;
+  return {
+    ...request,
+    ...(originalDownloadURL ? { downloadURL: originalDownloadURL } : {}),
+    ...(originalFiles ? { files: originalFiles } : {}),
+  } as DownloadRequest;
+};
+
+/** A renderer-era record, picked up where it was left. */
+const fromLegacy = (
+  info: DownloadStatusAndInfo,
+  step: DownloadRecord['step'],
+  extra: Partial<DownloadRecord> = {}
+): DownloadRecord => ({
+  id: info.id,
+  appID: info.appID,
+  request: legacyRequest(info),
+  update:
+    info.isUpdate && info.updateVersion
+      ? { version: info.updateVersion }
+      : undefined,
+  path: info.downloadPath,
+  files: info.files.map((file) => ({
+    link: file.downloadURL,
+    path: file.path ?? info.downloadPath,
+    headers: file.headers,
+  })),
+  debrid:
+    info.usedDebridService && info.usedDebridService !== 'none'
+      ? info.usedDebridService
+      : undefined,
+  step,
+  part: info.part,
+  retryCount: 0,
+  updatedAt: Date.now(),
+  ...extra,
+});
+
+const legacyStep: Record<FailedSetup['should'], DownloadRecord['step']> = {
+  'call-addon': 'setup',
+  'call-unrar': 'extract-rar',
+  'call-unzip': 'extract-zip',
+};
+
 export const DownloadStoreFromDatabase = Layer.succeed(DownloadStore, {
+  // Rows from before the pipeline still show up: a download as paused (it
+  // resumes by downloading again), a failed setup as a failed setup.
   list: onApp(
-    Effect.flatMap(Database, (database) => database.downloads.list),
+    Effect.flatMap(Database, (database) =>
+      Effect.all([database.downloads.list, database.failedSetups.list])
+    ),
     () => undefined
   ).pipe(
-    Effect.map((rows) =>
-      rows.flatMap((row) => {
-        const record = (row.downloadInfo as StoredInfo).pipeline;
-        return record ? [record] : [];
-      })
-    ),
+    Effect.map(([rows, failed]) => {
+      const records = rows.flatMap((row) => {
+        const info = row.downloadInfo as StoredInfo;
+        if (info.pipeline) return [info.pipeline];
+        // Raw addon downloads never had a setup; nothing to resume into.
+        if (info.isAddonDownload || info.status === 'setup-complete') return [];
+        return [fromLegacy(info, 'download')];
+      });
+      // A retried legacy setup was saved as a pipeline row; that one wins.
+      const known = new Set(records.map((record) => record.id));
+      return [
+        ...records,
+        ...failed
+          .filter((setup) => !known.has(setup.id))
+          .map((setup) =>
+            fromLegacy(setup.downloadInfo, legacyStep[setup.should], {
+              path: setup.setupData.path,
+              error: setup.error,
+              retryCount: setup.retryCount,
+              updatedAt: setup.timestamp,
+            })
+          ),
+      ];
+    }),
     Effect.orElseSucceed(() => [])
   ),
   save: (record) =>
@@ -205,7 +310,12 @@ export const DownloadStoreFromDatabase = Layer.succeed(DownloadStore, {
     ).pipe(Effect.ignore),
   remove: (id) =>
     onApp(
-      Effect.flatMap(Database, (database) => database.downloads.delete(id)),
+      Effect.flatMap(Database, (database) =>
+        Effect.all([
+          database.downloads.delete(id),
+          database.failedSetups.delete(id),
+        ])
+      ),
       () => undefined
     ).pipe(Effect.ignore),
 });

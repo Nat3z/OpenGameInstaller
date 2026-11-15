@@ -32,11 +32,19 @@ class ReconnectingSocket extends WebSocket {
     socket = this;
     this.once('close', () => {
       if (socket !== this) return;
+      const dropped = connection;
       socket = undefined;
       connection = undefined;
       configured = new Set();
       asks.abort();
       asks = new AbortController();
+      // Shutting the old client fails its in-flight requests (a search, a
+      // launch hook) instead of leaving them waiting on a dead socket.
+      if (dropped)
+        void dropped.then(
+          (client) => Effect.runPromise(client.close().pipe(Effect.ignore)),
+          () => {}
+        );
     });
   }
 }

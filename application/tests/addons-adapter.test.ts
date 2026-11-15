@@ -17,6 +17,7 @@ const connection = {
         connection.eventsAvailable = ['search'];
         return { args: { success: true } };
       }),
+    search: () => Effect.succeed({ args: [{ name: 'Direct' }] }),
   },
 };
 const server = {
@@ -28,23 +29,25 @@ mock.module('../src/electron/server/addon-server.js', () => ({
   getAddonServer: () => server,
 }));
 
-test('describe configures the addon before reading its events', async () => {
+test('the first search to a fresh addon goes through core', async () => {
+  // A replay that never arrived: the addon is up but has announced nothing.
   const { AddonsFromAddonServer } = await import(
     '../src/electron/server/addons-adapter.js'
   );
-  const { Addons } = await import('@ogi-sdk/core');
+  const { AddonsHandlers } = await import('@ogi-sdk/core');
   const { Database } = await import('../src/electron/services/index.js');
   const database = Layer.succeed(Database, {
-    addonConfig: {
-      get: () => Effect.succeed({}),
-      set: () => Effect.void,
-    },
+    addonConfig: { get: () => Effect.succeed({}), set: () => Effect.void },
   } as never);
+  const search = AddonsHandlers.handlers.search as (
+    params: unknown
+  ) => Effect.Effect<unknown, unknown, never>;
 
-  const addon = await Effect.runPromise(
-    Effect.flatMap(Addons, (addons) => addons.describe('steam')).pipe(
+  const results = await Effect.runPromise(
+    search({ addonId: 'steam', appID: 1, storefront: 'steam' }).pipe(
       Effect.provide(AddonsFromAddonServer.pipe(Layer.provide(database)))
-    )
+    ) as Effect.Effect<unknown>
   );
-  expect(addon?.events).toEqual(['search']);
+  // Core's capability check saw `search` because configuring announced it.
+  expect(results).toEqual([{ name: 'Direct' }]);
 });

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   EventsHandlers,
   fromWs,
+  type Launcher,
   LaunchHandlers,
   LaunchLive,
   LibraryHandlers,
@@ -11,7 +12,7 @@ import {
   PromptsHandlers,
 } from '@ogi-sdk/core';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
-import { Effect, Exit, Layer, Scope } from 'effect';
+import { type Context, Effect, Exit, Layer, Scope } from 'effect';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import { port, routeUpgrade } from '@/electron/server/addon-server.js';
@@ -30,6 +31,14 @@ export const CLIENT_PATH = '/client';
 let scope: Scope.CloseableScope | undefined;
 
 /**
+ * Process-lifetime services the server only borrows. A new server (macOS
+ * reopening its window) must not reset them: the launcher remembers which
+ * running games are managed, and loses their post hooks if rebuilt.
+ */
+const services = Effect.runSync(Scope.make());
+let launcher: Context.Context<Launcher> | undefined;
+
+/**
  * Mounts the client protocol on the addon server's port. A fresh token is
  * written to `client.json` (owner-only) on each start; any process that can
  * read the user's data directory can connect, nothing else can.
@@ -45,9 +54,7 @@ export const startClientServer = (): Promise<void> =>
       const serverScope = yield* Scope.make();
       // Owned from the start, so a failure below still leaves it closable.
       scope = serverScope;
-      // The launcher lives with the server: its post-hook watcher stops when
-      // the protocol does.
-      const launcher = yield* Layer.buildWithScope(
+      launcher ??= yield* Layer.buildWithScope(
         LaunchLive.pipe(
           Layer.provide(
             Layer.mergeAll(
@@ -57,7 +64,7 @@ export const startClientServer = (): Promise<void> =>
             )
           )
         ),
-        serverScope
+        services
       );
       const server = yield* OGIServer.make({
         token,

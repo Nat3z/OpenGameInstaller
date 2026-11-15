@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { OGIClient } from '@ogi-sdk/client-kit';
+import { EffectOGIClient, OGIClient } from '@ogi-sdk/client-kit';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { ProtocolError } from '@ogi-sdk/protocol';
-import { Effect, Exit, Layer, ManagedRuntime, Scope } from 'effect';
+import { Effect, Exit, Fiber, Layer, ManagedRuntime, Scope } from 'effect';
 import { EventsHandlers, EventsLive } from '../events/events';
 import { LibraryHandlers } from '../library/handlers';
 import { Library, LibraryLive, LibraryStore } from '../library/library';
@@ -96,28 +96,68 @@ describe('OGIServer <-> OGIClient', () => {
     expect((error as ProtocolError).tag).toBe('Unauthorized');
   });
 
-  test('a server that never answers hello times out and is hung up on', async () => {
-    let closed = false;
-    const silent = Bun.serve({
+  /**
+   * A server that accepts the socket and never closes it itself; `reply` is
+   * what it sends on `hello`, if anything. Resolves `closed` when the client
+   * hangs up.
+   */
+  const handshakeServer = (reply?: string) => {
+    let hungUp!: () => void;
+    const closed = new Promise<void>((resolve) => (hungUp = resolve));
+    const server = Bun.serve({
       port: 0,
       fetch: (req, srv) =>
         srv.upgrade(req) ? undefined : new Response('no', { status: 400 }),
       websocket: {
-        message() {},
+        message(ws) {
+          if (reply) ws.send(reply);
+        },
         close() {
-          closed = true;
+          hungUp();
         },
       },
     });
+    return { url: `ws://127.0.0.1:${server.port}/client`, server, closed };
+  };
+
+  test('a server that never answers hello times out and is hung up on', async () => {
+    const silent = handshakeServer();
     const error = await OGIClient.connect({
-      url: `ws://127.0.0.1:${silent.port}/client`,
+      url: silent.url,
       token: TOKEN,
       handshakeTimeout: '50 millis',
     }).catch((e: unknown) => e);
     expect((error as ProtocolError).tag).toBe('Disconnected');
-    await Bun.sleep(50);
-    expect(closed).toBe(true);
-    silent.stop(true);
+    await silent.closed;
+    silent.server.stop(true);
+  });
+
+  test('cancelling a pending handshake hangs up', async () => {
+    const silent = handshakeServer();
+    const fiber = Effect.runFork(
+      Effect.scoped(EffectOGIClient.connect({ url: silent.url, token: TOKEN }))
+    );
+    await Bun.sleep(20);
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    await silent.closed;
+    silent.server.stop(true);
+  });
+
+  test('a rejected hello hangs up even if the server keeps the socket', async () => {
+    const rude = handshakeServer(
+      JSON.stringify({
+        _tag: 'error',
+        id: null,
+        error: { _tag: 'Unauthorized', message: 'no' },
+      })
+    );
+    const error = await OGIClient.connect({
+      url: rude.url,
+      token: TOKEN,
+    }).catch((e: unknown) => e);
+    expect((error as ProtocolError).tag).toBe('Unauthorized');
+    await rude.closed;
+    rude.server.stop(true);
   });
 
   test('calls return decoded results', async () => {

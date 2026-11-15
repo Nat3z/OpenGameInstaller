@@ -29,9 +29,16 @@ const configureOne = (
       config = buildDefaultConfig(template);
       yield* database.addonConfig.set(id, config);
     }
-    const reply = yield* connection.events.configUpdate(
-      config as unknown as ConfigurationFile
-    );
+    // Bounded: an addon that never answers is skipped (and retried on the
+    // next request), not waited on by every call to the others.
+    const reply = yield* connection.events
+      .configUpdate(config as unknown as ConfigurationFile)
+      .pipe(
+        Effect.timeoutFail({
+          duration: '10 seconds',
+          onTimeout: () => new Error(`${id} did not answer its config`),
+        })
+      );
     // Addons reject settings as `success: false`; never replay those.
     const accepted =
       !reply.statusError &&

@@ -443,6 +443,10 @@ describe('OGIServer <-> OGIClient', () => {
     await report({ progress: 0.5 }); // partial: name and status survive
     await client.downloads.pause({ id: 'dl-1' });
     await paused.promise;
+    // A paused download is still in flight: it can't be cleared yet.
+    const early = await client.downloads.clear({ id: 'dl-1' }).catch((e) => e);
+    expect(early.tag).toBe('DownloadError');
+    await report({ status: 'completed', progress: 1 });
     await client.downloads.clear({ id: 'dl-1' });
     const missing = await client.downloads
       .pause({ id: 'dl-1' })
@@ -451,6 +455,7 @@ describe('OGIServer <-> OGIClient', () => {
     expect(updates).toEqual([
       'downloading:0.5:Game',
       'paused:0.5:Game',
+      'completed:1:Game',
       'removed:dl-1',
     ]);
     expect(missing.tag).toBe('DownloadError');

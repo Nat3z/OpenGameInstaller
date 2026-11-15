@@ -64,6 +64,8 @@ export class Downloads extends Context.Tag('@ogi-sdk/core/Downloads')<
 
 /** Engine statuses that describe the transfer itself. */
 const TRANSFER = new Set(['queued', 'downloading', 'paused', 'merging']);
+/** Done one way or another: nothing is writing for these anymore. */
+const FINISHED = new Set(['completed', 'seeding', 'error']);
 
 const blank = (id: string): Download => ({
   id,
@@ -261,7 +263,20 @@ export const DownloadsHandlers: Implementation<Downloads | DownloadControl> =
       logs: ({ id }) =>
         Effect.flatMap(Downloads, (downloads) => downloads.logs(id)),
       pause: ({ id }) => controlEngine('pause', id),
+      // Only a finished card can be cleared: clearing a running one would hide
+      // it (and its controls) while the job keeps writing files.
       clear: ({ id }) =>
-        Effect.flatMap(Downloads, (downloads) => downloads.clear(id)),
+        Effect.gen(function* () {
+          const downloads = yield* Downloads;
+          const download = yield* downloads.get(id);
+          if (download && !FINISHED.has(download.status))
+            return yield* Effect.fail(
+              new DownloadError({
+                message: 'Only a finished download can be cleared',
+                downloadId: id,
+              })
+            );
+          yield* downloads.clear(id);
+        }),
     }
   );

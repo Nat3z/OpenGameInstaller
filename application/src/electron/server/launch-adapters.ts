@@ -15,7 +15,8 @@ import { configureAddons } from '@/electron/server/addons-adapter.js';
 export const LaunchHooksFromAddonServer = Layer.succeed(LaunchHooks, {
   run: (game, stage) =>
     Effect.promise(() => runElectronEffect(configureAddons)).pipe(
-      Effect.zipRight(runLaunchAppHooks(game, stage)),
+      // Deferred: `runLaunchAppHooks` picks its addons when it's called.
+      Effect.flatMap(() => runLaunchAppHooks(game, stage)),
       Effect.flatMap((result) =>
         result.success
           ? Effect.void

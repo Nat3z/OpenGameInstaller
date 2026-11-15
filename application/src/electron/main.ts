@@ -844,7 +844,13 @@ app.on('ready', async () => {
   registerClientReadyListener();
 
   if (isHeadless()) {
-    await startHeadless();
+    // Any startup failure (the addon server's port taken, say) quits through
+    // the normal cleanup, so addons it already started don't outlive it.
+    await startHeadless().catch((error) => {
+      logger.sync.error('[headless] Startup failed', error);
+      process.exitCode = 1;
+      app.quit();
+    });
     return;
   }
 

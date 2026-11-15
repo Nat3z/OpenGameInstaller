@@ -56,13 +56,16 @@ const warnFailure = (connection: AddonConnection) => (error: unknown) =>
  * that hasn't sent it yet is configured on a later request.
  */
 const configureConnected = (database: Context.Tag.Service<Database>) =>
-  Effect.forEach(
-    Array.from(getAddonServer().getConnections()),
-    (connection) =>
-      configureOne(database, connection).pipe(
-        Effect.catchAll(warnFailure(connection))
-      ),
-    { concurrency: 'unbounded', discard: true }
+  // Suspended: the connections are read per request, not when built.
+  Effect.suspend(() =>
+    Effect.forEach(
+      Array.from(getAddonServer().getConnections()),
+      (connection) =>
+        configureOne(database, connection).pipe(
+          Effect.catchAll(warnFailure(connection))
+        ),
+      { concurrency: 'unbounded', discard: true }
+    )
   );
 
 /**

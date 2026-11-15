@@ -330,13 +330,15 @@ async function startClientProtocol(): Promise<void> {
 
 async function startAddonRuntime() {
   if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
-  if (isAddonServerListening) await startClientProtocol();
   sendNotification({
     message: 'Addons Starting...',
     id: Math.random().toString(36).substring(7),
     type: 'success',
   });
   await runElectronEffect(startAddons());
+  // After the addons spawn, so a launch from a client that just read
+  // `client.json` waits on their manifests (and hooks) instead of none.
+  if (isAddonServerListening) await startClientProtocol();
 }
 
 async function onMainAppReady() {

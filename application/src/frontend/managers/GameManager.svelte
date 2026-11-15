@@ -115,6 +115,12 @@ document.addEventListener('game:exit', async (event: Event) => {
   } catch (error) {
     logger.sync.error(error);
   } finally {
+    // A desktop session held the game through its hooks; free it now that
+    // the post hooks are done (core's own sessions free themselves).
+    if (!managed)
+      await runFrontendEffect(
+        electronRpc.app.releaseGame(appID).pipe(Effect.ignore)
+      );
     gamesLaunched.update((games) => {
       delete games[appID];
       return games;

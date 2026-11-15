@@ -185,6 +185,13 @@ export const ElectronRpc = {
       )
     ),
     launchGame: rpc('app.launchGame', [Schema.String], Void),
+    /**
+     * Holds a game for a whole desktop launch: pre hooks, the game, post
+     * hooks. False while another session (a core launch) owns it. The launch
+     * flow that got it calls `releaseGame` once its post hooks are done.
+     */
+    reserveGame: rpc('app.reserveGame', [Schema.Number], Schema.Boolean),
+    releaseGame: rpc('app.releaseGame', [Schema.Number], Void),
     executeWrapperCommand: rpc(
       'app.executeWrapperCommand',
       [Schema.Number, Schema.String],

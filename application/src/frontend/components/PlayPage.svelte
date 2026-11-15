@@ -154,6 +154,31 @@ async function launchGame() {
 
   // Fire of the addon launch-app event first
 
+  // Hold the game for the whole flow (pre hooks, game, post hooks), so a core
+  // launch from another client can't run its hooks over ours. `game:exit`
+  // releases it after the post hooks; every early exit below releases too.
+  const held = await runFrontendEffect(
+    electronRpc.app
+      .reserveGame(libraryInfo.appID)
+      .pipe(Effect.orElseSucceed(() => false))
+  );
+  if (!held) {
+    gamesLaunched.update((games) => {
+      delete games[libraryInfo.appID];
+      return games;
+    });
+    createNotification({
+      id: Math.random().toString(36).substring(7),
+      message: 'The game is already being launched.',
+      type: 'error',
+    });
+    return;
+  }
+  const release = () =>
+    runFrontendEffect(
+      electronRpc.app.releaseGame(libraryInfo.appID).pipe(Effect.ignore)
+    );
+
   if (playButton) {
     playButton.disabled = true;
     playButton.querySelector('svg')!!.style.display = 'none';
@@ -170,6 +195,7 @@ async function launchGame() {
       formatError(error) || 'The addon pre-launch step failed.'
     );
     if (!proceed) {
+      await release();
       // remove the game from the gamesLaunched state first so the play button is restored
       gamesLaunched.update((games) => {
         delete games[libraryInfo.appID];
@@ -190,6 +216,7 @@ async function launchGame() {
   try {
     await runFrontendEffect(electronRpc.app.launchGame('' + libraryInfo.appID));
   } catch (error) {
+    await release();
     logger.sync.error(error);
     createNotification({
       id: Math.random().toString(36).substring(7),

@@ -12,7 +12,6 @@ import {
   executeWrapperCommandForApp,
   hasPendingFileDeletions,
   launchGameFromLibrary,
-  releaseWrappedGame,
 } from '@/electron/handlers/handler.library.js';
 import {
   isGamescopeSession,
@@ -602,47 +601,43 @@ async function handleRemoteLaunchRequest(
     return { success: true };
   }
 
+  // The whole flow (pre hooks, game, post hooks) holds the game, so a core
+  // launch can't start it, or run its own hooks, in the middle.
+  if (!(await holdGame(payload.gameId))) {
+    sendLaunchErrorToRenderer(payload.gameId);
+    return { success: false, error: 'The game is already being launched' };
+  }
+
   if (payload.wrapperCommand && payload.wrapperCommand.trim().length > 0) {
-    sendLaunchRequestedToRenderer(payload.gameId);
-
-    const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
-    if (!preResult.success) {
-      sendLaunchErrorToRenderer(payload.gameId);
-      return preResult;
-    }
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.hide();
-    }
-
-    let wrapperResult: ExecuteWrapperResult;
     try {
-      if (payload.wrapperCommand.includes('steam-launch-wrapper')) {
-        wrapperResult = await runElectronEffect(
-          executeWrapperCommandForApp(
-            payload.gameId,
-            payload.wrapperCommand,
-            'steam-proton',
-            payload.launchEnv
-          )
-        );
-      } else {
-        wrapperResult = await runElectronEffect(
-          executeWrapperCommandForApp(
-            payload.gameId,
-            payload.wrapperCommand,
-            'unknown',
-            payload.launchEnv
-          )
-        );
+      sendLaunchRequestedToRenderer(payload.gameId);
+
+      const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
+      if (!preResult.success) {
+        sendLaunchErrorToRenderer(payload.gameId);
+        return preResult;
       }
-    } finally {
-      focusMainWindow();
-    }
 
-    // A run that got its reservation keeps the game until here, after the
-    // post hooks; one that was refused never owned it and frees nothing.
-    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.hide();
+      }
+
+      let wrapperResult: ExecuteWrapperResult;
+      try {
+        wrapperResult = await runElectronEffect(
+          executeWrapperCommandForApp(
+            payload.gameId,
+            payload.wrapperCommand,
+            payload.wrapperCommand.includes('steam-launch-wrapper')
+              ? 'steam-proton'
+              : 'unknown',
+            payload.launchEnv
+          )
+        );
+      } finally {
+        focusMainWindow();
+      }
+
       if (!wrapperResult.success) {
         sendLaunchErrorToRenderer(payload.gameId);
         return {
@@ -660,7 +655,7 @@ async function handleRemoteLaunchRequest(
       void sendIPCMessage('game:exit', { id: payload.gameId });
       return { success: true };
     } finally {
-      if (wrapperResult.reserved !== false) releaseWrappedGame(payload.gameId);
+      releaseGame(payload.gameId);
     }
   }
 
@@ -668,6 +663,7 @@ async function handleRemoteLaunchRequest(
 
   const preResult = await runAddonLaunchEvent(payload.gameId, 'pre');
   if (!preResult.success) {
+    releaseGame(payload.gameId);
     sendLaunchErrorToRenderer(payload.gameId);
     return preResult;
   }
@@ -677,11 +673,22 @@ async function handleRemoteLaunchRequest(
   );
 
   if (!launchResult.success) {
+    releaseGame(payload.gameId);
     sendLaunchErrorToRenderer(payload.gameId);
   }
-
+  // On success the renderer's `game:exit` runs the post hooks, then releases.
   return launchResult;
 }
+
+const holdGame = (gameId: number): Promise<boolean> =>
+  runElectronEffect(
+    Effect.flatMap(Library, (library) => library.reserve(gameId))
+  );
+
+const releaseGame = (gameId: number): void =>
+  void runElectronEffect(
+    Effect.flatMap(Library, (library) => library.unreserve(gameId))
+  );
 
 // the lock is scoped to userData, so a separate data directory (e.g. `ogi dev`)
 // gets its own instead of quitting into an installed OpenGameInstaller

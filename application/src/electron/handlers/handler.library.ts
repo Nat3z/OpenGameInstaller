@@ -28,7 +28,7 @@ import {
   spawn,
   spawnSync,
 } from 'child_process';
-import { Effect, Exit } from 'effect';
+import { Effect } from 'effect';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { homedir } from 'os';
@@ -94,10 +94,7 @@ const reportGame = (state: 'launch' | 'exit', appID: number): void => {
     Effect.flatMap(Library, (library) =>
       state === 'launch'
         ? library.notifyLaunched(appID)
-        : // The exit ends an unmanaged launch's hold, after it is reported.
-          library
-            .notifyExited(appID)
-            .pipe(Effect.zipRight(library.unreserve(appID)))
+        : library.notifyExited(appID)
     )
   );
 };
@@ -367,8 +364,6 @@ export type ExecuteWrapperResult = {
   exitCode?: number;
   signal?: string;
   error?: string;
-  /** False when another session held the game: nothing to release. */
-  reserved?: boolean;
 };
 
 /**
@@ -386,15 +381,14 @@ const markLaunched = (appID: number) =>
   );
 
 /**
- * `managed`: core's launcher is starting this session under its claim. Any
- * other launch reserves the game instead (`Library.reserve`); a claim and a
- * reservation exclude each other atomically, so a claim's `Launched` and
- * `Exited` always belong to the session it started.
+ * Starts the game. The caller already owns it: core's launcher by its claim,
+ * the desktop by `app.reserveGame`, held across its hooks. A claim and a
+ * reservation exclude each other, so a claim's `Launched` and `Exited` always
+ * belong to the session it started.
  */
 export function launchGameFromLibrary(
   appid: number | string,
-  launchEnv?: Record<string, string>,
-  options: { managed?: boolean } = {}
+  launchEnv?: Record<string, string>
 ): Effect.Effect<LaunchGameResult, LibraryError, AppServices> {
   return Effect.gen(function* () {
     logger.sync.info('[launch] Launching game', appid);
@@ -405,19 +399,8 @@ export function launchGameFromLibrary(
       return { success: false, error: 'Invalid app ID' };
     }
 
-    const library = yield* Library;
-    // Unmanaged launches reserve the game atomically against core's claim;
-    // a start that fails frees it, a real session frees it on exit.
-    if (!options.managed) {
-      if (!(yield* library.reserve(parsedAppId)))
-        return { success: false, error: 'The game is already being launched' };
-      return yield* startGame(parsedAppId, launchEnv).pipe(
-        Effect.tap((result) =>
-          result.success ? Effect.void : library.unreserve(parsedAppId)
-        ),
-        Effect.onError(() => library.unreserve(parsedAppId))
-      );
-    }
+    // Unmanaged launches run under a reservation their caller holds for the
+    // whole flow (pre hooks, game, post hooks) and releases at the end.
     return yield* startGame(parsedAppId, launchEnv);
   });
 }
@@ -495,10 +478,15 @@ function startGame(
       // Register inside the queue so a concurrent removal cannot interleave;
       // onError cleans up if the launch fails. The launch effect has no
       // requirements, so it runs on the ambient runtime from the promise.
+      // `Exited` must follow `Launched`. A game can exit before the launch is
+      // reported (the report waits on the queue), so its exit waits for that.
+      let launchReported = false;
+      let exitPending = false;
       const launch = launchWithUmu(appInfo, {
         onExit: () => {
           runningGames.delete(appID);
-          reportGame('exit', appID);
+          if (launchReported) reportGame('exit', appID);
+          else exitPending = true;
         },
       });
       const result = yield* Effect.tryPromise({
@@ -508,8 +496,11 @@ function startGame(
             const result = await Effect.runPromise(launch);
             // Spawned: report it now, before the game can exit, so `Launched`
             // always precedes its `Exited`.
-            if (result.success && runningGames.has(appInfo.appID))
+            if (result.success) {
               reportGame('launch', appInfo.appID);
+              launchReported = true;
+              if (exitPending) reportGame('exit', appInfo.appID);
+            }
             return result;
           }),
         catch: (cause) =>
@@ -644,44 +635,14 @@ export function executeWrapperCommandForApp(
   });
 }
 
-/**
- * Reserves the game for the whole wrapped run and past it, until the caller's
- * `releaseWrappedGame`, so a core launch can't claim the game mid-session.
- */
+/** Runs a Steam wrapper command; the caller holds the game for the flow. */
 function executeWrapperCommandForAppSteam(
   appid: number,
   wrapperCommand: string,
   launchEnv?: Record<string, string>
 ): Effect.Effect<ExecuteWrapperResult, never, AppServices> {
-  return Effect.gen(function* () {
-    const library = yield* Library;
-    if (!(yield* library.reserve(appid)))
-      return {
-        success: false,
-        error: 'The game is already being launched',
-        reserved: false,
-      };
-    // Held past the return: the caller runs post hooks and then calls
-    // `releaseWrappedGame`, which is when the game is free again.
-    return yield* runWrapperCommandForAppSteam(
-      appid,
-      wrapperCommand,
-      launchEnv
-    );
-  });
+  return runWrapperCommandForAppSteam(appid, wrapperCommand, launchEnv);
 }
-
-/**
- * Frees a wrapped run's reservation once its caller's post hooks are done.
- * No `Exited` is published: the wrapper never reported `Launched`, and its
- * caller runs the post hooks itself (an exit would make `GameManager` run
- * them a second time). Only call it for a run that got its reservation.
- */
-export const releaseWrappedGame = (appid: number): void => {
-  runElectronSync(
-    Effect.flatMap(Library, (library) => library.unreserve(appid))
-  );
-};
 
 function runWrapperCommandForAppSteam(
   appid: number,
@@ -965,19 +926,25 @@ export function registerLibraryHandlers() {
     )
   );
 
+  // The desktop's launch flows hold the game themselves (reserve before the
+  // pre hooks, release after the post hooks), so the wrapper only runs it.
+  const reserveGame = ipcProcedure(
+    ElectronRpc.app.reserveGame,
+    ipcServiceBoundary((_, appid: number) =>
+      Effect.flatMap(Library, (library) => library.reserve(appid))
+    )
+  );
+  const releaseGame = ipcProcedure(
+    ElectronRpc.app.releaseGame,
+    ipcServiceBoundary((_, appid: number) =>
+      Effect.flatMap(Library, (library) => library.unreserve(appid))
+    )
+  );
+
   const executeWrapperCommand = ipcProcedure(
     ElectronRpc.app.executeWrapperCommand,
-    // The renderer runs its own post hooks and then quits; the game is free
-    // once the wrapped run returns.
     ipcServiceBoundary((_, appid: number, wrapperCommand: string) =>
-      executeWrapperCommandForAppSteam(appid, wrapperCommand).pipe(
-        Effect.onExit((exit) =>
-          Effect.sync(() => {
-            if (!(Exit.isSuccess(exit) && exit.value.reserved === false))
-              releaseWrappedGame(appid);
-          })
-        )
-      )
+      runWrapperCommandForAppSteam(appid, wrapperCommand)
     )
   );
 
@@ -1561,6 +1528,8 @@ export function registerLibraryHandlers() {
   return router(
     launchGame,
     executeWrapperCommand,
+    reserveGame,
+    releaseGame,
     removeApp,
     getRemovalTasks,
     clearRemovalTasks,

@@ -35,10 +35,7 @@ export const LaunchHooksFromAddonServer = Layer.succeed(LaunchHooks, {
 export const GameRunnerFromLibrary = Layer.succeed(GameRunner, {
   start: (appID) =>
     Effect.tryPromise({
-      try: () =>
-        runElectronEffect(
-          launchGameFromLibrary(appID, undefined, { managed: true })
-        ),
+      try: () => runElectronEffect(launchGameFromLibrary(appID)),
       // A rejected launch (Steam shortcut inspection, migration) is a
       // failure the caller sees, not a defect that drops the reply.
       catch: (cause) =>

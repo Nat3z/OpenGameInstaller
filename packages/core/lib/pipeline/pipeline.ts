@@ -701,8 +701,19 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
       return {
         enqueue: ({ appID, request, update }) =>
           Effect.gen(function* () {
+            // One job per game: two would write the same paths, and cancelling
+            // one could delete the other's files. A double-click or a second
+            // client gets told, instead of a second job. (Checked and taken in
+            // one synchronous step, since `save` puts it in `records` first.)
+            for (const existing of records.values())
+              if (existing.appID === appID)
+                return yield* failure(
+                  existing.id,
+                  `${existing.request.name} is already downloading`
+                );
+            const id = newId();
             const record = yield* save({
-              id: newId(),
+              id,
               appID,
               request,
               update,
@@ -711,7 +722,9 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
               step: 'download',
               retryCount: 0,
               updatedAt: Date.now(),
-            });
+            }).pipe(
+              Effect.tapError(() => Effect.sync(() => records.delete(id)))
+            );
             yield* show(record, 'queued');
             yield* launch(record);
             return record.id;

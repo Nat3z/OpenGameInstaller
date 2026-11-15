@@ -488,4 +488,18 @@ describe('pipeline', () => {
     expect(h.calls.some((call) => call.startsWith('remove:'))).toBe(false);
     await h.runtime.dispose();
   });
+
+  test('a second download of the same game is refused', async () => {
+    const h = harness({ engine: 'hold' });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct })
+    );
+    const again = await h
+      .pipeline((p) => p.enqueue({ appID: 7, request: direct }))
+      .catch((error: Error) => error);
+    expect((again as Error).message).toContain('already downloading');
+    expect(h.calls.filter((call) => call.startsWith('direct'))).toHaveLength(1);
+    await h.pipeline((p) => p.cancel(id));
+    await h.runtime.dispose();
+  });
 });

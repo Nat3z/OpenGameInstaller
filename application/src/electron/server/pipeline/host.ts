@@ -290,6 +290,15 @@ export const DownloadStoreFromDatabase = Layer.succeed(DownloadStore, {
         if (info.pipeline) return [info.pipeline];
         // Raw addon downloads never had a setup; nothing to resume into.
         if (info.isAddonDownload || info.status === 'setup-complete') return [];
+        // The game is installed; only its redistributables were running. Pick
+        // up there (keeping a failure for retry), not with a fresh download.
+        const redist = row.redistributableInstall;
+        if (redist || info.status === 'installing-redistributables')
+          return [
+            fromLegacy(info, 'redistributables', {
+              error: redist?.error,
+            }),
+          ];
         return [fromLegacy(info, 'download')];
       });
       // A retried legacy setup was saved as a pipeline row; that one wins.

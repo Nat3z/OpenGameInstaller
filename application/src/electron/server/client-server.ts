@@ -48,14 +48,24 @@ type Serve = (socket: ServerSocket) => void;
 const listenStandalone = (
   serve: Serve,
   serverScope: Scope.Scope
-): Effect.Effect<number> =>
-  Effect.async<WebSocketServer>((resume) => {
+): Effect.Effect<number, Error> =>
+  Effect.async<WebSocketServer, Error>((resume) => {
     const wss = new WebSocketServer({
       host: '127.0.0.1',
       port: 0,
       path: CLIENT_PATH,
     });
-    wss.once('listening', () => resume(Effect.succeed(wss)));
+    // A failed listen (no free descriptors, say) fails startup instead of
+    // throwing as an unhandled `error` event.
+    const onError = (error: Error) => {
+      wss.close();
+      resume(Effect.fail(error));
+    };
+    wss.once('error', onError);
+    wss.once('listening', () => {
+      wss.off('error', onError);
+      resume(Effect.succeed(wss));
+    });
   }).pipe(
     Effect.tap((wss) => {
       wss.on('connection', (ws) => serve(fromWs(ws)));

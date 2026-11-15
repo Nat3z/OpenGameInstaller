@@ -375,9 +375,16 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
                   .pipe(Effect.orElseSucceed(() => extracted))
               : extracted;
           return {
-            ...record,
-            path: `${root.replace(/[/\\]+$/, '')}/`,
-            step: 'setup' as const,
+            record: {
+              ...record,
+              path: `${root.replace(/[/\\]+$/, '')}/`,
+              // A ZIP extracts into its own folder, which a cancel removes. A
+              // RAR extracts beside its parts, where an update's `old_files`
+              // may also live, so that folder is left alone.
+              extracted: kind === 'zip' ? output : undefined,
+              step: 'setup' as const,
+            },
+            archive,
           };
         });
 
@@ -559,10 +566,16 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
               return yield* failure(record.id, outcome.error);
             record = yield* save(yield* afterDownload(record));
           }
-          if (record.step === 'extract-rar')
-            record = yield* save(yield* extract(record, 'rar'));
-          if (record.step === 'extract-zip')
-            record = yield* save(yield* extract(record, 'zip'));
+          if (record.step === 'extract-rar' || record.step === 'extract-zip') {
+            const done = yield* extract(
+              record,
+              record.step === 'extract-rar' ? 'rar' : 'zip'
+            );
+            // Saved before the archive goes: a restart in between still finds
+            // it and extracts again instead of failing on a missing archive.
+            record = yield* save(done.record);
+            yield* files.remove([done.archive]).pipe(Effect.ignore);
+          }
           if (record.step === 'setup') {
             const next = yield* setup(record);
             if (next === 'redistributables')
@@ -704,7 +717,10 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             // The latest record: the fiber may have staged since `record`.
             const latest = records.get(id) ?? record;
             yield* files
-              .remove(latest.files.map((file) => file.path))
+              .remove([
+                ...latest.files.map((file) => file.path),
+                ...(latest.extracted ? [latest.extracted] : []),
+              ])
               .pipe(Effect.ignore);
             yield* restoreOldFiles(latest);
             yield* forget(id);

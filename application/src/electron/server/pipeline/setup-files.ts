@@ -78,7 +78,14 @@ export const SetupFilesFromHandlers = Layer.succeed(SetupFiles, {
       )
     ),
   extract: (id, archive, outputDir) =>
-    onApp(extractArchive({ archivePath: archive, outputDir, downloadId: id })),
+    onApp(
+      extractArchive({
+        archivePath: archive,
+        outputDir,
+        downloadId: id,
+        deleteArchive: false,
+      })
+    ),
   remove: (paths) =>
     onApp(
       Effect.forEach(

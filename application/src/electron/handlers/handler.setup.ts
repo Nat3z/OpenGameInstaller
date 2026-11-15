@@ -187,6 +187,8 @@ export const extractArchive = (arg: {
   archivePath: string;
   outputDir: string;
   downloadId?: string;
+  /** False leaves the archive for the caller (the pipeline deletes it later). */
+  deleteArchive?: boolean;
 }) =>
   Effect.gen(function* () {
     const archivePath = yield* requireDownloadPath(arg.archivePath);
@@ -252,6 +254,7 @@ export const extractArchive = (arg: {
     }
     // The archive is dead weight once extracted; a failure to remove it must
     // not fail the setup.
+    if (arg.deleteArchive === false) return outputDir;
     yield* fsTryPromise(archivePath, () =>
       fsAsync.rm(archivePath, { force: true })
     ).pipe(

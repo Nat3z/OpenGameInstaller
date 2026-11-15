@@ -9,6 +9,10 @@ import {
   cancelTorrent,
   startTorrent,
 } from '@/electron/handlers/handler.torrent.js';
+import {
+  cancelQueuedDownload,
+  hasQueueCancel,
+} from '@/electron/rpc/queue-cancel.js';
 import { runElectronEffect } from '@/electron/runtime.js';
 
 const outcome = (
@@ -21,10 +25,14 @@ const outcome = (
       ? { _tag: 'Failed', error: error ?? 'Download failed' }
       : { _tag: 'Cancelled' };
 
+// The queue's own cancel first: aborting a waiting engine leaves its queue
+// entry behind to block the next slot. That handler stops the engine too.
 const cancelEngine = (id: string): Effect.Effect<void> =>
-  directDownloads()?.has(id)
-    ? (directDownloads()?.abort(id) ?? Effect.void).pipe(Effect.ignore)
-    : cancelTorrent(id);
+  hasQueueCancel(id)
+    ? Effect.promise(() => cancelQueuedDownload(id))
+    : directDownloads()?.has(id)
+      ? (directDownloads()?.abort(id) ?? Effect.void).pipe(Effect.ignore)
+      : cancelTorrent(id);
 
 /** Turns an engine's start handshake into a started engine (or a failure). */
 const started = (

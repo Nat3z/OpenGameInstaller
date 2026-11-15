@@ -289,6 +289,8 @@ describe('pipeline', () => {
       'debrid:torbox',
       'direct:/dl/Game/Game.zip',
       'extract:/dl/Game/game.zip',
+      // Removed only after the setup step is saved.
+      'remove:/dl/Game/game.zip',
       'setup:/dl/Game/game/Game/',
       'install:Game',
     ]);

@@ -145,7 +145,11 @@ export type SetupFilesShape = {
     path: string,
     kind: 'rar' | 'zip'
   ) => Effect.Effect<string | null, FileSystemError>;
-  /** Extracts and deletes the archive; progress goes to `Downloads` under `id`. */
+  /**
+   * Extracts, leaving the archive (the pipeline removes it once the next step
+   * is saved, so a crash in between can still extract again). Progress goes to
+   * `Downloads` under `id`.
+   */
   readonly extract: (
     id: string,
     archive: string,
@@ -246,6 +250,8 @@ export type DownloadRecord = {
    * the update fully succeeds, restored on any failure or cancel.
    */
   readonly staged?: string;
+  /** The folder a ZIP was extracted into; removed on cancel. */
+  readonly extracted?: string;
   readonly error?: string;
   readonly retryCount: number;
   readonly updatedAt: number;

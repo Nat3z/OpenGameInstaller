@@ -133,11 +133,7 @@ export const startClientServer = (
       if (!local) yield* connectDevAddons();
       const url = `ws://127.0.0.1:${clientPort}${CLIENT_PATH}`;
       const file = join(dataDirectory, CLIENT_FILE);
-      writeFileSync(
-        file,
-        JSON.stringify({ url, token }),
-        { mode: 0o600 }
-      );
+      writeFileSync(file, JSON.stringify({ url, token }), { mode: 0o600 });
       // `mode` only applies on create; tighten a file left by an older run.
       chmodSync(file, 0o600);
       logger.sync.info(`[client] protocol served at ${url}`);

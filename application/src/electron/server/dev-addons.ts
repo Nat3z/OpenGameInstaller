@@ -1,5 +1,5 @@
 import { EffectConnection } from '@ogi-sdk/client-kit';
-import type { LibraryInfo } from '@ogi-sdk/connect';
+import type { ConfigurationFile, LibraryInfo } from '@ogi-sdk/connect';
 import { Addons, LaunchHooks } from '@ogi-sdk/core';
 import { AddonError, LibraryError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
@@ -7,7 +7,8 @@ import { Effect, Layer } from 'effect';
 import WebSocket from 'ws';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
 import { port } from '@/electron/server/addon-server.js';
-import { Prompts } from '@/electron/services/index.js';
+import { Database, Prompts } from '@/electron/services/index.js';
+import { buildDefaultConfig } from '@/lib/addon-config.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
 
@@ -31,6 +32,7 @@ class ReconnectingSocket extends WebSocket {
       if (socket !== this) return;
       socket = undefined;
       connection = undefined;
+      configured = new Set();
     });
   }
 }
@@ -87,9 +89,61 @@ const connectedAddons = sdk.pipe(
   Effect.mapError(toAddonError)
 );
 
+/** Addons this session has configured; reset when the CLI connection drops. */
+let configured = new Set<string>();
+
+/**
+ * Sends each addon on the CLI's server its saved config (or defaults) once,
+ * like the renderer does in a window: headless has no renderer, and an addon
+ * announces its events only after its first `config-update`.
+ */
+const configureDevAddons = (
+  addons: readonly {
+    readonly id: string;
+    readonly configTemplate?: ConfigurationFile;
+  }[]
+) =>
+  Effect.gen(function* () {
+    const client = yield* sdk;
+    const database = yield* Database;
+    yield* Effect.forEach(
+      addons.filter(
+        (addon) => addon.configTemplate && !configured.has(addon.id)
+      ),
+      (addon) =>
+        Effect.gen(function* () {
+          let config = yield* database.addonConfig.get(addon.id);
+          if (!config) {
+            config = buildDefaultConfig(addon.configTemplate!);
+            yield* database.addonConfig.set(addon.id, config);
+          }
+          const reply = yield* client
+            .addon(addon.id)
+            .configUpdate(config as unknown as ConfigurationFile);
+          if ((reply as { success?: boolean } | undefined)?.success !== false)
+            configured.add(addon.id);
+        }).pipe(
+          Effect.catchAll((error) =>
+            logger.warn(`[ogi dev] Could not configure ${addon.id}`, error)
+          )
+        ),
+      { concurrency: 'unbounded', discard: true }
+    );
+  });
+
+/** Lists addons, configuring any new ones first, then lists again. */
+const readyAddons = connectedAddons.pipe(
+  Effect.tap((addons) =>
+    addons.some((addon) => addon.configTemplate && !configured.has(addon.id))
+      ? Effect.promise(() => runElectronEffect(configureDevAddons(addons)))
+      : Effect.void
+  ),
+  Effect.zipRight(connectedAddons)
+);
+
 /** Core's addon adapter under `ogi dev`. */
 export const AddonsFromDevServer = Layer.succeed(Addons, {
-  list: connectedAddons.pipe(
+  list: readyAddons.pipe(
     Effect.map((addons) =>
       addons.map((addon) => ({
         id: addon.id,
@@ -103,7 +157,8 @@ export const AddonsFromDevServer = Layer.succeed(Addons, {
     Effect.orElseSucceed(() => [])
   ),
   call: (addonId, event, args) =>
-    sdk.pipe(
+    readyAddons.pipe(
+      Effect.zipRight(sdk),
       Effect.flatMap((client): Effect.Effect<unknown, { message: string }> => {
         const addon = client.addon(addonId);
         return event === 'search'
@@ -119,7 +174,7 @@ export const AddonsFromDevServer = Layer.succeed(Addons, {
 /** Core's hook adapter under `ogi dev`: every addon's `launch-app`. */
 export const LaunchHooksFromDevServer = Layer.succeed(LaunchHooks, {
   run: (game: LibraryInfo, stage) =>
-    Effect.all([sdk, connectedAddons]).pipe(
+    Effect.all([sdk, readyAddons]).pipe(
       Effect.flatMap(([client, addons]) =>
         Effect.forEach(
           addons.filter((addon) =>

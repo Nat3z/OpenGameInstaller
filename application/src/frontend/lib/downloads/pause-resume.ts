@@ -150,6 +150,20 @@ export function pauseDownload(downloadId: string) {
   });
 }
 
+/**
+ * Another client paused or resumed a live engine: track it like our own
+ * pause, so Resume goes to that engine instead of restarting from disk.
+ */
+export function recordLivePause(downloadId: string, paused: boolean): void {
+  if (!paused) {
+    pausedDownloadStates.delete(downloadId);
+    return;
+  }
+  const download = getDownloadItem(downloadId);
+  if (download && !pausedDownloadStates.has(downloadId))
+    pausedDownloadStates.set(downloadId, pausedStateFor(download));
+}
+
 export function resumeDownload(downloadId: string) {
   return Effect.suspend(() => {
     if (resumeInFlight.has(downloadId)) return Effect.succeed(false);

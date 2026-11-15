@@ -6,13 +6,10 @@ import CheckboxModal from '@/frontend/components/modal/CheckboxModal.svelte';
 import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
+import { forgetGameDownloads } from '@/frontend/lib/downloads/protocol';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import { completeRequiredReadd } from '@/frontend/states.svelte';
-import {
-  createNotification,
-  currentDownloads,
-  hasActiveDownload,
-} from '@/frontend/store.svelte';
+import { createNotification, hasActiveDownload } from '@/frontend/store.svelte';
 
 interface Props {
   games: LibraryInfo[];
@@ -83,9 +80,7 @@ async function removeSelected() {
         });
       }
       completeRequiredReadd(game.appID);
-      currentDownloads.update((downloads) =>
-        downloads.filter((download) => download.appID !== game.appID)
-      );
+      void forgetGameDownloads(game.appID);
       removed++;
     } catch (error) {
       createNotification({

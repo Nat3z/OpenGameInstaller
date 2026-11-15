@@ -20,6 +20,7 @@ import Modal from '@/frontend/components/modal/Modal.svelte';
 import TitleModal from '@/frontend/components/modal/TitleModal.svelte';
 import { runFrontendEffect } from '@/frontend/lib/core/runtime';
 import { addToSteam as addToSteamEffect } from '@/frontend/lib/core/steam';
+import { forgetGameDownloads } from '@/frontend/lib/downloads/protocol';
 import { electronRpc } from '@/frontend/lib/electron-rpc';
 import {
   completeRequiredReadd,
@@ -27,7 +28,6 @@ import {
 } from '@/frontend/states.svelte';
 import {
   createNotification,
-  currentDownloads,
   gameRemovalTasks,
   gamesLaunched,
   hasActiveDownload,
@@ -228,9 +228,7 @@ async function removeFromList() {
     }
 
     completeRequiredReadd(gameInfo.appID);
-    currentDownloads.update((downloads) =>
-      downloads.filter((download) => download.appID !== gameInfo.appID)
-    );
+    void forgetGameDownloads(gameInfo.appID);
 
     if (result.deletionTaskId) {
       // Files are deleted lazily in the background; keep the window open to

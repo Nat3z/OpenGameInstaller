@@ -2,6 +2,7 @@ import type {
   Download,
   FailedSetup as WireFailedSetup,
 } from '@ogi-sdk/protocol';
+import { get } from 'svelte/store';
 import { ogi } from '@/frontend/lib/core/ogi';
 import type { SearchResultWithAddon } from '@/frontend/lib/tasks/runner';
 import { updatesManager } from '@/frontend/states.svelte';
@@ -198,6 +199,21 @@ export const resumeDownload = control('resume', 'Could not resume');
 export const cancelDownload = control('cancel', 'Could not cancel');
 export const clearDownload = control('clear', 'Could not clear');
 export const retrySetup = control('retrySetup', 'Could not retry the setup');
+/**
+ * A removed game's cards go from core, not just from this window's store, so
+ * they don't come back with the next download event (and block reinstalling).
+ */
+export const forgetGameDownloads = (appID: number): Promise<void> =>
+  Promise.all(
+    get(currentDownloads)
+      .filter((download) => download.appID === appID)
+      .map((download) =>
+        ogi().then((client) => client.downloads.clear({ id: download.id }))
+      )
+  )
+    .then(() => undefined)
+    .catch(report('Could not clear the removed game’s downloads'));
+
 export const dismissSetup = control(
   'dismissSetup',
   'Could not remove the setup'

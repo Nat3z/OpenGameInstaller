@@ -62,6 +62,13 @@ const configureOne = (
       );
   });
 
+/** How long each call may wait for its reply; searches can scrape slowly. */
+const REPLY_TIMEOUT = {
+  search: '60 seconds',
+  'game-details': '30 seconds',
+  catalog: '30 seconds',
+} as const;
+
 const warnFailure = (connection: AddonConnection) => (error: unknown) =>
   logger.warn(
     `[addons] Could not configure ${connection.addonInfo?.id}`,
@@ -149,7 +156,17 @@ export const AddonsFromAddonServer = Layer.effect(
                   message: `${event} failed: ${cause.message}`,
                   addonName: connection.addonInfo?.name,
                 })
-            )
+            ),
+            // An addon that stops answering (socket still open) must not hang
+            // the call, or the client waiting on it, forever.
+            Effect.timeoutFail({
+              duration: REPLY_TIMEOUT[event],
+              onTimeout: () =>
+                new AddonError({
+                  message: `${connection.addonInfo?.name ?? addonId} did not answer ${event}`,
+                  addonName: connection.addonInfo?.name,
+                }),
+            })
           );
           if (reply.statusError) {
             return yield* Effect.fail(

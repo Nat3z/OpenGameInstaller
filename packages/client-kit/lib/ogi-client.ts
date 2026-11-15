@@ -110,8 +110,11 @@ export class EffectOGIClient {
   static connect(
     options: OGIClientOptions
   ): Effect.Effect<EffectOGIClient, ProtocolError, Scope.Scope> {
-    return Effect.acquireRelease(EffectOGIClient.open(options), (client) =>
-      Effect.sync(() => client.close())
+    // The handshake itself stays interruptible (acquisition otherwise isn't),
+    // so the timeout and a caller's cancel can both reach the socket cleanup.
+    return Effect.acquireRelease(
+      Effect.interruptible(EffectOGIClient.open(options)),
+      (client) => Effect.sync(() => client.close())
     );
   }
 
@@ -140,6 +143,7 @@ export class EffectOGIClient {
             client = new EffectOGIClient(socket, message.groups);
             resume(Effect.succeed(client));
           } else if (message._tag === 'error') {
+            socket.close();
             resume(Effect.fail(ProtocolError.fromWire(message.error)));
           }
           return;

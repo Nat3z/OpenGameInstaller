@@ -96,6 +96,30 @@ describe('OGIServer <-> OGIClient', () => {
     expect((error as ProtocolError).tag).toBe('Unauthorized');
   });
 
+  test('a server that never answers hello times out and is hung up on', async () => {
+    let closed = false;
+    const silent = Bun.serve({
+      port: 0,
+      fetch: (req, srv) =>
+        srv.upgrade(req) ? undefined : new Response('no', { status: 400 }),
+      websocket: {
+        message() {},
+        close() {
+          closed = true;
+        },
+      },
+    });
+    const error = await OGIClient.connect({
+      url: `ws://127.0.0.1:${silent.port}/client`,
+      token: TOKEN,
+      handshakeTimeout: '50 millis',
+    }).catch((e: unknown) => e);
+    expect((error as ProtocolError).tag).toBe('Disconnected');
+    await Bun.sleep(50);
+    expect(closed).toBe(true);
+    silent.stop(true);
+  });
+
   test('calls return decoded results', async () => {
     const client = await OGIClient.connect({ url, token: TOKEN });
     expect(client.effect.serverGroups).toEqual(['library', 'events']);

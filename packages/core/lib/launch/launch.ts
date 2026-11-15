@@ -124,7 +124,9 @@ export const LaunchLive: Layer.Layer<
           }
         }
 
-        yield* runner.start(game.appID);
+        // Once starting, finish: a client hanging up mid-start must not drop
+        // the claim while the host can still spawn the game.
+        yield* Effect.uninterruptible(runner.start(game.appID));
       });
 
     return {

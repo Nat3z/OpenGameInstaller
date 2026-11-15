@@ -53,13 +53,16 @@ export const showPromptsInWindow = (
             description: prompt.description,
           })
         );
-      case 'Confirm':
+      case 'Confirm': {
+        // Registered now, before the fork: a `Closed` handled before the task
+        // runs must still find it, or the dialog would open for a dead prompt.
+        const abort = new AbortController();
+        dialogs.set(prompt.id, abort);
         // Forked: a dialog must not block the next prompt from showing.
         return Effect.forkDaemon(
           Effect.promise(async () => {
+            if (abort.signal.aborted) return undefined;
             const window = getWindow();
-            const abort = new AbortController();
-            dialogs.set(prompt.id, abort);
             const options = {
               type: 'warning' as const,
               title: prompt.title,
@@ -76,16 +79,19 @@ export const showPromptsInWindow = (
             const { response } = window
               ? await dialog.showMessageBox(window, options)
               : await dialog.showMessageBox(options);
-            dialogs.delete(prompt.id);
-            return !abort.signal.aborted && response === 1;
+            return abort.signal.aborted ? undefined : response === 1;
           }).pipe(
+            Effect.ensuring(Effect.sync(() => dialogs.delete(prompt.id))),
             Effect.flatMap((confirmed) =>
-              Effect.flatMap(Prompts, (service) =>
-                service.reply(prompt.id, { _tag: 'Confirm', confirmed })
-              )
+              confirmed === undefined
+                ? Effect.void
+                : Effect.flatMap(Prompts, (service) =>
+                    service.reply(prompt.id, { _tag: 'Confirm', confirmed })
+                  )
             )
           )
         ).pipe(Effect.asVoid);
+      }
     }
   };
   forkElectronEffect(

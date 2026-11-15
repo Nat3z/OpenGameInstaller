@@ -6,6 +6,11 @@ import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { Effect, Layer } from 'effect';
 import WebSocket from 'ws';
 import { forkElectronEffect, runElectronEffect } from '@/electron/runtime.js';
+import {
+  addonDeadline,
+  REPLY_TIMEOUT,
+  whileAsking,
+} from '@/electron/server/addon-prompts.js';
 import { port } from '@/electron/server/addon-server.js';
 import { Database, Prompts } from '@/electron/services/index.js';
 import { buildDefaultConfig } from '@/lib/addon-config.js';
@@ -58,20 +63,29 @@ const connect = (): Promise<EffectConnection> =>
       // the CLI's server asks an SDK client for addon input; send it to core's
       // prompts so whichever client is open can answer
       Effect.tap((client) =>
-        client.on('input-asked', ({ name, description, config, reply }) =>
-          Effect.tryPromise(() =>
-            runElectronEffect(
-              Effect.flatMap(Prompts, (prompts) =>
-                prompts.ask({ _tag: 'Input', title: name, description, config })
+        client.on(
+          'input-asked',
+          ({ name, description, config, addonId, reply }) =>
+            Effect.tryPromise(() =>
+              runElectronEffect(
+                Effect.flatMap(Prompts, (prompts) =>
+                  prompts.ask({
+                    _tag: 'Input',
+                    title: name,
+                    description,
+                    config,
+                  })
+                ),
+                asks.signal
+              )
+            ).pipe(
+              // That addon's calls pause their deadlines while a person answers.
+              whileAsking(addonId),
+              Effect.flatMap((answer) =>
+                reply(answer._tag === 'Input' ? answer.values : {})
               ),
-              asks.signal
+              Effect.ignore
             )
-          ).pipe(
-            Effect.flatMap((answer) =>
-              reply(answer._tag === 'Input' ? answer.values : {})
-            ),
-            Effect.ignore
-          )
         )
       )
     )
@@ -219,7 +233,16 @@ export const AddonsFromDevServer = Layer.succeed(Addons, {
                 .pipe(Effect.map((details) => details ?? null))
             : addon.catalog();
       }),
-      Effect.mapError(toAddonError)
+      Effect.mapError(toAddonError),
+      // Like the in-process adapter: a stuck addon fails the call.
+      Effect.raceFirst(
+        addonDeadline(
+          addonId,
+          REPLY_TIMEOUT[event],
+          () =>
+            new AddonError({ message: `${addonId} did not answer ${event}` })
+        )
+      )
     ),
 });
 

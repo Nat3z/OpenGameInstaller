@@ -7,8 +7,10 @@ import {
 import { Context, Effect, Layer, PubSub, type Scope, Stream } from 'effect';
 import { type Implementation, implement } from '../server/router';
 
-/** What a host reports about a download; omitted fields keep their value. */
-export type DownloadPatch = Partial<Omit<Download, 'id'>>;
+/** A partial update: `undefined` leaves a field alone, `null` clears it. */
+export type DownloadPatch = {
+  [K in keyof Omit<Download, 'id'>]?: Download[K] | null;
+};
 
 /**
  * Live download state. Engines (and, until the pipeline moves, the desktop
@@ -62,9 +64,17 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
           const defined = Object.fromEntries(
             Object.entries(patch).filter(([, value]) => value !== undefined)
           );
-          const next = { ...(downloads.get(id) ?? blank(id)), ...defined };
-          downloads.set(id, next);
-          return PubSub.publish(changes, { _tag: 'Upsert', download: next });
+          const next: Record<string, unknown> = {
+            ...(downloads.get(id) ?? blank(id)),
+            ...defined,
+          };
+          for (const [key, value] of Object.entries(next))
+            if (value === null) delete next[key];
+          downloads.set(id, next as Download);
+          return PubSub.publish(changes, {
+            _tag: 'Upsert',
+            download: next as Download,
+          });
         }).pipe(Effect.asVoid),
       remove: (id) =>
         Effect.suspend(() => {

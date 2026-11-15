@@ -37,11 +37,12 @@ const installRedistributables = (appID: number, downloadId?: string) =>
                   : 'completed',
             progress: progress.overallProgress / 100,
             speed: 0,
+            // `null` clears a failure left by an earlier attempt.
             error:
               progress.kind === 'done' && progress.result !== 'success'
                 ? (progress.error ??
                   `${progress.failedCount} redistributable(s) failed`)
-                : undefined,
+                : null,
           })
         )
       );

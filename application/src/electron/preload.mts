@@ -260,6 +260,14 @@ ipcRenderer.on(
   })
 );
 ipcRenderer.on(
+  'game:session-ended',
+  wrap((_, arg) => {
+    document.dispatchEvent(
+      new CustomEvent('game:session-ended', { detail: arg })
+    );
+  })
+);
+ipcRenderer.on(
   'game:removal-progress',
   wrap((_, arg) => {
     document.dispatchEvent(

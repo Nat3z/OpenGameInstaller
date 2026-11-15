@@ -931,6 +931,17 @@ export function registerLibraryHandlers() {
             })
           );
         }
+        // A shortcut window closes on this, not on `game:exit`: an addon's
+        // post hook may still need it for a form.
+        yield* Effect.forkDaemon(
+          session.ended.pipe(
+            Effect.flatMap(() =>
+              Effect.promise(() =>
+                sendIPCMessage('game:session-ended', { id: appID })
+              )
+            )
+          )
+        );
       })
     )
   );

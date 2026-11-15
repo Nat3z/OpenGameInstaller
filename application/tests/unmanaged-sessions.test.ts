@@ -15,16 +15,35 @@ mock.module('../src/electron/server/addon-lifecycle.js', () => ({
     }),
 }));
 
-const library = LibraryLive.pipe(
+// No addon processes here: nothing to restart or wait for.
+mock.module('../src/electron/handlers/handler.addon.js', () => ({
+  startAddons: () => Effect.void,
+}));
+mock.module('../src/electron/manager/manager.addon-readiness.js', () => ({
+  waitForAddonManifests: () => Effect.succeed([]),
+}));
+
+const services = LibraryLive.pipe(
   Layer.provide(
     Layer.succeed(LibraryStore, {
       get: (appID: number) => Effect.succeed({ appID } as never),
     } as never)
+  ),
+  // Read after the electron mock: the settings module pulls in electron.
+  Layer.merge(
+    Layer.unwrapEffect(
+      Effect.promise(async () => {
+        const { Settings } = await import(
+          '../src/electron/services/settings.js'
+        );
+        return Layer.succeed(Settings, {} as never);
+      })
+    )
   )
 );
 
-const run = <A>(effect: Effect.Effect<A, never, Library>): Promise<A> =>
-  Effect.runPromise(Effect.provide(effect, library));
+const run = <A, R>(effect: Effect.Effect<A, never, R>): Promise<A> =>
+  Effect.runPromise(Effect.provide(effect, services) as Effect.Effect<A>);
 
 test('an exited desktop session runs its post hooks once, then frees the game', async () => {
   hooks.length = 0;

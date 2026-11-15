@@ -464,4 +464,28 @@ describe('pipeline', () => {
     expect(h.saved.size).toBe(0);
     await h.runtime.dispose();
   });
+
+  test('cancelling a local-torrent update keeps the installed game', async () => {
+    const h = harness({ engine: 'hold' });
+    h.library.set(7, {
+      appID: 7,
+      name: 'Game',
+      version: '0.9',
+      cwd: '/dl/Game',
+      launchExecutable: 'game.exe',
+      capsuleImage: '',
+      coverImage: '',
+      storefront: 'steam',
+      addonsource: 'addon',
+    });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: magnet, update: { version: '1.0' } })
+    );
+    while (!h.calls.some((call) => call.startsWith('torrent:')))
+      await Bun.sleep(1);
+    expect(await h.pipeline((p) => p.cancel(id))).toBe(true);
+    // The torrent's "file" is the game folder itself: never removed.
+    expect(h.calls.some((call) => call.startsWith('remove:'))).toBe(false);
+    await h.runtime.dispose();
+  });
 });

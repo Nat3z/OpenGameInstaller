@@ -467,6 +467,20 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
           return result.staged ? folder : undefined;
         });
 
+      /**
+       * Whether removing `path` would take an update's installed game (or its
+       * staged backup) with it: the same folder, or one that contains it.
+       */
+      const holdsInstall = (path: string, record: DownloadRecord) => {
+        if (!record.update) return false;
+        const folder = (record.staged ?? folderOf(record.path)).replace(
+          /[/\\]+$/,
+          ''
+        );
+        const target = path.replace(/[/\\]+$/, '');
+        return folder === target || folder.startsWith(`${target}/`);
+      };
+
       /** Puts staged old files back (an update that did not finish). */
       const restoreOldFiles = (record: DownloadRecord) =>
         record.staged
@@ -745,12 +759,15 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             if (engine) yield* engines.cancel(engine);
             // The latest record: the fiber may have staged since `record`.
             const latest = records.get(id) ?? record;
-            yield* files
-              .remove([
-                ...latest.files.map((file) => file.path),
-                ...(latest.extracted ? [latest.extracted] : []),
-              ])
-              .pipe(Effect.ignore);
+            // Only what this transfer wrote. A local torrent's "file" is its
+            // whole folder, which for an update is also the installed game and
+            // its `old_files`; deleting it would leave nothing to restore.
+            const owned = [
+              ...latest.files.map((file) => file.path),
+              ...(latest.extracted ? [latest.extracted] : []),
+            ].filter((path) => !holdsInstall(path, latest));
+            if (owned.length > 0)
+              yield* files.remove(owned).pipe(Effect.ignore);
             yield* restoreOldFiles(latest);
             yield* forget(id);
             yield* downloads.remove(id);

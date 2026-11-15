@@ -133,6 +133,11 @@ subscribe, with nothing async between them.
 
 - Adding a method, a group, or an optional field is **not** breaking. Older
   clients ignore it, and missing methods answer `MethodNotFound`.
+  An optional **request** field is the exception to "safe": an older server
+  drops it and still runs the method (a new `dryRun` would be ignored and the
+  operation would really happen). Don't add a field whose absence changes
+  what the call does; make a new method, or check `serverGroups` /
+  `PROTOCOL_VERSION` before sending it.
 - Adding a union case (an `AppEvent`, a `LibraryChange`, a status) **is**
   breaking: older clients decode with the old union, so the new case fails
   with `BadFrame` and ends their subscription.

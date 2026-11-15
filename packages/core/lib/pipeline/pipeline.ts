@@ -763,6 +763,8 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
               error: undefined,
               retryCount: record.retryCount + 1,
             });
+            // Its card may have been cleared while it sat failed.
+            yield* downloads.reopen(id);
             yield* launch(next);
           }),
 

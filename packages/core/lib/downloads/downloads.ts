@@ -33,6 +33,8 @@ export type DownloadsShape = {
   readonly remove: (id: string) => Effect.Effect<void>;
   /** Removes a finished card for good: later engine reports for it are ignored. */
   readonly clear: (id: string) => Effect.Effect<void>;
+  /** Lets a cleared card come back, for a job that runs again (a retry). */
+  readonly reopen: (id: string) => Effect.Effect<void>;
   readonly log: (id: string, lines: readonly string[]) => Effect.Effect<void>;
   /**
    * Replaces the log with `lines`, publishing only what is new. Addons report
@@ -175,6 +177,7 @@ export const DownloadsLive: Layer.Layer<Downloads> = Layer.effect(
           cleared.add(id);
           return drop(id);
         }),
+      reopen: (id) => Effect.sync(() => cleared.delete(id)),
       log: (reportedId, newLines) =>
         Effect.suspend(() => {
           const id = aliases.get(reportedId) ?? reportedId;

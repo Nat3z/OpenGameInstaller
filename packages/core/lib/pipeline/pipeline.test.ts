@@ -396,6 +396,18 @@ describe('pipeline', () => {
     await h.runtime.dispose();
   });
 
+  test('a retry brings back a cleared card', async () => {
+    const h = harness({ redistFails: true });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct })
+    );
+    await h.until(id, (d) => d.status === 'error');
+    await h.runtime.runPromise(Effect.flatMap(Downloads, (d) => d.clear(id)));
+    await h.pipeline((p) => p.retry(id));
+    await h.until(id, (d) => d.status === 'completed');
+    await h.runtime.dispose();
+  });
+
   test('a step that fails to save leaves its inputs on disk', async () => {
     const h = harness({ torrents: 'torbox', saveFailsAt: 'setup' });
     const id = await h.pipeline((p) =>

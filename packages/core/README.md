@@ -222,6 +222,15 @@ To get there, nothing below the window needs one anymore: the direct-download,
 torrent, and debrid routers dropped `mainWindow`, and direct downloads shut down
 from app quit instead of from the window's `closed` event.
 
+### Done: `ogi dev`
+
+`ogi dev` (ogi-kit) hosts the addon server itself and launches the app with
+`--no-server`. The app then serves `/client` on its own loopback port
+(`client.json` has the url) and core reaches addons as an SDK client of the
+CLI's server: `AddonsFromDevServer` and `LaunchHooksFromDevServer` in
+`application/src/electron/server/dev-addons.ts`. Addon `input-asked` from
+that server goes to core `Prompts` too, so any client can answer.
+
 ### Next: pipeline
 
 See the downloads section above: `DownloadSource` adapters plus the setup

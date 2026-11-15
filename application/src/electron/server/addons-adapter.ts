@@ -5,7 +5,10 @@ import { AddonError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { type Context, Effect, Layer } from 'effect';
 import { waitForAddonManifests } from '@/electron/manager/manager.addon-readiness.js';
-import { addonDeadline } from '@/electron/server/addon-prompts.js';
+import {
+  addonDeadline,
+  REPLY_TIMEOUT,
+} from '@/electron/server/addon-prompts.js';
 import { getAddonServer } from '@/electron/server/addon-server.js';
 import { Database } from '@/electron/services/index.js';
 import { buildDefaultConfig } from '@/lib/addon-config.js';
@@ -63,16 +66,6 @@ const configureOne = (
         reply.statusError ?? (reply.args as { error?: string })?.error
       );
   });
-
-/**
- * How long each call may wait for its reply; searches can scrape slowly.
- * Time a person spends answering the addon's question doesn't count.
- */
-const REPLY_TIMEOUT = {
-  search: '60 seconds',
-  'game-details': '30 seconds',
-  catalog: '30 seconds',
-} as const;
 
 const warnFailure = (connection: AddonConnection) => (error: unknown) =>
   logger.warn(

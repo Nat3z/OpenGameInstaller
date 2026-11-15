@@ -400,6 +400,11 @@ export class OGIClient {
     return this.effect.disconnected;
   }
 
+  /** Groups the server said it implements in `welcome`. */
+  get serverGroups(): ReadonlyArray<string> {
+    return this.effect.serverGroups;
+  }
+
   private constructor(
     readonly effect: EffectOGIClient,
     private readonly scope: Scope.CloseableScope

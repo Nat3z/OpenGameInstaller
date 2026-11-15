@@ -326,9 +326,11 @@ async function ensureAddonServerRunning() {
 }
 
 /** The window works without the protocol, so its failure must not stop startup. */
-async function startClientProtocol(): Promise<boolean> {
+async function startClientProtocol(
+  mode: Parameters<typeof startClientServer>[0]
+): Promise<boolean> {
   try {
-    await startClientServer();
+    await startClientServer(mode);
     return true;
   } catch (error) {
     logger.sync.error('[client] Could not start the client protocol', error);
@@ -348,6 +350,17 @@ async function startClientProtocol(): Promise<boolean> {
   }
 }
 
+/**
+ * Under `ogi dev` the CLI owns the addon server; core serves on its own port.
+ * False when no endpoint came up (the addon server didn't start, say).
+ */
+async function serveClientProtocol(): Promise<boolean> {
+  if (isAddonServerListening) return startClientProtocol('addon-server');
+  if (hookArgs?.noAddonServer) return startClientProtocol('standalone');
+  logger.sync.error('[client] No addon server to serve the protocol on');
+  return false;
+}
+
 /** `serveClients: false` leaves `/client` for the caller to start later. */
 async function startAddonRuntime({ serveClients = true } = {}) {
   if (!hookArgs?.noAddonServer) await ensureAddonServerRunning();
@@ -359,7 +372,7 @@ async function startAddonRuntime({ serveClients = true } = {}) {
   await runElectronEffect(startAddons());
   // After the addons spawn, so a launch from a client that just read
   // `client.json` waits on their manifests (and hooks) instead of none.
-  if (serveClients && isAddonServerListening) await startClientProtocol();
+  if (serveClients) await serveClientProtocol();
 }
 
 async function onMainAppReady() {
@@ -553,17 +566,9 @@ const isHeadless = (): boolean => process.argv.includes('--headless');
  */
 async function startHeadless(): Promise<void> {
   logger.sync.info('[headless] Starting without a window');
-  // `/client` rides on the addon server, so without it nothing could reach
-  // this process. Refuse up front instead of starting a backend nobody can use.
+  // `--no-server` (`ogi dev`) is fine here: core then listens on its own
+  // loopback port instead of the addon server's.
   hookArgs = parseLaunchHookArgs();
-  if (hookArgs.noAddonServer) {
-    logger.sync.error(
-      '[headless] --no-server leaves no endpoint for clients; drop the flag'
-    );
-    process.exitCode = 1;
-    app.quit();
-    return;
-  }
   // The desktop IPC router is never served (the protocol socket replaces
   // it), but building it registers the download engines core controls.
   createElectronRouter(null);
@@ -588,15 +593,13 @@ async function startHeadless(): Promise<void> {
   // settings, events); headless sends it from here, before any client can
   // launch a game whose hooks aren't announced yet.
   await runElectronEffect(configureAddons);
-  // Without the addon server there's no `/client` to serve: nothing could
-  // drive this process, so stop rather than report a readiness it lacks.
-  if (!isAddonServerListening) {
-    logger.sync.error('[headless] The addon server is not running; quitting');
+  // Without a protocol endpoint nothing could drive this process: stop
+  // rather than report a readiness it lacks.
+  if (!(await serveClientProtocol())) {
     process.exitCode = 1;
     app.quit();
     return;
   }
-  if (!(await startClientProtocol())) return;
   publishEvent({ _tag: 'AddonManifestsReady' });
   logger.sync.info(
     '[headless] Ready; client.json written to the data directory'
@@ -842,6 +845,7 @@ app.on('ready', async () => {
 
   await startupEnvironmentReady;
   registerClientReadyListener();
+  hookArgs = parseLaunchHookArgs();
 
   if (isHeadless()) {
     // Any startup failure (the addon server's port taken, say) quits through
@@ -856,7 +860,6 @@ app.on('ready', async () => {
 
   // Check if we're launching a specific game (--game-id flag from Steam)
   const gameIdToLaunch = parseGameIdArg();
-  hookArgs = parseLaunchHookArgs();
   const wrapperCommand = parseWrapperAfterSeparator();
   if (gameIdToLaunch !== null) {
     logger.sync.info(

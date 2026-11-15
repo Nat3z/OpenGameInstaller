@@ -155,24 +155,50 @@ const readyAddons = connectedAddons.pipe(
   Effect.zipRight(connectedAddons)
 );
 
+const toConnected = (addon: {
+  id: string;
+  name: string;
+  version?: string;
+  description?: string;
+  storefronts?: string[];
+  eventsAvailable: string[];
+}) => ({
+  id: addon.id,
+  name: addon.name,
+  version: addon.version,
+  description: addon.description,
+  storefronts: addon.storefronts ?? [],
+  events: addon.eventsAvailable,
+});
+
 /** Core's addon adapter under `ogi dev`. */
 export const AddonsFromDevServer = Layer.succeed(Addons, {
   list: readyAddons.pipe(
-    Effect.map((addons) =>
-      addons.map((addon) => ({
-        id: addon.id,
-        name: addon.name,
-        version: addon.version,
-        description: addon.description,
-        storefronts: addon.storefronts ?? [],
-        events: addon.eventsAvailable,
-      }))
-    ),
+    Effect.map((addons) => addons.map(toConnected)),
     Effect.orElseSucceed(() => [])
   ),
+  // Configures only this addon (bounded), then reads its events again.
+  describe: (addonId) =>
+    connectedAddons.pipe(
+      Effect.flatMap((addons) => {
+        const target = addons.filter((addon) => addon.id === addonId);
+        return target.some(
+          (addon) => addon.configTemplate && !configured.has(addon.id)
+        )
+          ? Effect.promise(() =>
+              runElectronEffect(configureDevAddons(target))
+            ).pipe(Effect.zipRight(connectedAddons))
+          : Effect.succeed(addons);
+      }),
+      Effect.map((addons) => {
+        const addon = addons.find((candidate) => candidate.id === addonId);
+        return addon ? toConnected(addon) : null;
+      }),
+      Effect.orElseSucceed(() => null)
+    ),
+  // `describe` already configured this addon (core checks it before calling).
   call: (addonId, event, args) =>
-    readyAddons.pipe(
-      Effect.zipRight(sdk),
+    sdk.pipe(
       Effect.flatMap((client): Effect.Effect<unknown, { message: string }> => {
         const addon = client.addon(addonId);
         // No details is a valid answer (`null`); the proxy treats an empty

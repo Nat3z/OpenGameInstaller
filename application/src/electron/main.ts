@@ -350,8 +350,10 @@ async function startClientProtocol(
   }
 }
 
-/** Under `ogi dev` the CLI owns the addon server; core serves on its own port. */
-/** False when no endpoint came up (the addon server didn't start, say). */
+/**
+ * Under `ogi dev` the CLI owns the addon server; core serves on its own port.
+ * False when no endpoint came up (the addon server didn't start, say).
+ */
 async function serveClientProtocol(): Promise<boolean> {
   if (isAddonServerListening) return startClientProtocol('addon-server');
   if (hookArgs?.noAddonServer) return startClientProtocol('standalone');

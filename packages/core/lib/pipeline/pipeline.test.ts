@@ -385,6 +385,30 @@ describe('pipeline', () => {
     await h.runtime.dispose();
   });
 
+  test('a transfer whose next save fails keeps its record and backup', async () => {
+    const h = harness({ saveFailsAt: 'setup' });
+    h.library.set(7, {
+      appID: 7,
+      name: 'Game',
+      version: '0.9',
+      cwd: '/dl/Game',
+      launchExecutable: 'game.exe',
+      capsuleImage: '',
+      coverImage: '',
+      storefront: 'steam',
+      addonsource: 'addon',
+    });
+    const id = await h.pipeline((p) =>
+      p.enqueue({ appID: 7, request: direct, update: { version: '1.0' } })
+    );
+    await h.until(id, (d) => d.status === 'error');
+    // Files are on disk and old ones staged: forgetting would strand both.
+    expect(h.calls).toContain('stage:/dl/Game');
+    await h.pipeline((p) => p.dismiss(id));
+    expect(h.calls.at(-1)).toBe('revert:/dl/Game');
+    await h.runtime.dispose();
+  });
+
   test('a failed setup is kept on disk and retries from setup', async () => {
     const h = harness({ setupFails: 'addon crashed' });
     const id = await h.pipeline((p) =>

@@ -136,6 +136,8 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
       const files = yield* SetupFiles;
       const fibers = yield* FiberMap.make<string>();
       const records = new Map<string, DownloadRecord>();
+      /** What each record looked like at its last successful save. */
+      const persisted = new Map<string, DownloadRecord>();
       const failed = yield* SubscriptionRef.make<FailedSetup[]>([]);
 
       const notify = (
@@ -154,15 +156,19 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
         )
       );
 
-      /** Persists a record (and keeps the in-memory copy in step). */
-      // Memory follows disk: a step that didn't persist isn't the record yet,
-      // so nothing after it (an archive delete, say) runs on its account.
+      /**
+       * Persists a record. Memory takes the new state first, even if the write
+       * then fails: a failure handler must still know a transfer finished or
+       * files were staged. A failed save fails the step, so nothing after it
+       * (an archive delete, say) runs on its account.
+       */
       const save = (record: DownloadRecord) =>
         Effect.suspend(() => {
           const stamped = { ...record, updatedAt: Date.now() };
+          records.set(record.id, stamped);
           return store.save(stamped).pipe(
             Effect.tap(() =>
-              Effect.sync(() => records.set(record.id, stamped))
+              Effect.sync(() => persisted.set(record.id, stamped))
             ),
             Effect.as(stamped)
           );
@@ -171,6 +177,7 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
       const forget = (id: string) =>
         Effect.suspend(() => {
           records.delete(id);
+          persisted.delete(id);
           return store.remove(id);
         }).pipe(Effect.zipRight(refreshFailed));
 
@@ -607,6 +614,7 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
             Effect.gen(function* () {
               const message = formatError(error) || 'Setup failed';
               const latest = records.get(start.id) ?? start;
+              const saved = persisted.get(start.id) ?? start;
               yield* log(start.id, `Failed: ${message}`);
               yield* downloads.report(start.id, {
                 status: 'error',
@@ -614,11 +622,20 @@ export const PipelineLive: Layer.Layer<Pipeline, never, PipelineServices> =
                 speed: 0,
               });
               yield* notify('error', message);
+              // Resume from the last step that reached disk (a later one whose
+              // save failed may need inputs that step would remove). Only a
+              // finished transfer moves past it, since its next step deletes
+              // nothing; a staged backup is kept either way, so it can be
+              // restored.
+              const resume: DownloadRecord =
+                saved.step === 'download' && latest.step !== 'download'
+                  ? latest
+                  : { ...saved, staged: latest.staged ?? saved.staged };
               // Failed before any file was written: nothing to retry from.
-              if (latest.step === 'download') return yield* forget(start.id);
+              if (resume.step === 'download') return yield* forget(start.id);
               // Best effort: if even this fails, the record on disk still
               // resumes from its last saved step after a restart.
-              yield* save({ ...latest, error: message }).pipe(Effect.ignore);
+              yield* save({ ...resume, error: message }).pipe(Effect.ignore);
             })
           ),
           Effect.provide(context)

@@ -42,7 +42,8 @@ export const toPatch = (
     // Extraction ended: the files are on disk again (setup itself still runs
     // in the renderer), or it failed and the card shows why.
     case 'processing:complete':
-      return { status: 'completed', progress: 1, speed: 0 };
+      // A retry that worked clears the failure of the attempt before it.
+      return { status: 'completed', progress: 1, speed: 0, error: null };
     case 'processing:error':
       return {
         status: 'error',

@@ -24,6 +24,8 @@ let connection: Promise<EffectConnection> | undefined;
  * link), so the next request reconnects instead of reusing a dead socket.
  */
 let socket: WebSocket | undefined;
+/** Aborts the prompts this connection asked, since their answers can't arrive. */
+let asks = new AbortController();
 class ReconnectingSocket extends WebSocket {
   constructor(url: string) {
     super(url);
@@ -33,6 +35,8 @@ class ReconnectingSocket extends WebSocket {
       socket = undefined;
       connection = undefined;
       configured = new Set();
+      asks.abort();
+      asks = new AbortController();
     });
   }
 }
@@ -47,11 +51,12 @@ const connect = (): Promise<EffectConnection> =>
       // prompts so whichever client is open can answer
       Effect.tap((client) =>
         client.on('input-asked', ({ name, description, config, reply }) =>
-          Effect.promise(() =>
+          Effect.tryPromise(() =>
             runElectronEffect(
               Effect.flatMap(Prompts, (prompts) =>
                 prompts.ask({ _tag: 'Input', title: name, description, config })
-              )
+              ),
+              asks.signal
             )
           ).pipe(
             Effect.flatMap((answer) =>

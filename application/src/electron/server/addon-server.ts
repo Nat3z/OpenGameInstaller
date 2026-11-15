@@ -5,6 +5,7 @@ import { getDatabase } from '@/electron/database/index.js';
 import { parseLaunchHookArgs } from '@/electron/lib/single-instance-launch.js';
 import { runElectronEffect } from '@/electron/runtime.js';
 import { attachAddonDownloadBridge } from '@/electron/server/addon-downloads.js';
+import { whileAsking } from '@/electron/server/addon-prompts.js';
 import { Prompts } from '@/electron/services/index.js';
 
 const logger = createLogger(LOGGER_PREFIXES.electron);
@@ -48,6 +49,7 @@ const createAddonServer = (secret?: string): AddonServer => {
     secret,
     // Addon input goes through core Prompts, so any client can answer it.
     // The signal closes the prompt if the addon disconnects mid-question.
+    // While it's open, addon calls' deadlines are paused.
     askInput: (title, description, config) =>
       Effect.promise((signal) =>
         runElectronEffect(
@@ -57,7 +59,8 @@ const createAddonServer = (secret?: string): AddonServer => {
           signal
         )
       ).pipe(
-        Effect.map((answer) => (answer._tag === 'Input' ? answer.values : {}))
+        Effect.map((answer) => (answer._tag === 'Input' ? answer.values : {})),
+        whileAsking
       ),
   });
   for (const [path, handler] of upgradeRoutes)

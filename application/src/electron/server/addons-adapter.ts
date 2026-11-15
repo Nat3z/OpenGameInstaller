@@ -4,6 +4,7 @@ import { Addons } from '@ogi-sdk/core';
 import { AddonError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import { type Context, Effect, Layer } from 'effect';
+import { addonDeadline } from '@/electron/server/addon-prompts.js';
 import { getAddonServer } from '@/electron/server/addon-server.js';
 import { Database } from '@/electron/services/index.js';
 import { buildDefaultConfig } from '@/lib/addon-config.js';
@@ -62,7 +63,10 @@ const configureOne = (
       );
   });
 
-/** How long each call may wait for its reply; searches can scrape slowly. */
+/**
+ * How long each call may wait for its reply; searches can scrape slowly.
+ * Time a person spends answering the addon's question doesn't count.
+ */
 const REPLY_TIMEOUT = {
   search: '60 seconds',
   'game-details': '30 seconds',
@@ -159,14 +163,16 @@ export const AddonsFromAddonServer = Layer.effect(
             ),
             // An addon that stops answering (socket still open) must not hang
             // the call, or the client waiting on it, forever.
-            Effect.timeoutFail({
-              duration: REPLY_TIMEOUT[event],
-              onTimeout: () =>
-                new AddonError({
-                  message: `${connection.addonInfo?.name ?? addonId} did not answer ${event}`,
-                  addonName: connection.addonInfo?.name,
-                }),
-            })
+            Effect.raceFirst(
+              addonDeadline(
+                REPLY_TIMEOUT[event],
+                () =>
+                  new AddonError({
+                    message: `${connection.addonInfo?.name ?? addonId} did not answer ${event}`,
+                    addonName: connection.addonInfo?.name,
+                  })
+              )
+            )
           );
           if (reply.statusError) {
             return yield* Effect.fail(

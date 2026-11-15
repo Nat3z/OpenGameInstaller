@@ -166,10 +166,14 @@ export const AddonsFromDevServer = Layer.succeed(Addons, {
       Effect.zipRight(sdk),
       Effect.flatMap((client): Effect.Effect<unknown, { message: string }> => {
         const addon = client.addon(addonId);
+        // No details is a valid answer (`null`); the proxy treats an empty
+        // deferred result as an error, so details skip it.
         return event === 'search'
           ? addon.search(args as never)
           : event === 'game-details'
-            ? addon.gameDetails(args as never)
+            ? client
+                .deferToAddonAndWait(addonId, 'game-details', [args as never])
+                .pipe(Effect.map((details) => details ?? null))
             : addon.catalog();
       }),
       Effect.mapError(toAddonError)

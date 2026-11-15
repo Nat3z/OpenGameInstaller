@@ -504,7 +504,10 @@ export function launchGameFromLibrary(
       // Already tracked by the pre-await add above; do not re-add here or a
       // fast crash's onExit delete would be resurrected.
       yield* markLaunched(appInfo.appID);
-      reportGame(mainWindow, 'launch', appInfo.appID);
+      // A game that exited before this point already reported its exit;
+      // `Launched` after `Exited` would leave watchers thinking it runs.
+      if (runningGames.has(appInfo.appID))
+        reportGame(mainWindow, 'launch', appInfo.appID);
       return { success: true };
     }
 

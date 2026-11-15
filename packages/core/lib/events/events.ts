@@ -1,5 +1,13 @@
 import { type AppEvent, EventsGroup } from '@ogi-sdk/protocol';
-import { Context, Effect, Layer, PubSub, Stream } from 'effect';
+import {
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  type Queue,
+  type Scope,
+  Stream,
+} from 'effect';
 import { type Implementation, implement } from '../server/router';
 
 /**
@@ -8,7 +16,15 @@ import { type Implementation, implement } from '../server/router';
  */
 export type EventsShape = {
   readonly publish: (event: AppEvent) => Effect.Effect<void>;
-  readonly subscribe: Stream.Stream<AppEvent>;
+  /**
+   * A queue receiving every event published after this returns. Lives as
+   * long as the scope, so subscribe first, then send the snapshot.
+   */
+  readonly subscribe: Effect.Effect<
+    Queue.Dequeue<AppEvent>,
+    never,
+    Scope.Scope
+  >;
 };
 
 export class Events extends Context.Tag('@ogi-sdk/core/Events')<
@@ -22,7 +38,7 @@ export const EventsLive: Layer.Layer<Events> = Layer.effect(
     const pubsub = yield* PubSub.unbounded<AppEvent>();
     return {
       publish: (event) => PubSub.publish(pubsub, event).pipe(Effect.asVoid),
-      subscribe: Stream.fromPubSub(pubsub),
+      subscribe: PubSub.subscribe(pubsub),
     };
   })
 );
@@ -32,8 +48,10 @@ export const EventsHandlers: Implementation<Events> = implement<
   Events
 >(EventsGroup, {
   watch: () =>
-    Effect.map(Events, (events) => ({
-      snapshot: [],
-      updates: events.subscribe,
-    })),
+    Effect.flatMap(Events, (events) => events.subscribe).pipe(
+      Effect.map((queue) => ({
+        snapshot: [],
+        updates: Stream.fromQueue(queue),
+      }))
+    ),
 });

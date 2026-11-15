@@ -8,6 +8,11 @@ export function removeQueueCancel(id: string): void {
   cancelHandlers.delete(id);
 }
 
+/** The queue still owns `id` (waiting, or not yet cleaned up). */
+export function hasQueueCancel(id: string): boolean {
+  return cancelHandlers.has(id);
+}
+
 export async function cancelQueuedDownload(id: string): Promise<void> {
   const cancel = cancelHandlers.get(id);
   if (!cancel) return;

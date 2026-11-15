@@ -31,6 +31,7 @@ import {
   basename,
   dirname,
   getDownloadItem,
+  recordLivePause,
   updateDownloadStatus,
 } from '@/frontend/utils';
 
@@ -677,29 +678,20 @@ document.addEventListener('ddl:download-error', handleDownloadError);
 document.addEventListener('torrent:download-error', handleDownloadError);
 
 // -- Download Paused/Resumed --
-// Note: Pause/Resume status updates are now handled directly in utils.ts functions
-// These events are kept for backward compatibility and additional logging
-document.addEventListener('ddl:download-paused', (event: Event) => {
+// Another client (over the core protocol) can pause or resume an engine, so
+// the card follows the engine's event rather than this window's own button.
+const onPaused = (event: Event) => {
   if (!isCustomEvent(event)) return;
-  logger.sync.info('Direct download paused:', event.detail.id);
-  // Status is already updated in pauseDownload function
-});
-
-document.addEventListener('ddl:download-resumed', (event: Event) => {
+  recordLivePause(event.detail.id, true);
+  updateDownloadStatus(event.detail.id, { status: 'paused', downloadSpeed: 0 });
+};
+const onResumed = (event: Event) => {
   if (!isCustomEvent(event)) return;
-  logger.sync.info('Direct download resumed:', event.detail.id);
-  // Status is already updated in resumeDownload function
-});
-
-document.addEventListener('torrent:download-paused', (event: Event) => {
-  if (!isCustomEvent(event)) return;
-  logger.sync.info('Torrent download paused:', event.detail.id);
-  // Status is already updated in pauseDownload function
-});
-
-document.addEventListener('torrent:download-resumed', (event: Event) => {
-  if (!isCustomEvent(event)) return;
-  logger.sync.info('Torrent download resumed:', event.detail.id);
-  // Status is already updated in resumeDownload function
-});
+  recordLivePause(event.detail.id, false);
+  updateDownloadStatus(event.detail.id, { status: 'downloading' });
+};
+document.addEventListener('ddl:download-paused', onPaused);
+document.addEventListener('torrent:download-paused', onPaused);
+document.addEventListener('ddl:download-resumed', onResumed);
+document.addEventListener('torrent:download-resumed', onResumed);
 </script>

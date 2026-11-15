@@ -19,10 +19,10 @@ import {
   getPersistedFilePaths,
   sessionDownloadLocations,
 } from '@/electron/lib/download-paths.js';
-import { sendIPCMessage } from '@/electron/main.js';
 import { __dirname as dataDirectory } from '@/electron/manager/manager.paths.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as runBoundary } from '@/electron/runtime.js';
+import { emitDownload } from '@/electron/server/downloads-bridge.js';
 import { Database, Library, Settings } from '@/electron/services/index.js';
 import { ElectronRpc } from '@/lib/electron-rpc.js';
 
@@ -202,7 +202,7 @@ const extractArchive = (arg: {
     }
     yield* fsTry(outputDir, () => fs.mkdirSync(outputDir, { recursive: true }));
     if (arg.downloadId) {
-      sendIPCMessage('setup:log', {
+      emitDownload('setup:log', {
         id: arg.downloadId,
         log: [
           'Starting archive extraction...',
@@ -226,7 +226,7 @@ const extractArchive = (arg: {
           return;
         lastProgressSent = now;
         lastStage = stage;
-        sendIPCMessage('processing:progress', {
+        emitDownload('processing:progress', {
           id: arg.downloadId,
           phase: stage === 'moving' ? 'Moving files' : 'Extracting archive',
           progress,
@@ -236,19 +236,24 @@ const extractArchive = (arg: {
       Effect.tapError((error) =>
         Effect.sync(() => {
           if (arg.downloadId) {
-            sendIPCMessage('setup:log', {
+            emitDownload('setup:log', {
               id: arg.downloadId,
               log: [`Archive extraction failed: ${formatError(error)}`],
+            });
+            emitDownload('processing:error', {
+              id: arg.downloadId,
+              error: `Archive extraction failed: ${formatError(error)}`,
             });
           }
         })
       )
     );
     if (arg.downloadId) {
-      sendIPCMessage('setup:log', {
+      emitDownload('setup:log', {
         id: arg.downloadId,
         log: ['Archive extraction completed successfully'],
       });
+      emitDownload('processing:complete', { id: arg.downloadId });
     }
     // The archive is dead weight once extracted; a failure to remove it must
     // not fail the setup.

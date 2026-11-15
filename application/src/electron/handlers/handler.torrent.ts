@@ -3,7 +3,6 @@ import { formatError, HttpError, TorrentError } from '@ogi-sdk/errors';
 import { createLogger, LOGGER_PREFIXES } from '@ogi-sdk/logger';
 import axios from 'axios';
 import { Deferred, Effect, Fiber } from 'effect';
-import { BrowserWindow } from 'electron';
 import { getTorrentInfoHash } from '@/electron/lib/torrent-hash.js';
 import { sendNotification } from '@/electron/main.js';
 import { DOWNLOAD_QUEUE } from '@/electron/manager/manager.queue.js';
@@ -14,6 +13,10 @@ import {
 } from '@/electron/rpc/queue-cancel.js';
 import { procedure, router } from '@/electron/rpc/router-core.js';
 import { runEffectBoundary as run } from '@/electron/runtime.js';
+import {
+  emitDownload,
+  registerDownloadEngine,
+} from '@/electron/server/downloads-bridge.js';
 import { Settings } from '@/electron/services/index.js';
 import {
   clearDownloadHandshake,
@@ -94,7 +97,6 @@ class TorrentDownload {
     return this._status;
   }
 
-  private readonly mainWindow: BrowserWindow;
   private readonly job: TorrentJob;
   private taskFinisher: () => void = () => {};
   private queueReleased = false;
@@ -118,9 +120,8 @@ class TorrentDownload {
   private progress = 0;
   private ratio = 0;
 
-  constructor(mainWindow: BrowserWindow, job: TorrentJob) {
+  constructor(job: TorrentJob) {
     this.id = Math.random().toString(36).substring(7);
-    this.mainWindow = mainWindow;
     this.job = job;
 
     downloads.set(this.id, this);
@@ -755,17 +756,21 @@ class TorrentDownload {
     });
   }
 
-  private sendIpc(channel: string, data: unknown): void {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data);
-    }
+  private sendIpc(channel: string, data: Record<string, unknown>): void {
+    emitDownload(channel, data);
   }
 }
 
-export default function handler(mainWindow: BrowserWindow) {
+export default function handler() {
+  registerDownloadEngine({
+    pause: (id) => downloads.get(id)?.pause() ?? Effect.void,
+    resume: (id) => downloads.get(id)?.resume() ?? Effect.void,
+    abort: (id) => downloads.get(id)?.cancel() ?? Effect.void,
+    has: (id) => downloads.has(id),
+  });
   const startDownload = (job: TorrentJob) =>
     Effect.gen(function* () {
-      const download = new TorrentDownload(mainWindow, job);
+      const download = new TorrentDownload(job);
       yield* download.start();
       return yield* download.waitForReady();
     });

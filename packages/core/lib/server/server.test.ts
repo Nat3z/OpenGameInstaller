@@ -3,6 +3,12 @@ import { EffectOGIClient, OGIClient } from '@ogi-sdk/client-kit';
 import type { LibraryInfo } from '@ogi-sdk/connect';
 import { ProtocolError } from '@ogi-sdk/protocol';
 import { Effect, Exit, Fiber, Layer, ManagedRuntime, Scope } from 'effect';
+import {
+  DownloadControl,
+  Downloads,
+  DownloadsHandlers,
+  DownloadsLive,
+} from '../downloads/downloads';
 import { Events, EventsHandlers, EventsLive } from '../events/events';
 import {
   GameRunner,
@@ -62,7 +68,20 @@ const launch = LaunchLive.pipe(
   Layer.provideMerge(library)
 );
 const runtime = ManagedRuntime.make(
-  Layer.mergeAll(launch, EventsLive, PromptsLive)
+  Layer.mergeAll(
+    launch,
+    EventsLive,
+    PromptsLive,
+    // One Downloads instance shared by the handlers and the fake engine.
+    Layer.effect(
+      DownloadControl,
+      Effect.map(Downloads, (downloads) => ({
+        pause: (id: string) => downloads.report(id, { status: 'paused' }),
+        resume: () => Effect.void,
+        cancel: (id: string) => downloads.remove(id),
+      }))
+    ).pipe(Layer.provideMerge(DownloadsLive))
+  )
 );
 let server: ReturnType<typeof Bun.serve>;
 let url = '';
@@ -77,6 +96,7 @@ beforeAll(async () => {
         LaunchHandlers,
         EventsHandlers,
         PromptsHandlers,
+        DownloadsHandlers,
       ],
     }).pipe(Scope.extend(scope))
   );
@@ -206,6 +226,7 @@ describe('OGIServer <-> OGIClient', () => {
       'library',
       'events',
       'prompts',
+      'downloads',
     ]);
     expect((await client.library.list()).map((g) => g.appID)).toEqual([1]);
     expect((await client.library.get({ appID: 1 }))?.name).toBe('Game 1');
@@ -226,8 +247,10 @@ describe('OGIServer <-> OGIClient', () => {
       .uninstall({ appID: 1, deleteFiles: false })
       .catch((e) => e);
     expect(error.tag).toBe('MethodNotFound');
-    const downloads = await client.downloads.pause({ id: 'x' }).catch((e) => e);
-    expect(downloads.tag).toBe('MethodNotFound');
+    const enqueue = await client.downloads
+      .enqueue({ appID: 1, addonSource: 'x', result: {} })
+      .catch((e) => e);
+    expect(enqueue.tag).toBe('MethodNotFound');
     await client.close();
   });
 
@@ -360,5 +383,48 @@ describe('OGIServer <-> OGIClient', () => {
     stop();
     await client.close();
     await Effect.runPromise(Fiber.interrupt(asking));
+  });
+
+  test('downloads.watch merges engine reports; controls reach the engine', async () => {
+    const client = await OGIClient.connect({ url, token: TOKEN });
+    const report = (patch: Record<string, unknown>) =>
+      runtime.runPromise(
+        Effect.flatMap(Downloads, (d) => d.report('dl-1', patch))
+      );
+    await report({ name: 'Game', status: 'downloading', progress: 0.1 });
+
+    const updates: string[] = [];
+    const snapshot = Promise.withResolvers<number>();
+    const paused = Promise.withResolvers<void>();
+    const stop = client.downloads.watch((event) => {
+      if (event._tag === 'Snapshot')
+        return snapshot.resolve(event.value.length);
+      const change = event.value;
+      updates.push(
+        change._tag === 'Upsert'
+          ? `${change.download.status}:${change.download.progress}:${change.download.name}`
+          : `removed:${change.id}`
+      );
+      if (change._tag === 'Upsert' && change.download.status === 'paused')
+        paused.resolve();
+    });
+    expect(await snapshot.promise).toBe(1);
+
+    await report({ progress: 0.5 }); // partial: name and status survive
+    await client.downloads.pause({ id: 'dl-1' });
+    await paused.promise;
+    await client.downloads.cancel({ id: 'dl-1' });
+    const missing = await client.downloads
+      .pause({ id: 'dl-1' })
+      .catch((e) => e);
+
+    expect(updates).toEqual([
+      'downloading:0.5:Game',
+      'paused:0.5:Game',
+      'removed:dl-1',
+    ]);
+    expect(missing.tag).toBe('DownloadError');
+    stop();
+    await client.close();
   });
 });

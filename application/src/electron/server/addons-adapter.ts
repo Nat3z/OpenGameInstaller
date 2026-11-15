@@ -115,13 +115,8 @@ export const configureAddons: Effect.Effect<void, never, Database> = Effect.gen(
     yield* Effect.forEach(
       connections,
       (connection) =>
+        // `configureOne` is bounded, so a silent addon can't hold up `/client`.
         configureOne(database, connection).pipe(
-          // An addon that never answers is skipped, not waited on forever:
-          // clients still get the library and every other addon.
-          Effect.timeoutFail({
-            duration: '10 seconds',
-            onTimeout: () => new Error('no reply to config-update'),
-          }),
           Effect.catchAll(warnFailure(connection))
         ),
       { concurrency: 'unbounded', discard: true }
